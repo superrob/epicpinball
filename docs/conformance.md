@@ -28,11 +28,11 @@ GAME, then SPACE to start, the plunger every few seconds, and both flippers.
 | lift *image*: every instruction form handled (16 images) | `tools/lift.py` met an instruction lift16 emitted as `UNHANDLED` |
 | boot: clean exit, no dispatch misses | the process crashed, or the guest reached an address with no lifted function |
 | boot: SETUP check answered, sound drivers placed | PINBALL did not get past its SETUP check, or never loaded the MASI mixer and SB driver |
-| boot: menu on screen | 12 s in, the frame is not a graphics picture with the menu drawn |
+| boot: menu on screen | 22 s in (past the notice and the intro), the frame is not a graphics picture with the menu drawn |
 | table *n*: clean exit, PINBALL ran EP*n*.EXE, no dispatch misses (×13) | the menu did not EXEC the table chosen, or anything along the way missed |
 | table *n*: 320×240 playfield with 32+ colours | the table is not in its Mode X 320×240 view, or it is drawn in a handful of colours |
 | table *n*: scoreboard in the split screen | the rows below line compare are dark: the split is wrong or the dot matrix was not drawn |
-| table *n*: the view moves in play | under 2% of the playfield changed between 12 s into play and the end — no ball, no scrolling |
+| table *n*: the view moves in play | no frame of play (one a second) differs from the one 12 s in by over 2% of the playfield — no ball, no scrolling |
 | table *n*: SB16 stereo stream started | the SB driver never started an SB16 stereo auto-init transfer |
 | table *n*: audio | the WAV the run wrote is near silent |
 | remaster table 1, 9: whole table is the page the screen scrolls over | `--whole-table`'s frame does not contain, row for row, the playfield the game showed at the same moment: the wrong page, or offset ([remaster](remaster.md#the-whole-table)) |

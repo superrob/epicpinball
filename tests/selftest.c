@@ -24,7 +24,8 @@ void host_audio(const int16_t *s, int frames)
 void host_frame(void) {}
 void host_backtrace(void) {}
 uint64_t pit_now(void) { return 0; }
-uint64_t emu_us(void) { return 0; }
+static uint64_t now_us;
+uint64_t emu_us(void) { return now_us; }
 void machine_port_wait(unsigned us) { (void)us; }
 void recomp_tick(CPU *c) { (void)c; }
 int machine_port_in(uint16_t p, uint8_t *v) { (void)p; (void)v; return 0; }
@@ -82,6 +83,43 @@ static void test_whole_table(void)
     assert(frame[399 * 320] == 0xFFFF0000u);             /* then address 0: the display */
     vga_set_mode(0x13);                                  /* not a table: nothing */
     assert(!vga_compose_table(frame, &w, &h));
+}
+
+static int retrace_at(uint64_t us)
+{
+    uint8_t v;
+    now_us = us;
+    assert(vga_port_in(0x3DA, &v));
+    return (v & 8) != 0;
+}
+
+static void flip_at(uint64_t us)
+{
+    now_us = us;
+    out(0x3D4, 0x0D); out(0x3D5, 0x00);
+}
+
+static void test_flip_wait(void)
+{
+    /* PINBALL's page flip sets the start address, then waits for "in retrace"
+     * without first waiting for it to end: one retrace may end only one such
+     * wait, or the menu runs as fast as the host. 14286 us a refresh,
+     * retrace from 12900. */
+    const uint64_t f = 14286;
+    now_us = 0;
+    vga_start();
+    flip_at(1000);
+    assert(!retrace_at(1001));                           /* not before the retrace */
+    assert(retrace_at(12900));                           /* the retrace ends the wait */
+    assert(retrace_at(12901));                           /* no new flip: the plain status */
+    flip_at(12950);                                      /* the next frame, done at once */
+    assert(!retrace_at(12951));                          /* not in the same retrace */
+    assert(!retrace_at(f - 1));
+    assert(!retrace_at(f + 12899));
+    assert(retrace_at(f + 12900));                       /* but in the next one */
+    flip_at(3 * f + 13000);                              /* a late frame, in a retrace no flip used */
+    assert(retrace_at(3 * f + 13001));                   /* is not held back a refresh */
+    now_us = 0;
 }
 
 /* 8 bytes at 12000h played by the DSP at 22050 Hz, auto-init, on DMA channel 1:
@@ -156,6 +194,7 @@ int main(void)
     test_sb16_stereo();
     test_smooth_sound();
     test_whole_table();
+    test_flip_wait();
     test_images();
     printf("selftest: ok\n");
     return 0;

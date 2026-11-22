@@ -60,6 +60,7 @@ def wav_rms(path):
     return (sum(v * v for v in sub) / len(sub)) ** 0.5
 
 
+MENU_MS = 22000          # the menu is up: the notice (7 s) and the intro (13 s) are over
 PLAY_MS = 30000          # of play after the table is up
 
 
@@ -70,12 +71,12 @@ def table_keys(n):
     then a long SPACE (the plunger) every 6 s -- each new ball waits in the
     lane for it -- with both flippers in between.
     -> (keys, ms the table is up, ms to run for)"""
-    keys, t = ['12500:ENTER'], 13500
+    keys, t = [f'{MENU_MS}:ENTER'], MENU_MS + 2000        # the list takes a second to form
     for _ in range(n - 1):
         keys.append(f'{t}:DOWN+40')
         t += 500
     keys += [f'{t}:ENTER', f'{t + 2000}:ENTER']
-    p = t + 9000
+    p = t + 9700                  # the menu fades out for 1.5 s, then 6.2 s of table intro
     keys.append(f'{p}:SPACE')
     end = p + PLAY_MS
     f = p + 2000
@@ -112,7 +113,7 @@ def misses(log):
 
 
 def scenario_boot(out):
-    code, log = run(out, 14, None, {'menu': 12000})
+    code, log = run(out, MENU_MS / 1000 + 2, None, {'menu': MENU_MS})
     img = read_bmp(os.path.join(out, 'menu.bmp')) if os.path.exists(os.path.join(out, 'menu.bmp')) else None
     return [
         ('boot: clean exit', code == 0),
@@ -126,7 +127,12 @@ def scenario_boot(out):
 def scenario_table(out, n):
     keys, play, end = table_keys(n)
     a, b = play + 12000, end - 500
-    code, log = run(out, end / 1000, keys, {'a': a, 'b': b})
+    # and one a second between: where the ball is at any one moment is chance
+    during = {f'm{i}': play + i * 1000 for i in range(2, PLAY_MS // 1000)}
+    for k in during:                   # none left from the last run
+        if os.path.exists(os.path.join(out, k + '.bmp')):
+            os.remove(os.path.join(out, k + '.bmp'))
+    code, log = run(out, end / 1000, keys, {'a': a, 'b': b, **during})
     checks = [(f'table {n}: clean exit', code == 0),
               (f'table {n}: PINBALL ran EP{n}.EXE', f'exec ep{n}.exe' in log.lower()),
               (f'table {n}: no dispatch misses', not misses(log))]
@@ -138,11 +144,16 @@ def scenario_table(out, n):
     # the score display: CRTC line compare, rows 221+ from VRAM address 0
     # (lit dots: Pot of Gold's are a dark green)
     checks.append((f'table {n}: scoreboard in the split screen', ok and bright(rows(imgs[1], 221, 240), 60) > 40))
+    changed = 0
     if ok:
-        pa, pb = rows(imgs[0], 0, 220), rows(imgs[1], 0, 220)
-        changed = sum(1 for x, y in zip(pa, pb) if x != y) / len(pa)
-    else:
-        changed = 0
+        pa = rows(imgs[0], 0, 220)
+        for k in ['b', *during]:
+            p = os.path.join(out, f'{k}.bmp')
+            img = read_bmp(p) if os.path.exists(p) else None
+            if img and img[:2] == (320, 240):
+                changed = sum(1 for x, y in zip(pa, rows(img, 0, 220)) if x != y) / len(pa)
+                if changed > 0.02:
+                    break
     checks.append((f'table {n}: the view moves in play', changed > 0.02))
     checks.append((f'table {n}: SB16 stereo stream started', '[sb] SB16 stereo auto-init' in log))
     checks.append((f'table {n}: audio', wav_rms(os.path.join(out, 'audio.wav')) > 200))

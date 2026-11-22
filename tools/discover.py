@@ -59,7 +59,7 @@ def main():
         out = os.path.join(ROOT, 'work', 'discover')
         os.makedirs(out, exist_ok=True)
         print('  play: boot, then each table', flush=True)
-        missed = set(conformance.misses(conformance.run(out, 14, None, {})[1]))
+        missed = set(conformance.misses(conformance.run(out, conformance.MENU_MS / 1000 + 2, None, {})[1]))
         for n in range(1, conformance.TABLES + 1):
             keys, _, end = conformance.table_keys(n)
             missed |= set(conformance.misses(conformance.run(out, end / 1000, keys, {})[1]))

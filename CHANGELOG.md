@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- The menus ran as fast as the host: PINBALL's page flip waits for "in
+  retrace", and up to a hundred of them fitted in one retrace. One retrace
+  answers one flip now, so the main menu waits its 13 seconds before the demo
+  instead of about one, and its animations run at 70 frames a second.
+  Headless too, so scripted keys (`--keys`, conformance, discover) wait until
+  22 s for the menu.
+- Conformance's "the view moves in play" compared two moments, and failed one
+  run in five when the keys moved by milliseconds; it looks every second now.
+
 ## [0.2.0-alpha.2] - 2026-10-22
 
 ### Fixed

@@ -150,6 +150,14 @@ int recomp_mem_read8(CPU *cpu, uint32_t a, uint8_t *out)
 
 static uint64_t t0_us;
 
+/* A new start address shows from the next retrace, so one retrace answers
+ * one page flip. PINBALL flips, then waits for "in retrace" without first
+ * waiting for the last one to end: a PC of the day was still drawing when
+ * that ended, this host is back within microseconds, and its menus ran a
+ * hundred frames in one retrace (docs/architecture.md, "Time"). */
+static int flip_pending;              /* start address set, no retrace seen since */
+static uint64_t flip_refresh = UINT64_MAX;   /* whose retrace answered the last flip */
+
 /* 70 Hz refresh, the last ~10% of it in vertical retrace. Emulated time,
  * because the tables lock their timer to retrace (docs/architecture.md, "Time").
  * ponytail: 70 Hz whatever the mode; 320x240 is 60 Hz on real hardware. Derive
@@ -158,9 +166,14 @@ static uint8_t input_status(void)
 {
     static uint8_t de;
     uint64_t us = emu_us() - t0_us;
-    uint64_t ph = us % 14286;
+    uint64_t ph = us % 14286, refresh = us / 14286;
+    int blank = ph >= 12900, retrace = blank;
+    if (retrace && flip_pending) {
+        if (refresh == flip_refresh) retrace = 0;      /* used up: wait for the next */
+        else { flip_refresh = refresh; flip_pending = 0; }
+    }
     de ^= 1;                                           /* display enable flickers per line */
-    return (uint8_t)(((ph >= 12900) ? 0x08 : 0) | ((ph >= 12900) ? 1 : de));
+    return (uint8_t)((retrace ? 0x08 : 0) | (blank ? 1 : de));
 }
 
 int vga_port_in(uint16_t port, uint8_t *v)
@@ -205,6 +218,7 @@ int vga_port_out(uint16_t port, uint8_t v)
         if ((crtc_i & 31) != 0x0C && (crtc_i & 31) != 0x0D && crtc[crtc_i & 31] != v)
             trace("[vga] CRTC %02X = %02X\n", crtc_i & 31, v);
         crtc[crtc_i & 31] = v;
+        if ((crtc_i & 31) == 0x0D) flip_pending = 1;   /* the game writes 0Ch, then 0Dh */
         return 1;
     }
     return 0;

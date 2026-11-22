@@ -100,6 +100,13 @@ retrace on port `3DAh` before reprogramming the PIT. Inside an ISR no tick runs
 would spin forever. Each read of `3DAh` therefore costs a microsecond of
 emulated time, as an ISA read does on the real bus.
 
+Only retrace paces PINBALL's menus: each frame sets the start address and waits
+until `3DAh` says "in retrace", counting on the drawing to outlast the retrace.
+Here it does not, so `src/vga.c` lets one retrace answer one page flip; a flip
+made later in that same retrace waits for the next. That holds the menus to 70
+frames a second (the main menu's 900 frames before the demo are 13 seconds,
+as in DOSBox), windowed and headless alike.
+
 Windowed, emulated time is the wall clock. Headless it is deterministic: each
 poll advances it 300 µs, so two runs with the same arguments produce the same
 frames byte for byte (the conformance harness checks this), and a minute of

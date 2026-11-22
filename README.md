@@ -260,14 +260,14 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 | `--mute` | |
 | `--headless` | no window, no audio device, deterministic time — works over RDP |
 | `--record out.mp4` | video and audio through ffmpeg (with `--headless`: unattended) |
-| `--keys "ms:KEY[+holdms],..."` | scripted input at emulated times, e.g. `"12500:ENTER,14500:ENTER"` |
+| `--keys "ms:KEY[+holdms],..."` | scripted input at emulated times, e.g. `"22000:ENTER,24000:ENTER"` |
 | `--seconds N`, `--shot-at "ms:file.bmp,..."`, `--wav out.wav`, `--trace` | testing |
 | `--present WxH` | `--shot-at` frames through the presenter at that size, headless |
 
 ```powershell
 # a minute of Super Android, recorded without a window
 build\Release\epicpinball.exe --headless --seconds 60 --record android.mp4 `
-  --keys "12500:ENTER,13500:ENTER,15500:ENTER,24500:SPACE,26500:SPACE+1500"
+  --keys "22000:ENTER,24000:ENTER,26000:ENTER,35000:SPACE,37000:SPACE+1500"
 ```
 
 ## Building from source
