@@ -13,6 +13,10 @@
  * right-click / F10. Headless runs ignore the file: what they draw is set on
  * the command line only, so a test never depends on someone's preferences.
  *
+ * --cabinet (Linux) is two borderless windows instead: the playfield, filling
+ * a display and turned with F6, and the scoreboard, placed anywhere. Its
+ * settings are the ini's [cabinet], apart from the ordinary window's.
+ *
  * Scripted input (--keys "ms:KEY,...") presses and releases keys at fixed
  * points in emulated time, which is how the harness walks the menus and
  * plays the tables.
@@ -30,13 +34,16 @@
 #include <SDL.h>
 #endif
 
-#define FRAME_MAX (640 * 480)
+#define FRAME_MAX FRAME_PIXELS
 static uint32_t frame[FRAME_MAX];
 static uint32_t big[FRAME_MAX];
 static int fw = 320, fh = 200;
 static double frame_aspect = 4.0 / 3;
 
-static Present S = { PRESENT_SHARP, 0, 1, 0 };
+static uint32_t score[FRAME_MAX];      /* --cabinet's second screen */
+static int sw = 320, sh = 29;
+
+static Present S = { PRESENT_SHARP, 0, 1, 0, 0 };
 static const char *const mode_names[] = { "sharp", "smooth", "crt", "nearest", "integer" };
 
 /* The game's picture as the monitor showed it: what --record and the
@@ -47,9 +54,20 @@ static void compose(void)
     frame_aspect = 4.0 / 3;
 }
 
-/* What the player sees: the whole table when that is on and a table is up */
+/* What the player sees: the whole table when that is on and a table is up.
+ * In a cabinet, the table without its scoreboard, and the scoreboard (black
+ * when no table is up), both from video memory as it is at this moment. */
 static void compose_view(void)
 {
+    if (g_opt.cabinet) {
+        int table = vga_compose_playfield(frame, &fw, &fh);
+        frame_aspect = table ? (double)fw / fh : 4.0 / 3;   /* square pixels; the menus' 4:3 */
+        if (!vga_compose_score(score, &sw, &sh)) {
+            sw = 320; sh = 29;
+            for (int i = 0; i < sw * sh; i++) score[i] = 0xFF000000u;
+        }
+        return;
+    }
     if (S.whole && !g_opt.classic && vga_compose_table(frame, &fw, &fh)) frame_aspect = (double)fw / fh;
     else compose();
 }
@@ -59,6 +77,8 @@ void present_rect(int cw, int ch, int w, int h, double aspect, int mode, RECT *r
 int  present_window(HWND hw, const uint32_t *f, int w, int h, double aspect, const Present *s);
 #else
 int  present_window(SDL_Window *wnd, const uint32_t *f, int w, int h, double aspect, const Present *s);
+int  present_prepare(SDL_Window *wnd);
+void present_close(void);
 #endif
 int  present_offscreen(const uint32_t *f, int w, int h, double aspect, const Present *s,
                        int ow, int oh, uint32_t *out);
@@ -239,6 +259,29 @@ static Present saved;                /* what the ini says: the command line neve
 static int saved_full;
 static RECT win_rect;                /* the window's place when not fullscreen */
 
+/* --cabinet's own: what the ini says, and what this run uses */
+static int saved_display, cab_display;
+static RECT saved_score, cab_score;  /* empty: the default place */
+
+/* --score-window's and the ini's X,Y,W,H */
+int host_parse_place(const char *s, RECT *r)
+{
+    long x, y, w, h;
+    char over;
+    if (sscanf(s, "%ld,%ld,%ld,%ld%c", &x, &y, &w, &h, &over) != 4) return 0;
+    if (w < 32 || h < 8 || w > 32767 || h > 32767 || x < -65536 || x > 65536 || y < -65536 || y > 65536) return 0;
+    *r = (RECT){ x, y, x + w, y + h };
+    return 1;
+}
+
+/* Degrees to quarter turns, or -1 */
+int host_parse_turn(const char *s)
+{
+    static const char *const deg[] = { "0", "90", "180", "270" };
+    for (int i = 0; i < 4; i++) if (!strcmp(s, deg[i])) return i;
+    return -1;
+}
+
 static void settings_save(void)
 {
     FILE *f = *ini ? fopen(ini, "w") : NULL;
@@ -250,6 +293,13 @@ static void settings_save(void)
         fprintf(f, "window=%ld,%ld,%ld,%ld\n", (long)win_rect.left, (long)win_rect.top,
                 (long)(win_rect.right - win_rect.left), (long)(win_rect.bottom - win_rect.top));
     fprintf(f, "[sound]\noutput=%s\n", g_audio_smooth ? "smooth" : "original");
+    int placed = saved_score.right > saved_score.left;
+    if (g_opt.cabinet || placed || saved.rot || saved_display) {    /* kept by ordinary runs too */
+        fprintf(f, "[cabinet]\nrotation=%d\nplayfield_display=%d\n", saved.rot * 90, saved_display);
+        if (placed)
+            fprintf(f, "score_window=%ld,%ld,%ld,%ld\n", (long)saved_score.left, (long)saved_score.top,
+                    (long)(saved_score.right - saved_score.left), (long)(saved_score.bottom - saved_score.top));
+    }
     fclose(f);
 }
 
@@ -262,6 +312,12 @@ static void settings_load(void)
     S.bars = _stricmp(ini_get(ini, "display", "bars", "blur", v, sizeof v), "black") != 0;
     S.whole = atoi(ini_get(ini, "display", "whole_table", "0", v, sizeof v));
     saved = S;
+    int turn = host_parse_turn(ini_get(ini, "cabinet", "rotation", "0", v, sizeof v));
+    saved.rot = turn < 0 ? 0 : turn;
+    saved_display = atoi(ini_get(ini, "cabinet", "playfield_display", "0", v, sizeof v));
+    if (!host_parse_place(ini_get(ini, "cabinet", "score_window", "", v, sizeof v), &saved_score))
+        memset(&saved_score, 0, sizeof saved_score);
+    if (g_opt.cabinet) { S.rot = saved.rot; cab_display = saved_display; cab_score = saved_score; }
     saved_full = atoi(ini_get(ini, "display", "fullscreen", "0", v, sizeof v));
     if (saved_full) g_opt.fullscreen = 1;
     long x, y, w, h;
@@ -284,6 +340,9 @@ static void settings_args(void)
     if (g_opt.bars) S.bars = _stricmp(g_opt.bars, "black") != 0;
     if (g_opt.whole) S.whole = 1;
     if (g_opt.classic) { S.mode = PRESENT_NEAREST; S.look = S.bars = S.whole = 0; }
+    if (g_opt.rotate) S.rot = host_parse_turn(g_opt.rotate);
+    if (g_opt.display) cab_display = atoi(g_opt.display);
+    if (g_opt.score_window) host_parse_place(g_opt.score_window, &cab_score);
 }
 
 /* ---- window ---------------------------------------------------------------- */
@@ -306,12 +365,14 @@ static void screenshot_key(void)
 }
 
 enum { ID_MODE = 100, ID_LOOK = 120, ID_WHOLE = 130, ID_BARS_BLUR, ID_BARS_BLACK, ID_FULL,
-       ID_SOUND_SMOOTH, ID_SOUND_ORIG, ID_SHOT, ID_PAD };
+       ID_SOUND_SMOOTH, ID_SOUND_ORIG, ID_SHOT, ID_PAD, ID_TURN };
 
 /* A change made in the window: shown, and remembered */
 static void command(int id)
 {
-    if (id >= ID_MODE && id < ID_MODE + PRESENT_MODES) S.mode = saved.mode = id - ID_MODE;
+    if (g_opt.cabinet && (id == ID_WHOLE || id == ID_FULL)) return;     /* it is always both */
+    if (g_opt.cabinet && id == ID_TURN) S.rot = saved.rot = (S.rot + 1) % 4;
+    else if (id >= ID_MODE && id < ID_MODE + PRESENT_MODES) S.mode = saved.mode = id - ID_MODE;
     else if (id == ID_LOOK || id == ID_LOOK + 1) S.look = saved.look = id - ID_LOOK;
     else if (id == ID_WHOLE) S.whole = saved.whole = !S.whole;
     else if (id == ID_BARS_BLUR || id == ID_BARS_BLACK) S.bars = saved.bars = id == ID_BARS_BLUR;
@@ -520,8 +581,20 @@ static void window_close(void)
 
 #else /* SDL2: Linux */
 
-static SDL_Window *wnd;
+static SDL_Window *wnd;                /* with --cabinet, the playfield */
 static SDL_AudioDeviceID aud;
+
+static struct {
+    SDL_Window *wnd;
+    int x11;                         /* else windows cannot be placed */
+    int fills;                       /* so then it fills a display of its own */
+    int dirty;
+    uint64_t settled;                /* from here a move is the player's */
+    RECT at;                         /* where it settled, then where it was last */
+    uint32_t shown[FRAME_MAX];       /* what is in it */
+    int shown_w, shown_h;
+    Present how;
+} board;                             /* --cabinet's scoreboard window */
 
 static void open_file(const char *path)
 {
@@ -533,7 +606,7 @@ static void open_file(const char *path)
 /* The window's place, kept for the ini while it is not fullscreen or maximised */
 static void remember_place(void)
 {
-    if (is_full || (SDL_GetWindowFlags(wnd) & SDL_WINDOW_MAXIMIZED)) return;
+    if (g_opt.cabinet || is_full || (SDL_GetWindowFlags(wnd) & SDL_WINDOW_MAXIMIZED)) return;
     int x, y, w, h;
     SDL_GetWindowPosition(wnd, &x, &y);
     SDL_GetWindowSize(wnd, &w, &h);
@@ -548,14 +621,21 @@ static void set_fullscreen(int on)
     is_full = on;
 }
 
+static void board_aside(int aside);
+
 /* SDL has no popup menus: the settings and keys, with buttons for what no key does */
 static void menu(void)
 {
-    char msg[300];
+    char msg[300], view[80], full[40] = "";
+    if (g_opt.cabinet) snprintf(view, sizeof view, "Playfield turned: %d degrees (F6)", S.rot * 90);
+    else {
+        snprintf(view, sizeof view, "Whole table: %s (F7)", S.whole ? "on" : "off");
+        snprintf(full, sizeof full, "Fullscreen: F11, Alt+Enter\n");
+    }
     snprintf(msg, sizeof msg,
-             "Whole table: %s (F7)\nColour: %s (F9)\nScaling: %s (F12)\nFullscreen: F11, Alt+Enter\n"
+             "%s\nColour: %s (F9)\nScaling: %s (F12)\n%s"
              "Beside the picture: %s\nSound: %s\nScreenshot: PrtSc",
-             S.whole ? "on" : "off", S.look ? "vivid" : "natural", mode_names[S.mode],
+             view, S.look ? "vivid" : "natural", mode_names[S.mode], full,
              S.bars ? "blur" : "black", g_audio_smooth ? "smooth" : "original");
     const SDL_MessageBoxButtonData b[] = {
         { 0, S.bars ? ID_BARS_BLACK : ID_BARS_BLUR, S.bars ? "Black bars" : "Blurred bars" },
@@ -563,10 +643,16 @@ static void menu(void)
         { 0, ID_PAD, "Controller mapping..." },
         { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Close" },
     };
-    const SDL_MessageBoxData d = { SDL_MESSAGEBOX_INFORMATION, wnd, "Epic Pinball settings", msg, 4, b, NULL };
+    SDL_Window *owner = g_opt.cabinet && SDL_GetKeyboardFocus() ? SDL_GetKeyboardFocus() : wnd;
+    const SDL_MessageBoxData d = { SDL_MESSAGEBOX_INFORMATION, owner, "Epic Pinball settings", msg, 4, b, NULL };
     int id = 0;
     uint64_t t = host_us();
+    int cursor = SDL_ShowCursor(SDL_QUERY);
+    SDL_ShowCursor(SDL_ENABLE);
+    board_aside(1);                                /* the dialog would open under the scoreboard */
     SDL_ShowMessageBox(&d, &id);
+    board_aside(0);
+    SDL_ShowCursor(cursor);
     machine_paused(host_us() - t);                 /* the game stood still meanwhile */
     command(id);
 }
@@ -603,6 +689,10 @@ static void key(const SDL_KeyboardEvent *k)
     int up = k->type == SDL_KEYUP, s = k->keysym.scancode;
     if (s == SDL_SCANCODE_RETURN && (k->keysym.mod & KMOD_ALT)) { if (!up && !k->repeat) command(ID_FULL); return; }
     if (s == SDL_SCANCODE_PRINTSCREEN) { if (up) screenshot_key(); return; }
+    if (g_opt.cabinet && s == SDL_SCANCODE_F6) {    /* press and release: any key ends the demo */
+        if (!up && !k->repeat) command(ID_TURN);
+        return;
+    }
     if (s == SDL_SCANCODE_F7 || (s >= SDL_SCANCODE_F9 && s <= SDL_SCANCODE_F12)) {
         if (up || k->repeat) return;
         if (s == SDL_SCANCODE_F7) command(ID_WHOLE);
@@ -619,9 +709,188 @@ static void key(const SDL_KeyboardEvent *k)
     kbd_scancode((uint8_t)((sc & 0xFF) | (up ? 0x80 : 0)));
 }
 
-static void window_open(void)
+/* ---- --cabinet's windows */
+
+/* Drag the scoreboard by its middle, resize it by its edges: it has no frame */
+static SDL_HitTestResult board_hit(SDL_Window *w, const SDL_Point *p, void *data)
 {
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) fatal("SDL: %s", SDL_GetError());
+    int ww, wh;
+    (void)data;
+    if (board.fills) return SDL_HITTEST_NORMAL;
+    SDL_GetWindowSize(w, &ww, &wh);
+    int ex = ww / 4 < 10 ? ww / 4 : 10, ey = wh / 4 < 10 ? wh / 4 : 10;
+    int l = p->x < ex, r = p->x >= ww - ex, t = p->y < ey, b = p->y >= wh - ey;
+    if (t) return l ? SDL_HITTEST_RESIZE_TOPLEFT : r ? SDL_HITTEST_RESIZE_TOPRIGHT : SDL_HITTEST_RESIZE_TOP;
+    if (b) return l ? SDL_HITTEST_RESIZE_BOTTOMLEFT : r ? SDL_HITTEST_RESIZE_BOTTOMRIGHT : SDL_HITTEST_RESIZE_BOTTOM;
+    return l ? SDL_HITTEST_RESIZE_LEFT : r ? SDL_HITTEST_RESIZE_RIGHT : SDL_HITTEST_DRAGGABLE;
+}
+
+static RECT board_place(void)
+{
+    int x, y, w, h;
+    SDL_GetWindowSize(board.wnd, &w, &h);
+    SDL_GetWindowPosition(board.wnd, &x, &y);
+    return (RECT){ x, y, x + w, y + h };
+}
+
+/* Saved only when it has moved since it opened: --score-window alone is for
+ * the one run, as the other options are */
+static void board_moved(void)
+{
+    if (!board.x11) return;                        /* it has no place to speak of */
+    RECT r = board_place();
+    if (host_us() >= board.settled && memcmp(&r, &board.at, sizeof r)) saved_score = r;
+    board.at = r;
+}
+
+/* Off the top while a dialog is up, then back */
+static void board_aside(int aside)
+{
+    if (!board.wnd) return;
+#if SDL_VERSION_ATLEAST(2, 0, 16)
+    SDL_SetWindowAlwaysOnTop(board.wnd, aside ? SDL_FALSE : SDL_TRUE);
+#else
+    if (aside) SDL_HideWindow(board.wnd);
+    else { SDL_ShowWindow(board.wnd); SDL_RaiseWindow(wnd); }
+#endif
+    SDL_PumpEvents();                              /* sent before the dialog blocks */
+    board.dirty = 1;
+}
+
+static int on_a_display(const RECT *r)
+{
+    const SDL_Rect w = { r->left, r->top, r->right - r->left, r->bottom - r->top };
+    for (int i = 0; i < SDL_GetNumVideoDisplays(); i++) {
+        SDL_Rect b, both;
+        if (SDL_GetDisplayBounds(i, &b) == 0 && SDL_IntersectRect(&b, &w, &both) && both.w >= 16 && both.h >= 8)
+            return 1;
+    }
+    return 0;
+}
+
+/* Before SDL_Init. 1 if it chose the video driver. */
+static int cabinet_hints(void)
+{
+    int chose = 0;
+    /* X11 (XWayland) first: Wayland cannot place a window. The player's own
+     * choice of driver stands. */
+    if (!getenv("SDL_VIDEODRIVER") && !getenv("SDL_VIDEO_DRIVER"))
+        chose = setenv("SDL_VIDEODRIVER", "x11,wayland", 1) == 0;
+    SDL_SetHint("SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR", "0");         /* it draws title bars */
+    SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
+    SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");          /* a first right-click counts */
+    return chose;
+}
+
+static void cabinet_open(void)
+{
+    uint64_t t = host_us();
+    int n = SDL_GetNumVideoDisplays();
+    if (n < 1) fatal("SDL displays: %s", SDL_GetError());
+    for (int i = 0; i < n; i++) {
+        SDL_Rect b = { 0 };
+        const char *name = SDL_GetDisplayName(i);
+        SDL_GetDisplayBounds(i, &b);
+        fprintf(stderr, "[cabinet] display %d: %s %dx%d at %d,%d\n", i, name ? name : "?", b.w, b.h, b.x, b.y);
+    }
+    int pd = cab_display;
+    if (pd < 0 || pd >= n) {
+        fprintf(stderr, "[cabinet] there is no display %d: the playfield goes on display 0\n", pd);
+        pd = 0;
+    }
+    const char *driver = SDL_GetCurrentVideoDriver();
+    board.x11 = driver && !strcmp(driver, "x11");
+    board.fills = !board.x11 && n > 1;
+    if (!board.x11)
+        fprintf(stderr, "[cabinet] video driver %s: the scoreboard cannot be placed or kept on top (X11 can)%s\n",
+                driver ? driver : "?", board.fills ? ": it fills a display of its own" : "");
+
+    RECT r = cab_score;
+    int placed = r.right > r.left;
+    if (placed && board.x11 && !on_a_display(&r)) {
+        fprintf(stderr, "[cabinet] %ld,%ld is on no display: the scoreboard opens in its default place\n",
+                (long)r.left, (long)r.top);
+        placed = 0;
+    }
+    int bd = n > 1 ? (pd ? 0 : 1) : pd;              /* a display of its own, if there is one */
+    if (!placed) {
+        SDL_Rect b = { 0, 0, 960, 87 };
+        SDL_GetDisplayBounds(bd, &b);
+        int w = b.w < 960 ? b.w : 960, h = w * 29 / 320;
+        r.left = b.x + (b.w - w) / 2;
+        r.top = n > 1 ? b.y + (b.h - h) / 2 : b.y;
+        r.right = r.left + w; r.bottom = r.top + h;
+    }
+    board.at = r;
+
+    const uint32_t flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+    /* CENTERED_DISPLAY, not UNDEFINED_DISPLAY: sdl2-compat drops the latter's display on Wayland */
+    int any = SDL_WINDOWPOS_CENTERED_DISPLAY(bd), there = SDL_WINDOWPOS_CENTERED_DISPLAY(pd);
+    board.wnd = SDL_CreateWindow("Epic Pinball scoreboard", board.x11 ? (int)r.left : any, board.x11 ? (int)r.top : any,
+                                 r.right - r.left, r.bottom - r.top, flags | SDL_WINDOW_ALWAYS_ON_TOP);
+    if (!board.wnd) fatal("SDL scoreboard window: %s", SDL_GetError());
+    wnd = SDL_CreateWindow("Epic Pinball", there, there, 640, 480, flags);
+    if (!wnd) fatal("SDL window: %s", SDL_GetError());
+    SDL_SetWindowMinimumSize(board.wnd, 32, 8);
+    if (SDL_SetWindowHitTest(board.wnd, board_hit, NULL))
+        fprintf(stderr, "[cabinet] the scoreboard cannot be dragged here: %s\n", SDL_GetError());
+    if (!present_prepare(wnd) || !present_prepare(board.wnd)) fatal("--cabinet needs two SDL renderers");
+    if (SDL_SetWindowFullscreen(wnd, SDL_WINDOW_FULLSCREEN_DESKTOP))
+        fprintf(stderr, "[cabinet] fullscreen: %s\n", SDL_GetError());
+    if (board.fills && SDL_SetWindowFullscreen(board.wnd, SDL_WINDOW_FULLSCREEN_DESKTOP))
+        fprintf(stderr, "[cabinet] scoreboard fullscreen: %s\n", SDL_GetError());
+
+    /* the scoreboard first, the playfield last, which gets the keys. Wayland
+     * maps a window at its first picture, so they get one here. */
+    compose_view();
+    SDL_ShowWindow(board.wnd);
+    if (board.x11) SDL_SetWindowPosition(board.wnd, r.left, r.top);
+    board.how = S; board.how.rot = board.how.bars = 0;
+    present_window(board.wnd, score, sw, sh, (double)sw / sh, &board.how);
+    SDL_ShowWindow(wnd);
+    present_window(wnd, frame, fw, fh, frame_aspect, &S);
+    SDL_RaiseWindow(wnd);
+    SDL_ShowCursor(SDL_DISABLE);
+    board.dirty = 1;
+    board.settled = host_us() + 1000000;             /* the window manager has its say first */
+    machine_paused(host_us() - t);
+}
+
+static void cabinet_event(const SDL_WindowEvent *e)
+{
+    int b = e->windowID == SDL_GetWindowID(board.wnd);
+    if (e->event == SDL_WINDOWEVENT_CLOSE) quit_req = 1;   /* SDL_QUIT waits for the last window */
+    if (e->event == SDL_WINDOWEVENT_ENTER) SDL_ShowCursor(b ? SDL_ENABLE : SDL_DISABLE);
+    if (!b) return;
+    if (e->event == SDL_WINDOWEVENT_MOVED || e->event == SDL_WINDOWEVENT_SIZE_CHANGED) board_moved();
+    if (e->event == SDL_WINDOWEVENT_EXPOSED || e->event == SDL_WINDOWEVENT_SIZE_CHANGED
+        || e->event == SDL_WINDOWEVENT_SHOWN || e->event == SDL_WINDOWEVENT_RESTORED)
+        board.dirty = 1;
+}
+
+/* Both windows; the scoreboard only when there is something new in it */
+static void cabinet_present(void)
+{
+    uint64_t t0 = host_us();
+    present_window(wnd, frame, fw, fh, frame_aspect, &S);
+    uint64_t t1 = host_us(), t2 = t1;
+    Present how = S;
+    how.rot = how.bars = 0;                          /* upright, black round it */
+    size_t bytes = (size_t)sw * sh * 4;
+    if (board.dirty || board.shown_w != sw || board.shown_h != sh
+        || memcmp(&how, &board.how, sizeof how) || memcmp(board.shown, score, bytes)) {
+        present_window(board.wnd, score, sw, sh, (double)sw / sh, &how);
+        memcpy(board.shown, score, bytes);
+        board.shown_w = sw; board.shown_h = sh; board.how = how; board.dirty = 0;
+        t2 = host_us();
+    }
+    if (t2 - t0 > 1000)
+        trace("[present] slow at %llu ms: playfield %u us, scoreboard %u us\n",
+              (unsigned long long)(emu_us() / 1000), (unsigned)(t1 - t0), (unsigned)(t2 - t1));
+}
+
+static void desktop_open(void)
+{
     int x = win_rect.left, y = win_rect.top, w = win_rect.right - win_rect.left, h = win_rect.bottom - win_rect.top;
     if (g_opt.window || w <= 0) {                  /* --window N, or no place remembered */
         int s = g_opt.window ? g_opt.window : 3;
@@ -631,6 +900,20 @@ static void window_open(void)
     if (!wnd) fatal("SDL window: %s", SDL_GetError());
     remember_place();
     if (g_opt.fullscreen) set_fullscreen(1);
+}
+
+static void window_open(void)
+{
+    const uint32_t systems = SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER;
+    int chose = g_opt.cabinet && cabinet_hints();
+    int failed = SDL_Init(systems) != 0;
+    if (failed && chose) {                         /* an older SDL2 reads the list as one name */
+        unsetenv("SDL_VIDEODRIVER");               /* and tries X11 first by itself */
+        failed = SDL_Init(systems) != 0;
+    }
+    if (failed) fatal("SDL: %s", SDL_GetError());
+    if (g_opt.cabinet) cabinet_open();
+    else desktop_open();
     if (!g_opt.mute && SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
         SDL_AudioSpec want = { 0 };
         want.freq = AUDIO_RATE; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
@@ -648,14 +931,17 @@ static void window_frame(void)
         else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) key(&e.key);
         else if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_RIGHT) menu();
         else if (e.type == SDL_WINDOWEVENT) {
+            if (g_opt.cabinet) cabinet_event(&e.window);
             if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) pad_load();   /* controller.ini may have been edited */
             if (e.window.event == SDL_WINDOWEVENT_MOVED || e.window.event == SDL_WINDOWEVENT_RESIZED) remember_place();
         }
     }
-    if (SDL_GetWindowFlags(wnd) & SDL_WINDOW_INPUT_FOCUS) pad_poll();
+    if (g_opt.cabinet ? SDL_GetKeyboardFocus() != NULL : (SDL_GetWindowFlags(wnd) & SDL_WINDOW_INPUT_FOCUS) != 0)
+        pad_poll();
     if (quit_req) dos_exit(0);
     compose_view();
-    present_window(wnd, frame, fw, fh, frame_aspect, &S);
+    if (g_opt.cabinet) cabinet_present();
+    else present_window(wnd, frame, fw, fh, frame_aspect, &S);
 }
 
 /* A queue the main thread fills, as long as waveOut's ring: drop rather than block */
@@ -667,7 +953,12 @@ static void window_audio(const int16_t *s, int frames)
 static void window_close(void)
 {
     if (aud) SDL_CloseAudioDevice(aud);
-    if (wnd) { settings_save(); SDL_DestroyWindow(wnd); }
+    if (wnd) {
+        settings_save();
+        present_close();
+        SDL_DestroyWindow(wnd);
+        if (board.wnd) SDL_DestroyWindow(board.wnd);
+    }
     SDL_Quit();
 }
 #endif
@@ -726,23 +1017,37 @@ static void write_bmp(const char *path, const uint32_t *px, int w, int h)
     fclose(f);
 }
 
-/* The picture as a BMP: the game's own frame, or with --present the
- * presenter's output at that size -- a run nobody watched still says where
- * it got to. */
-void host_snapshot(const char *path)
+static void write_view(const char *path, const uint32_t *f, int w, int h, double aspect, const Present *s)
 {
-    compose_view();
     if (g_opt.present_w > 0) {
         size_t n = (size_t)g_opt.present_w * g_opt.present_h;
         uint32_t *out = malloc(n * 4);
-        if (out && present_offscreen(frame, fw, fh, frame_aspect, &S, g_opt.present_w, g_opt.present_h, out))
+        if (out && present_offscreen(f, w, h, aspect, s, g_opt.present_w, g_opt.present_h, out))
             write_bmp(path, out, g_opt.present_w, g_opt.present_h);
         else
             fprintf(stderr, "[present] %s: no presenter, not written\n", path);
         free(out);
         return;
     }
-    write_bmp(path, frame, fw, fh);
+    write_bmp(path, f, w, h);
+}
+
+/* The picture as a BMP: the game's own frame, or with --present the
+ * presenter's output at that size -- a run nobody watched still says where
+ * it got to. In a cabinet, the playfield (upright unless presented) and
+ * beside it NAME-score.bmp, the scoreboard. */
+void host_snapshot(const char *path)
+{
+    compose_view();
+    write_view(path, frame, fw, fh, frame_aspect, &S);
+    if (!g_opt.cabinet) return;
+    size_t n = strlen(path);
+    if (n >= 4 && !_stricmp(path + n - 4, ".bmp")) n -= 4;
+    char second[600];
+    snprintf(second, sizeof second, "%.*s-score.bmp", (int)n, path);
+    Present how = S;
+    how.rot = how.bars = 0;
+    write_view(second, score, sw, sh, (double)sw / sh, &how);
 }
 
 void host_shutdown(void)

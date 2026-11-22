@@ -128,6 +128,65 @@ static void test_table_layouts(void)
     vga_set_mode(0x13);
 }
 
+static void test_cabinet_views(void)
+{
+    /* --cabinet's two screens: the front page without a row of the scoreboard,
+     * and the scoreboard at its full height, whatever Enter has done with the
+     * split -- all the way to gone (480), where tables 9-13 spend most of a
+     * ball, and half programmed, as each move of the split leaves it */
+    static const struct { unsigned lc, page0, page1; int rows, dmd; } t[] = {
+        { 0x1B9, 1600, 33600, 399, 19 },
+        { 0x1A5, 2400, 34000, 394, 29 },
+    };
+    static uint32_t frame[FRAME_PIXELS]; int w, h;
+    const uint32_t red = 0xFFFF0000u, green = 0xFF00FF00u, blue = 0xFF0000FFu;
+    for (int i = 0; i < 2; i++) {
+        vga_set_mode(0x13);
+        assert(!vga_compose_score(frame, &w, &h));       /* a menu: no scoreboard */
+        assert(!vga_compose_playfield(frame, &w, &h));   /* and shown as it is */
+        assert(w == 320 && h == 200);
+        out(0x3C4, 4); out(0x3C5, 0x06);
+        out(0x3D4, 0x12); out(0x3D5, 0xDF);
+        out(0x3D4, 0x07); out(0x3D5, 0x3E);
+        out(0x3D4, 0x09); out(0x3D5, 0x01);
+        out(0x3C4, 2); out(0x3C5, 0x0F);
+        for (int a = 0; a < t[i].dmd * 80; a++) mem_write8(&g_cpu, 0xA000, (uint16_t)a, 3);
+        for (int a = 0; a < t[i].rows * 80; a++) {
+            mem_write8(&g_cpu, 0xA000, (uint16_t)(t[i].page0 + a), 5);
+            mem_write8(&g_cpu, 0xA000, (uint16_t)(t[i].page1 + a), 7);
+        }
+        vga_dac_set(3, 63, 0, 0); vga_dac_set(5, 0, 63, 0); vga_dac_set(7, 0, 0, 63);
+        out(0x3D4, 0x18); out(0x3D5, (uint8_t)t[i].lc);
+        vga_compose_playfield(frame, &w, &h);            /* loading, no flip yet: black, */
+        for (int k = 0; k < w * h; k++) assert(frame[k] == 0xFF000000u);   /* not the scoreboard */
+
+        start_at(t[i].page0);
+        for (unsigned lc = t[i].lc;; lc = lc + 2 < 480 ? lc + 2 : 480) {
+            out(0x3D4, 0x18); out(0x3D5, (uint8_t)lc);
+            for (int p = 0; p < 2; p++) {
+                unsigned page = p ? t[i].page1 : t[i].page0;
+                unsigned starts[] = { page, page + 4 * 80, page + 183 * 80, page - 80 };   /* the last: one Up too many */
+                for (int k = 0; k < 4; k++) {
+                    start_at(starts[k]);
+                    for (int half = 0; half < 2; half++) {
+                        out(0x3D4, 0x09); out(0x3D5, half ? 0x41 : 0x01);
+                        assert(vga_compose_playfield(frame, &w, &h));
+                        assert(w == 320 && h == t[i].rows);
+                        for (int n = 0; n < w * h; n++) assert(frame[n] == (p ? blue : green));
+                        assert(vga_compose_score(frame, &w, &h));
+                        assert(w == 320 && h == t[i].dmd);
+                        for (int n = 0; n < w * h; n++) assert(frame[n] == red);
+                    }
+                    out(0x3D4, 0x09); out(0x3D5, 0x01);
+                }
+            }
+            if (lc == 480) break;
+        }
+    }
+    vga_set_mode(0x13);
+    assert(!vga_compose_score(frame, &w, &h));           /* back at the menu */
+}
+
 static int retrace_at(uint64_t us)
 {
     uint8_t v;
@@ -238,6 +297,7 @@ int main(void)
     test_smooth_sound();
     test_whole_table();
     test_table_layouts();
+    test_cabinet_views();
     test_flip_wait();
     test_images();
     printf("selftest: ok\n");

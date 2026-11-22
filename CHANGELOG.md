@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **`--cabinet`**, for virtual pinball machines (Linux): two windows without
+  decorations. The playfield fills a display with the whole table, never the
+  scoreboard, and F6 turns it a quarter at a time, menus and all. The
+  scoreboard has a window of its own, dragged and resized where the cabinet's
+  score display is, and stays live while the game hides its own. `--rotate`,
+  `--playfield-display` and `--score-window` set them; `[cabinet]` in
+  `epicpinball.ini` keeps them. Conformance 142 (9 of them cabinet's).
+
 ### Fixed
 - The whole table shook up and down on tables 9-13: their two pages are 395
   rows apart, not the 400 of tables 1-8, so every other frame was drawn five

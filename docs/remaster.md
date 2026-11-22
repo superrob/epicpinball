@@ -8,6 +8,7 @@ Chronicles recomp's, the blurred bars and the settings menu are Red Alert 2's,
 
 | Key | |
 |---|---|
+| **F6** | with `--cabinet`: turn the playfield ([below](#cabinet-mode)) |
 | **F7** | whole table, or the game's scrolling view |
 | **F9** | colour: natural, vivid |
 | **F10**, right-click | the settings menu |
@@ -49,6 +50,69 @@ The layout comes from the start addresses every table actually writes
 registers at run time, so no table has a constant of its own. Menus, the
 intro and anything that is not a table in Mode X 240 with a split show as
 usual.
+
+## Cabinet mode
+
+```sh
+./epicpinball.sh --cabinet
+```
+
+For a virtual pinball machine, on Linux (on Windows it says it is not
+supported yet). Two windows, neither with decorations:
+
+**The playfield** fills a display. It is the table's front page alone, 320×399
+(tables 9–13: 320×394) in square pixels: no scoreboard, whatever the game is
+doing with its own. **F6** turns it 90° clockwise, round to upright again,
+with everything in it: menus, intro, scanlines, bars. Turned on a 16:9 screen
+the table fills the height and about 70% of the length.
+
+**The scoreboard** is the rows the game keeps at the top of video memory,
+320×19 (tables 9–13: 320×29), in their own shape with black round them. The
+game goes on drawing them when Enter hides its scoreboard, so this window
+stays live. It is black when no table is up. Drag it to move it, drag an edge
+to resize it; right-click is still the settings.
+
+Messages are where the game puts them: on the playfield for tables 1–8, in
+the scoreboard for 9–13.
+
+To set a machine up:
+
+1. Start it once. It lists the displays:
+   `[cabinet] display 1: DP-2 1280x390 at 1920,0`.
+2. If the playfield is on the wrong one, find its number there and set
+   `playfield_display` in `saves/epicpinball.ini` (or pass
+   `--playfield-display N` each time). Numbers can change when monitors are
+   plugged in differently.
+3. Press F6 until the table reads from the front of the machine.
+4. Drag and resize the scoreboard into place, or pass
+   `--score-window X,Y,W,H`. With one display it starts at the top, over the
+   playfield; with more, in the middle of another.
+
+```ini
+[cabinet]
+rotation=90           ; 0, 90, 180, 270: F6 writes it
+playfield_display=0
+score_window=1920,0,1280,116
+```
+
+F6 and dragging are remembered there. The three options win for their run and
+are not written. Cabinet runs leave the ordinary window's settings alone
+(`whole_table`, `fullscreen`, `window`), and F7, F11 and Alt+Enter do nothing
+in one. The keys and the pad work whichever window has the focus, and closing
+either quits. F6 is a keyboard key: `controller.ini` presses the game's keys
+and cannot press it.
+
+- **Wayland** does not let a program place a window, so cabinet mode uses
+  X11 (XWayland) when there is one. `SDL_VIDEODRIVER=wayland` overrides that:
+  the playfield still fills its display, and the scoreboard, which cannot be
+  placed there, fills another, in its own shape. With only one display it
+  goes where the compositor puts it, which may be behind the playfield.
+- **Moving the focus** from one window to the other lets go of held keys
+  (SDL does this), so a click on the scoreboard with the plunger held back
+  launches the ball.
+- `--trace` logs any frame that took over 1 ms to put on screen
+  (`[present] slow`). Two windows are drawn on the game's thread, and the
+  retrace it waits for lasts 1.4 ms.
 
 ## The presenter
 
@@ -102,7 +166,7 @@ output=smooth         ; smooth, original
 ```
 
 The command line (`--scale`, `--look`, `--bars`, `--whole-table`,
-`--fullscreen`, `--window N`, `--classic`) wins over the file for that run and
+`--fullscreen`, `--window N`, `--classic`, and the cabinet's three) wins over the file for that run and
 is never written to it. Headless runs read only the command line, so a test
 never depends on anybody's preferences.
 
@@ -145,6 +209,10 @@ All of the above, with SDL2 doing what Win32 and Direct3D do on Windows
   `screenshots/`.
 
 ## Testing it
+
+With `--cabinet` each shot is the playfield, upright, and beside it
+`NAME-score.bmp`, the scoreboard; `--present` turns the playfield by
+`--rotate` as the window would. `--record` is always the game's own picture.
 
 `--present WxH` sends every `--shot-at` frame through the presenter,
 offscreen, at that size (on Linux with SDL's software renderer), so all of the above runs headless — over RDP and in

@@ -88,7 +88,7 @@ def table_keys(n):
     return ','.join(keys), p, end
 
 
-def run(out, seconds, keys, shots, extra=()):
+def run(out, seconds, keys, shots, extra=(), env=None):
     save = os.path.join(out, 'save')
     os.makedirs(save, exist_ok=True)
     cmd = [EXE, '--headless', '--trace', '--seconds', str(seconds), '--save', save,
@@ -100,7 +100,8 @@ def run(out, seconds, keys, shots, extra=()):
         cmd += ['--shot-at', ','.join(f'{ms}:{os.path.join(out, n + ".bmp")}'     # in time order
                                       for n, ms in sorted(shots.items(), key=lambda kv: kv[1]))]
     try:
-        p = subprocess.run(cmd, cwd=ROOT, capture_output=True, timeout=300)
+        p = subprocess.run(cmd, cwd=ROOT, capture_output=True, timeout=300,
+                           env=dict(os.environ, **env) if env else None)
         log, code = p.stderr.decode('latin-1'), p.returncode
     except subprocess.TimeoutExpired as e:
         log, code = (e.stderr or b'').decode('latin-1') + '\n[timeout]', -1
@@ -195,6 +196,76 @@ def scenario_remaster(out, n, plain):
             (f'remaster table {n}: a dark blur of the picture beside it', bars)]
 
 
+def shots_of(out, name, seconds, keys, shots, extra=(), env=None):
+    """One run's frames by name; None for one it did not write."""
+    d = os.path.join(out, name)
+    os.makedirs(d, exist_ok=True)
+    paths = {k: os.path.join(d, k + '.bmp') for k in shots}
+    if '--cabinet' in extra:
+        paths.update({k + '-score': os.path.join(d, k + '-score.bmp') for k in shots})
+    for p in paths.values():                        # none left from the last run
+        if os.path.exists(p):
+            os.remove(p)
+    run(d, seconds, keys, shots, extra, env)
+    return {k: read_bmp(p) if os.path.exists(p) else None for k, p in paths.items()}
+
+
+def scenario_cabinet_menu(out):
+    """--cabinet with no table up: the menu on the playfield, the scoreboard black."""
+    plain = shots_of(out, 'plain', MENU_MS / 1000 + 1, None, {'m': MENU_MS})['m']
+    cab = shots_of(out, 'cabinet', MENU_MS / 1000 + 1, None, {'m': MENU_MS}, ['--cabinet'])
+    board = cab['m-score']
+    return [('cabinet menu: on the playfield, the scoreboard black',
+             plain is not None and cab['m'] == plain and board is not None and not any(board[2]))]
+
+
+def scenario_cabinet(out, n):
+    """--cabinet on a table of each layout. What its two pictures must be is
+    read past the composers: EPIC_VRAM0 makes the game's own scanout show 240
+    rows from any address, here each page's first row and address 0."""
+    dmd, page_rows, bases = (19, 399, (1600, 33600)) if n <= 8 else (29, 394, (2400, 34000))
+    keys, play, end = table_keys(n)
+    keys += f',{play + 13000}:ENTER'                # the game hides its scoreboard
+    at = {'shown': play + 12000, 'hidden': play + 14500}
+    secs = (play + 15000) / 1000
+    plain = shots_of(out, 'plain', secs, keys, at)
+    cab = shots_of(out, 'cabinet', secs, keys, at, ['--cabinet'])
+    tops = [shots_of(out, f'from{b}', secs, keys, at, env={'EPIC_VRAM0': str(b)}) for b in bases]
+    zero = shots_of(out, 'from0', secs, keys, at, env={'EPIC_VRAM0': '0'})
+
+    def playfield(k, view):                         # view: how many rows of it the game shows
+        c, p = cab[k], plain[k]
+        if not c or not p or c[:2] != (320, page_rows) or p[:2] != (320, 240):
+            return False
+        front = any(t[k] and rows(c, 0, 240) == t[k][2] for t in tops)
+        band = any(rows(c, y, y + view) == rows(p, 0, view) for y in range(page_rows - view + 1))
+        return front and band                       # a page from its first row, the one on screen
+
+    def board(k, want):
+        c = cab[k + '-score']
+        return c is not None and c[:2] == (320, dmd) and c[2] == want
+
+    shown = playfield('shown', 240 - dmd)
+    score = plain['shown'] is not None and board('shown', rows(plain['shown'], 240 - dmd, 240))
+    hidden = (zero['hidden'] is not None and playfield('hidden', 240)
+              and board('hidden', rows(zero['hidden'], 0, dmd)))
+
+    # turned a quarter it is the portrait picture, turned: pixel for pixel
+    w, h, turned = 1280, 720, False
+    look = ['--cabinet', '--present']
+    up = shots_of(out, 'upright', secs, keys, {'t': at['shown']}, look + [f'{h}x{w}'])['t']
+    side = shots_of(out, 'turned', secs, keys, {'t': at['shown']}, look + [f'{w}x{h}', '--rotate', '90'])['t']
+    if up and side and up[:2] == (h, w) and side[:2] == (w, h):
+        turned = all(side[2][y * w + x] == up[2][(w - 1 - x) * h + y] for y in range(h) for x in range(w))
+    return [(f'cabinet table {n}: the playfield is the front page, no scoreboard', shown),
+            (f'cabinet table {n}: the scoreboard is the rows under the split', score),
+            (f'cabinet table {n}: both the same with the scoreboard hidden (Enter)', hidden),
+            (f'cabinet table {n}: --rotate 90 presents the same picture, turned', turned)]
+
+
+CABINET_CHECKS = 9       # scenario_cabinet_menu's, and scenario_cabinet's on two tables
+
+
 def scenario_determinism(out):
     """Headless time is deterministic: the same script twice, the same frame."""
     keys, play, end = table_keys(1)
@@ -226,6 +297,7 @@ def main():
               '(README, Getting Started)')
         return 0
     results = lift_checks()
+    skipped = 0
     tmp = os.path.join(ROOT, 'work', 'conformance')     # kept: the frames and logs explain a FAIL
     if True:
         def sub(name):
@@ -239,6 +311,13 @@ def main():
         for n in (1, 9):
             b = os.path.join(tmp, f'table{n}', 'b.bmp')
             results += scenario_remaster(sub(f'remaster{n}'), n, read_bmp(b) if os.path.exists(b) else None)
+        if os.name == 'nt':
+            skipped = CABINET_CHECKS                 # --cabinet is Linux only
+            print(f'SKIP  cabinet: Linux only ({skipped} checks)')
+        else:
+            results += scenario_cabinet_menu(sub('cabinet-menu'))
+            for n in (1, 9):
+                results += scenario_cabinet(sub(f'cabinet{n}'), n)
         results += scenario_determinism(sub('det'))
     for name, ok in results:
         print(f'{"PASS" if ok else "FAIL"}  {name}')
@@ -246,10 +325,10 @@ def main():
     print(f'\nconformance: {passed}/{total}')
     base = json.load(open(BASELINE)) if os.path.exists(BASELINE) else {'passed': 0, 'total': 0}
     if update:
-        json.dump({'passed': passed, 'total': total}, open(BASELINE, 'w'), indent=1)
-        print(f'baseline updated: {passed}/{total}')
+        json.dump({'passed': passed + skipped, 'total': total + skipped}, open(BASELINE, 'w'), indent=1)
+        print(f'baseline updated: {passed + skipped}/{total + skipped}')
         return 0
-    if passed < base['passed']:
+    if passed + skipped < base['passed']:
         print(f'REGRESSION: {passed} passed, baseline {base["passed"]}')
         return 1
     return 0

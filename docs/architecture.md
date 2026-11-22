@@ -153,6 +153,12 @@ not), SDL's audio queue, SDL scancodes translated to the PC's set 1, and SDL's
 GameController for the pad. Everything else -- the DOS machine, the lifted C,
 the settings file -- is the same code; `src/dos.c` finds a file whatever the
 case of its name, since DOS names have none.
+With `--cabinet` (Linux) there are two SDL windows, a renderer each, on the
+game's one thread, neither waiting for vsync: the playfield
+(`vga_compose_playfield`, turned by the presenter) every frame, the scoreboard
+(`vga_compose_score`) only when its pixels change, so the second window costs
+the retrace wait as little as it can ([remaster](remaster.md#cabinet-mode)).
+Both are composed from video memory and the palette at the same moment.
 Headless (`--headless`): no window and no audio device, so it works over RDP
 and in CI; `--record` pipes frames to ffmpeg, `--shot-at` writes frames at fixed
 emulated times (through the presenter, offscreen, with `--present WxH`),

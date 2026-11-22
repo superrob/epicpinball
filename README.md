@@ -29,7 +29,7 @@ ships, the output never does.
 ## Status
 
 **v0.1.0 — alpha. The menus and all thirteen tables boot and play; the
-conformance harness passes 133/133.**
+conformance harness passes 142/142 on Linux.**
 
 | | |
 |---|---|
@@ -40,12 +40,13 @@ conformance harness passes 133/133.**
 | Dot-matrix scoreboard (the VGA split screen) | ✅ |
 | Music and effects: Sound Blaster 16, 8-bit stereo, 22 kHz | ✅ measured, see below |
 | Windowed play at real speed | ✅ (seen on a virtual monitor) |
-| Linux, natively (gcc, SDL2) | ✅ 133/133 conformance on Debian 13; not yet tried on a Linux desktop |
+| Linux, natively (gcc, SDL2) | ✅ 142/142 conformance on Arch (133/133 on Debian 13, before cabinet mode); little tried on a real desktop |
 | Gamepad (XInput, `controller.ini`, GOG's DOSBox mapping by default) | implemented, untested on a real pad |
 | `SETUP.EXE` (the sound card menu) | not lifted: its start-up check is answered, and GOG's `SOUNDCRD.INF` (Sound Blaster 16) is used as shipped |
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, with hands on a keyboard | not yet |
-| **Conformance** ([docs](docs/conformance.md)) | **133/133** |
+| Cabinet mode, `--cabinet` (Linux only) | ✅ on virtual displays; not yet tried on a cabinet |
+| **Conformance** ([docs](docs/conformance.md)) | **142/142** on Linux (Windows skips the 9 cabinet checks) |
 
 Everything marked ✅ was seen working in scripted headless runs, which the
 conformance harness repeats. The sound was checked by measurement — a stereo
@@ -64,6 +65,9 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   scrolling, with the scoreboard under it. Not redrawn — the game keeps the
   entire table in video memory and only ever showed part of it; this shows
   the rest. Made for a tall window or a monitor turned on its side.
+- **Cabinet mode** (`--cabinet`, Linux): for a virtual pinball machine. The
+  whole table fills the playfield display, turned with F6; the scoreboard is
+  a window of its own. [How to set one up](docs/remaster.md#cabinet-mode).
 - **Its own window**, drawn with Direct3D 11 (SDL2 on Linux): resizable, borderless
   fullscreen (F11, Alt+Enter), remembered where you left it.
 - **Scaling** (F12): sharp-bilinear (default), smooth, CRT, nearest, integer.
@@ -240,6 +244,7 @@ epicpinball [options] [-- arguments for PINBALL.EXE]
 | **Enter** | show or hide the scoreboard |
 | **↑ ↓** | menus; look up and down the table |
 | **Esc** | back, quit |
+| **F6** | with `--cabinet`: turn the playfield 90° clockwise |
 | **F7** | whole table / scrolling view |
 | **F9** | colour: natural / vivid |
 | **F10**, right-click | settings menu |
@@ -257,6 +262,10 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 | `--window N` | window size, multiples of 320×240 (default 3, or where you left it) |
 | `--scale sharp\|smooth\|crt\|nearest\|integer`, `--look natural\|vivid`, `--bars blur\|black`, `--whole-table`, `--fullscreen` | this run's picture; wins over `epicpinball.ini` and is not saved to it |
 | `--classic` | the game's own picture: nearest, no extras |
+| `--cabinet` | a virtual pinball machine (Linux): the whole table on one display, the scoreboard in its own window, both borderless |
+| `--rotate 0\|90\|180\|270` | with `--cabinet`: the playfield turned clockwise, this run |
+| `--playfield-display N` | with `--cabinet`: the display the playfield fills; they are listed at start |
+| `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard goes, this run |
 | `--mute` | |
 | `--headless` | no window, no audio device, deterministic time — works over RDP |
 | `--record out.mp4` | video and audio through ffmpeg (with `--headless`: unattended) |
@@ -268,6 +277,11 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 # a minute of Super Android, recorded without a window
 build\Release\epicpinball.exe --headless --seconds 60 --record android.mp4 `
   --keys "22000:ENTER,24000:ENTER,26000:ENTER,35000:SPACE,37000:SPACE+1500"
+```
+
+```sh
+# a cabinet: the playfield on display 0, turned; the scoreboard on the screen right of it
+./epicpinball.sh --cabinet --rotate 90 --playfield-display 0 --score-window 1920,0,1280,116
 ```
 
 ## Building from source

@@ -40,6 +40,10 @@ typedef struct {
     int classic;              /* --classic: the game's own picture, no remaster */
     int present_w, present_h; /* --present WxH: --shot-at frames through the presenter */
     int realtime;             /* headless, but on the wall clock */
+    int cabinet;              /* --cabinet: the playfield and the scoreboard, a window each */
+    const char *rotate;       /* --rotate 0|90|180|270 */
+    const char *display;      /* --playfield-display N */
+    const char *score_window; /* --score-window X,Y,W,H */
 } Options;
 extern Options g_opt;
 
@@ -50,6 +54,7 @@ typedef struct {
     int look;                 /* 0 natural, 1 vivid */
     int bars;                 /* beside the picture: 0 black, 1 a blur of it */
     int whole;                /* the whole table, no scrolling (vga_compose_table) */
+    int rot;                  /* --cabinet: quarter turns clockwise (SDL only) */
 } Present;
 extern int g_audio_smooth;    /* audio.c: interpolate the DSP's samples (else hold them) */
 
@@ -94,6 +99,9 @@ void vga_dac_set(int i, uint8_t r, uint8_t g, uint8_t b);
 void vga_dac_get(int i, uint8_t *r, uint8_t *g, uint8_t *b);
 void vga_compose(uint32_t *out, int *w, int *h);
 int  vga_compose_table(uint32_t *out, int *w, int *h);   /* the whole table, or 0 */
+int  vga_compose_playfield(uint32_t *out, int *w, int *h);   /* --cabinet's playfield: 1 if it is a table */
+int  vga_compose_score(uint32_t *out, int *w, int *h);   /* --cabinet's scoreboard, or 0 */
+#define FRAME_PIXELS (640 * 480)      /* what any of them may write */
 extern int g_tick_hold, g_recomp_tick_budget;
 
 /* audio.c: Sound Blaster DSP + 8237 DMA, PC speaker */

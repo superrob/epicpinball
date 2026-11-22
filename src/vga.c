@@ -148,17 +148,23 @@ int recomp_mem_read8(CPU *cpu, uint32_t a, uint8_t *out)
     return 1;
 }
 
+/* Mode X 320x240, which only the tables use. The split is no part of it. */
+static int table_screen(void)
+{
+    if (mode != 0x13 || chain4) return 0;
+    unsigned vde = crtc[0x12] | ((crtc[0x07] & 2) << 7) | ((crtc[0x07] & 0x40) << 3);
+    return (vde + 1) / ((crtc[0x09] & 0x1F) + 1u) == 240;
+}
+
 /* The rows under the line-compare split: a table's scoreboard, as much of it
  * as shows right now. 0 when the screen is not Mode X 240 with a split. */
 static int display_rows(void)
 {
-    if (mode != 0x13 || chain4) return 0;
-    unsigned vde = crtc[0x12] | ((crtc[0x07] & 2) << 7) | ((crtc[0x07] & 0x40) << 3);
+    if (!table_screen()) return 0;
     unsigned scan = (crtc[0x09] & 0x1F) + 1;
-    int rows = (int)((vde + 1) / scan);
     unsigned lc = crtc[0x18] | ((crtc[0x07] & 0x10) << 4) | ((crtc[0x09] & 0x40) << 3);
     int split = (int)((lc + 1) / scan);
-    return rows == 240 && split > 0 && split < rows ? rows - split : 0;
+    return split > 0 && split < 240 ? 240 - split : 0;
 }
 
 /* ---- ports 3C0-3DA --------------------------------------------------------- */
@@ -312,6 +318,33 @@ void vga_compose(uint32_t *out, int *w, int *h)
     }
 }
 
+/* Where a table's two pages are. They start after the full display's rows,
+ * rounded up to ten, and halve what is left of the 64K, the first taking the
+ * odd row: tables 1-8 show 19 and keep 20 (pages 400 rows apart, at 1600 and
+ * 33600), 9-13 show 29 and keep 30 (395 apart, at 2400 and 34000) -- the
+ * addresses in every table's own flip. */
+typedef struct { unsigned row, start, base0, base1; int rows; } Pages;
+
+static Pages table_pages(void)
+{
+    Pages p;
+    p.row = crtc[0x13] ? crtc[0x13] * 2u : 80u;
+    p.start = ((unsigned)crtc[0x0C] << 8) | crtc[0x0D];
+    p.base0 = (table_dmd + 9) / 10 * 10 * p.row;
+    unsigned left = (0x10000 - p.base0) / p.row;
+    p.base1 = p.base0 + (left + 1) / 2 * p.row;
+    p.rows = (int)((0x10000 - p.base1) / p.row);         /* the second page ends at 64K */
+    return p;
+}
+
+/* n Mode X rows of video memory from an address */
+static void copy_rows(uint32_t *out, unsigned base, unsigned row, int n)
+{
+    for (int y = 0; y < n; y++)
+        for (int x = 0; x < 320; x++)
+            out[y * 320 + x] = rgb(vram[(((base + y * row + (x >> 2)) & 0xFFFF) << 2) | (x & 3)]);
+}
+
 /* The whole table at once, for the remaster's "whole table" view. VRAM holds
  * each table twice -- two pages, flipped by the start address -- below the
  * dot-matrix display at address 0, and the CRTC only ever shows the
@@ -324,24 +357,41 @@ int vga_compose_table(uint32_t *out, int *w, int *h)
 {
     int dmd = display_rows();
     if (!dmd || !table_dmd) return 0;
-    unsigned row = crtc[0x13] ? crtc[0x13] * 2u : 80u;
-    unsigned start = ((unsigned)crtc[0x0C] << 8) | crtc[0x0D];
-    /* The pages start after the full display's rows, rounded up to ten, and
-     * halve what is left of the 64K, the first taking the odd row: tables 1-8
-     * show 19 and keep 20 (pages 400 rows apart, at 1600 and 33600), 9-13 show
-     * 29 and keep 30 (395 apart, at 2400 and 34000) -- the addresses in every
-     * table's own flip. */
-    unsigned base0 = (table_dmd + 9) / 10 * 10 * row;
-    unsigned left = (0x10000 - base0) / row, base1 = base0 + (left + 1) / 2 * row;
-    if (start < base0) return 0;
-    unsigned base = start >= base1 ? base1 : base0;
-    int page = (int)((0x10000 - base1) / row);              /* the second page ends at 64K */
-    *w = 320; *h = page + dmd;
-    for (int y = 0; y < *h; y++) {
-        unsigned a = y < page ? base + y * row : (unsigned)(y - page) * row;
-        for (int x = 0; x < 320; x++)
-            out[y * 320 + x] = rgb(vram[(((a + (x >> 2)) & 0xFFFF) << 2) | (x & 3)]);
+    Pages p = table_pages();
+    if (p.start < p.base0) return 0;
+    *w = 320; *h = p.rows + dmd;
+    copy_rows(out, p.start >= p.base1 ? p.base1 : p.base0, p.row, p.rows);
+    copy_rows(out + p.rows * 320, 0, p.row, dmd);
+    return 1;
+}
+
+/* --cabinet's playfield: the front page alone. The split is not asked: Enter
+ * takes it to 240, where there is nothing under it, and the page is the same.
+ * The page is the nearer one, as a scroll can sit a row above a page's top.
+ * A table still loading is black, as its scoreboard is the first thing in
+ * video memory. Returns 0, with the screen as it is, when it is not a table. */
+int vga_compose_playfield(uint32_t *out, int *w, int *h)
+{
+    if (!table_screen()) { vga_compose(out, w, h); return 0; }
+    *w = 320;
+    if (!table_dmd) {
+        *h = 240;
+        for (int i = 0; i < 320 * 240; i++) out[i] = 0xFF000000u;
+        return 1;
     }
+    Pages p = table_pages();
+    *h = p.rows;
+    copy_rows(out, p.start >= (p.base0 + p.base1) / 2 ? p.base1 : p.base0, p.row, p.rows);
+    return 1;
+}
+
+/* --cabinet's scoreboard: address 0 at the display's full height, which the
+ * game keeps drawing while it has it hidden. 0 when no table is up. */
+int vga_compose_score(uint32_t *out, int *w, int *h)
+{
+    if (!table_screen() || !table_dmd) return 0;
+    *w = 320; *h = table_dmd;
+    copy_rows(out, 0, table_pages().row, table_dmd);
     return 1;
 }
 

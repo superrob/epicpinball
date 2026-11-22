@@ -29,9 +29,10 @@
   SB16 covers everyone today.
 - **Gamepad**: `controller.ini`, GOG's mapping by default, untested on hardware.
   Rumble on the flippers and bumpers would be the remaster's next touch.
-- **Portrait fullscreen**: the whole table on a monitor turned on its side
-  fills it; rotating the picture for a sideways monitor left in landscape
-  mode (cabinet style) is a shader change.
+- **Cabinet mode on Windows**: `--cabinet` is Linux only. Windows needs a
+  swap chain per window and the turn in the shader.
+- **Cabinet mode on a cabinet**: it is tested on virtual displays. Real
+  screens, KDE and wlroots, and SDL2 proper (not sdl2-compat) are untried.
 - **Saves**: high scores and `CONFIG.PIN` go to `saves\`; check that every
   table's high-score entry round-trips.
 

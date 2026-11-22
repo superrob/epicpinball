@@ -20,6 +20,12 @@
  *   --whole-table     the whole table, no scrolling (F7)
  *   --bars MODE       beside the picture: blur or black
  *   --classic         the game's own picture: nearest, no extras, GDI
+ *   --cabinet         a virtual pinball machine (Linux): the whole table on
+ *                     one display (F6 turns it), the scoreboard in a window
+ *                     of its own, neither with a frame
+ *   --rotate DEG      with --cabinet, the playfield turned clockwise: 0, 90, 180, 270
+ *   --playfield-display N  with --cabinet, the playfield's display (it lists them)
+ *   --score-window X,Y,W,H  with --cabinet, the scoreboard's place
  *   --present WxH     --shot-at frames through the presenter at that size
  * Settings changed in the window are kept in epicpinball.ini in the save
  * folder; the options above win over it, and headless runs read only them.
@@ -32,6 +38,7 @@
 #include <setjmp.h>
 #include <stdarg.h>
 #ifdef _WIN32
+#include <windows.h>
 #include <direct.h>
 #else
 #include <sys/resource.h>
@@ -41,11 +48,36 @@ Options g_opt;
 extern jmp_buf g_exit_jmp;
 extern int g_exit_code;
 void host_snapshot(const char *path);
+int host_parse_turn(const char *s);
+int host_parse_place(const char *s, RECT *r);
 
 void trace(const char *fmt, ...)
 {
     if (!g_opt.trace) return;
     va_list ap; va_start(ap, fmt); vfprintf(stderr, fmt, ap); va_end(ap);
+}
+
+/* What is wrong with the cabinet options, or NULL */
+static const char *cabinet_check(void)
+{
+    if (!g_opt.cabinet) {
+        if (g_opt.rotate || g_opt.display || g_opt.score_window)
+            return "--rotate, --playfield-display and --score-window need --cabinet";
+        return NULL;
+    }
+#ifdef _WIN32
+    return "--cabinet is not supported on Windows yet (Linux only for now)";
+#else
+    RECT r;
+    if (g_opt.classic) return "--cabinet and --classic do not go together";
+    if (g_opt.window) return "--window is the ordinary window's size: with --cabinet use --score-window X,Y,W,H";
+    if (g_opt.rotate && host_parse_turn(g_opt.rotate) < 0) return "--rotate takes 0, 90, 180 or 270";
+    if (g_opt.display && (!*g_opt.display || g_opt.display[strspn(g_opt.display, "0123456789")]))
+        return "--playfield-display takes a display's number, from 0";
+    if (g_opt.score_window && !host_parse_place(g_opt.score_window, &r))
+        return "--score-window takes X,Y,W,H, at least 32x8, e.g. 1920,0,1280,116";
+    return NULL;
+#endif
 }
 
 void fatal(const char *fmt, ...)
@@ -96,6 +128,10 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--bars") && v) { g_opt.bars = v; i++; }
         else if (!strcmp(a, "--whole-table")) g_opt.whole = 1;
         else if (!strcmp(a, "--classic")) g_opt.classic = 1;
+        else if (!strcmp(a, "--cabinet")) g_opt.cabinet = 1;
+        else if (!strcmp(a, "--rotate") && v) { g_opt.rotate = v; i++; }
+        else if (!strcmp(a, "--playfield-display") && v) { g_opt.display = v; i++; }
+        else if (!strcmp(a, "--score-window") && v) { g_opt.score_window = v; i++; }
         else if (!strcmp(a, "--present") && v) { sscanf(v, "%dx%d", &g_opt.present_w, &g_opt.present_h); i++; }
         else if (!strcmp(a, "--fullscreen")) g_opt.fullscreen = 1;
         else if (!strcmp(a, "--realtime")) g_opt.realtime = 1;
@@ -107,6 +143,8 @@ int main(int argc, char **argv)
             }
         } else { fprintf(stderr, "unknown option %s (see the top of src/main.c)\n", a); return 2; }
     }
+    const char *wrong = cabinet_check();
+    if (wrong) { fprintf(stderr, "%s\n", wrong); return 2; }
     if (!g_opt.datadir) g_opt.datadir = "original";
     if (!g_opt.savedir) g_opt.savedir = "saves";
     g_opt.args = tail;

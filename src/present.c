@@ -25,7 +25,9 @@
  * is one, else SDL's software renderer, which also makes the --present
  * shots): sharp is a nearest prescale to whole multiples, then bilinear the
  * rest of the way; CRT lays its scanlines and mask over that as a multiply;
- * vivid and the blur are the CPU's, as here.
+ * vivid and the blur are the CPU's, as here. --cabinet has two windows, so a
+ * renderer each; a turned playfield is drawn upright into a texture and that
+ * is turned, so everything in it turns together.
  */
 #define COBJMACROS
 #include "machine.h"
@@ -349,13 +351,14 @@ int present_offscreen(const uint32_t *f, int w, int h, double aspect, const Pres
 /* ---- SDL2: Linux ----------------------------------------------------------------- */
 
 typedef struct {
+    SDL_Window *wnd;
     SDL_Renderer *r;
-    SDL_Texture *frame, *back, *mid, *crt;
-    int fw, fh, bw, bh, mw, mh;
+    SDL_Texture *frame, *back, *mid, *crt, *turn;
+    int fw, fh, bw, bh, mw, mh, tw, th;
     int cx, cw, ch, csrc;                /* what crt was made for */
 } Sdl;
 
-static Sdl win_sdl;
+static Sdl win_sdl[2];                   /* the window; with --cabinet, the scoreboard's too */
 
 /* A texture of this size, made again only when the size changes */
 static SDL_Texture *sized(Sdl *p, SDL_Texture **t, int *tw, int *th, int w, int h, int access)
@@ -425,7 +428,8 @@ static void crt_overlay(Sdl *p, const SDL_Rect *d, int src_h)
     SDL_RenderCopy(p->r, p->crt, NULL, d);
 }
 
-static void sdl_draw(Sdl *p, int cw, int ch, const uint32_t *f, int w, int h, double aspect, const Present *s)
+static void sdl_draw(Sdl *p, SDL_Texture *dest, int cw, int ch, const uint32_t *f, int w, int h,
+                     double aspect, const Present *s)
 {
     SDL_Renderer *r = p->r;
     RECT pr; present_rect(cw, ch, w, h, aspect, s->mode, &pr);
@@ -442,10 +446,10 @@ static void sdl_draw(Sdl *p, int cw, int ch, const uint32_t *f, int w, int h, do
         SDL_RenderCopy(r, t, NULL, NULL);
         t = m;
     }
-    SDL_SetRenderTarget(r, NULL);
+    SDL_SetRenderTarget(r, dest);
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
     SDL_RenderClear(r);
-    if (s->bars) {
+    if (s->bars && w >= 8 && h >= 8) {              /* the blur is of an eighth-size copy */
         int bw, bh;
         make_backdrop(f, w, h, &bw, &bh);
         SDL_Texture *b = sized(p, &p->back, &p->bw, &p->bh, bw, bh, SDL_TEXTUREACCESS_STREAMING);
@@ -462,22 +466,65 @@ static void sdl_draw(Sdl *p, int cw, int ch, const uint32_t *f, int w, int h, do
     if (s->mode == PRESENT_CRT) crt_overlay(p, &d, h);
 }
 
+/* The picture turned s->rot quarters clockwise: drawn upright at the turned
+ * size, scaling, mask, bars and all, then that turned. */
+static void sdl_turned(Sdl *p, int cw, int ch, const uint32_t *f, int w, int h, double aspect, const Present *s)
+{
+    if (!s->rot) { sdl_draw(p, NULL, cw, ch, f, w, h, aspect, s); return; }
+    int side = s->rot & 1, tw = side ? ch : cw, th = side ? cw : ch;
+    SDL_Texture *t = sized(p, &p->turn, &p->tw, &p->th, tw, th, SDL_TEXTUREACCESS_TARGET);
+    sdl_draw(p, t, tw, th, f, w, h, aspect, s);
+    SDL_SetRenderTarget(p->r, NULL);
+    SDL_RenderClear(p->r);
+    SDL_SetTextureScaleMode(t, SDL_ScaleModeNearest);
+    /* about its own top left corner, put where that corner lands: the middle
+     * is half a pixel off when the window's sides differ by an odd number */
+    const SDL_FRect d = { s->rot == 3 ? 0.0f : (float)cw, s->rot == 1 ? 0.0f : (float)ch, (float)tw, (float)th };
+    const SDL_FPoint corner = { 0, 0 };
+    SDL_RenderCopyExF(p->r, t, NULL, &d, 90.0 * s->rot, &corner, SDL_FLIP_NONE);
+}
+
+/* This window's renderer, made the first time. Never vsync: the game waits
+ * for an emulated retrace 1.4 ms long on this thread. */
+static Sdl *sdl_of(SDL_Window *wnd)
+{
+    Sdl *p = !win_sdl[0].wnd || win_sdl[0].wnd == wnd ? &win_sdl[0] : &win_sdl[1];
+    if (p->r) return p;
+    p->r = SDL_CreateRenderer(wnd, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE);
+    if (!p->r) p->r = SDL_CreateRenderer(wnd, -1, SDL_RENDERER_SOFTWARE);
+    if (!p->r) { fprintf(stderr, "[present] no SDL renderer: %s\n", SDL_GetError()); return NULL; }
+    p->wnd = wnd;
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+    if (g_opt.cabinet) SDL_RenderSetVSync(p->r, 0);   /* whatever SDL_RENDER_VSYNC says */
+#endif
+    SDL_RendererInfo i;
+    SDL_GetRendererInfo(p->r, &i);
+    fprintf(stderr, "[present] SDL %s\n", i.name);
+    return p;
+}
+
+/* The renderer before the window is shown: making it may remake the window */
+int present_prepare(SDL_Window *wnd) { return sdl_of(wnd) != NULL; }
+
 int present_window(SDL_Window *wnd, const uint32_t *f, int w, int h, double aspect, const Present *s)
 {
-    if (!win_sdl.r) {
-        win_sdl.r = SDL_CreateRenderer(wnd, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE);
-        if (!win_sdl.r) win_sdl.r = SDL_CreateRenderer(wnd, -1, SDL_RENDERER_SOFTWARE);
-        if (!win_sdl.r) { fprintf(stderr, "[present] no SDL renderer: %s\n", SDL_GetError()); return 0; }
-        SDL_RendererInfo i;
-        SDL_GetRendererInfo(win_sdl.r, &i);
-        fprintf(stderr, "[present] SDL %s\n", i.name);
-    }
+    Sdl *p = sdl_of(wnd);
+    if (!p) return 0;
     int cw, ch;
-    SDL_GetRendererOutputSize(win_sdl.r, &cw, &ch);
+    SDL_GetRendererOutputSize(p->r, &cw, &ch);
     if (cw <= 0 || ch <= 0) return 1;
-    sdl_draw(&win_sdl, cw, ch, f, w, h, aspect, s);
-    SDL_RenderPresent(win_sdl.r);
+    sdl_turned(p, cw, ch, f, w, h, aspect, s);
+    SDL_RenderPresent(p->r);
     return 1;
+}
+
+/* Before the windows go */
+void present_close(void)
+{
+    for (int i = 0; i < 2; i++) {
+        if (win_sdl[i].r) SDL_DestroyRenderer(win_sdl[i].r);      /* and its textures */
+        memset(&win_sdl[i], 0, sizeof win_sdl[i]);
+    }
 }
 
 /* --present: SDL's software renderer into memory, no display needed */
@@ -488,7 +535,7 @@ int present_offscreen(const uint32_t *f, int w, int h, double aspect, const Pres
     Sdl p = { 0 };
     p.r = sf ? SDL_CreateSoftwareRenderer(sf) : NULL;
     if (!p.r) { SDL_FreeSurface(sf); return 0; }
-    sdl_draw(&p, ow, oh, f, w, h, aspect, s);
+    sdl_turned(&p, ow, oh, f, w, h, aspect, s);
     SDL_RenderPresent(p.r);
     for (int y = 0; y < oh; y++) {
         const uint32_t *row = (const uint32_t *)((const uint8_t *)sf->pixels + (size_t)y * sf->pitch);
