@@ -8,6 +8,7 @@ Chronicles recomp's, the blurred bars and the settings menu are Red Alert 2's,
 
 | Key | |
 |---|---|
+| **F5** | with `--cabinet`: stretch the table to fill its display, or back ([below](#cabinet-mode)) |
 | **F6** | with `--cabinet`: turn the playfield ([below](#cabinet-mode)) |
 | **F7** | whole table, or the game's scrolling view |
 | **F9** | colour: natural, vivid |
@@ -16,7 +17,9 @@ Chronicles recomp's, the blurred bars and the settings menu are Red Alert 2's,
 | **F12** | scaling: sharp → smooth → CRT → nearest → integer |
 | **PrtSc** | screenshot of what is on screen, to `screenshots\` |
 
-The game never uses F7–F12 or the mouse, so taking them costs it nothing.
+The game never uses F7–F12 or the mouse, so taking them costs it nothing. Nor
+does it use F5 and F6 in play (in the menus, like any key, they end the intro),
+and only cabinet mode takes those.
 
 ## The whole table
 
@@ -64,7 +67,11 @@ supported yet). Two windows, neither with decorations:
 (tables 9–13: 320×394) in square pixels: no scoreboard, whatever the game is
 doing with its own. **F6** turns it 90° clockwise, round to upright again,
 with everything in it: menus, intro, scanlines, bars. Turned on a 16:9 screen
-the table fills the height and about 70% of the length.
+the table fills the height and about 70% of the length. **F5** stretches it to
+every pixel of the display, out of its shape, and back; turned or not, with
+the scaling and the CRT look as they are. Only a table is stretched: the menus,
+before a table and after leaving one, keep their shape, and so does the
+scoreboard. F5 stretching works on a real cabinet.
 
 **The scoreboard** is the rows the game keeps at the top of video memory,
 320×19 (tables 9–13: 320×29), in their own shape with black round them. The
@@ -91,11 +98,13 @@ To set a machine up:
 ```ini
 [cabinet]
 rotation=90           ; 0, 90, 180, 270: F6 writes it
+stretch=0             ; 1: a table fills its display; F5 writes it
 playfield_display=0
 score_window=1920,0,1280,116
 ```
 
-F6 and dragging are remembered there. The three options win for their run and
+F5, F6 and dragging are remembered there. `--stretch`, `--rotate`,
+`--playfield-display` and `--score-window` win for their run and
 are not written. Cabinet runs leave the ordinary window's settings alone
 (`whole_table`, `fullscreen`, `window`), and F7, F11 and Alt+Enter do nothing
 in one. The keys and the pad work whichever window has the focus, and closing

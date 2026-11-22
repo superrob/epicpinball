@@ -215,8 +215,13 @@ def scenario_cabinet_menu(out):
     plain = shots_of(out, 'plain', MENU_MS / 1000 + 1, None, {'m': MENU_MS})['m']
     cab = shots_of(out, 'cabinet', MENU_MS / 1000 + 1, None, {'m': MENU_MS}, ['--cabinet'])
     board = cab['m-score']
-    return [('cabinet menu: on the playfield, the scoreboard black',
-             plain is not None and cab['m'] == plain and board is not None and not any(board[2]))]
+    # F5's stretch is for tables: the menu keeps its shape
+    look = ['--cabinet', '--scale', 'nearest', '--bars', 'black']
+    fit = shots_of(out, 'fit', MENU_MS / 1000 + 1, None, {'m': MENU_MS}, look + ['--present', '1080x1920'])['m']
+    held = shots_of(out, 'stretch', MENU_MS / 1000 + 1, None, {'m': MENU_MS}, look + ['--stretch', '--present', '1080x1920'])['m']
+    shaped = fit is not None and held == fit and not any(fit[2][:1080])       # bars above it, as fitted
+    return [('cabinet menu: on the playfield, the scoreboard black, and --stretch leaves it in shape',
+             plain is not None and cab['m'] == plain and board is not None and not any(board[2]) and shaped)]
 
 
 def scenario_cabinet(out, n):
@@ -257,13 +262,30 @@ def scenario_cabinet(out, n):
     side = shots_of(out, 'turned', secs, keys, {'t': at['shown']}, look + [f'{w}x{h}', '--rotate', '90'])['t']
     if up and side and up[:2] == (h, w) and side[:2] == (w, h):
         turned = all(side[2][y * w + x] == up[2][(w - 1 - x) * h + y] for y in range(h) for x in range(w))
+
+    # --stretch: the playfield to every pixel of the window, out of shape, turned too
+    near = ['--cabinet', '--scale', 'nearest', '--bars', 'black', '--stretch', '--present']
+    sup = shots_of(out, 'stretched', secs, keys, {'t': at['shown']}, near + ['1080x1920'])['t']
+    sside = shots_of(out, 'stretched-turned', secs, keys, {'t': at['shown']}, near + ['1920x1080', '--rotate', '90'])['t']
+    stretched, c = False, cab['shown']
+    if sup and sside and c and sup[:2] == (1080, 1920) and sside[:2] == (1920, 1080):
+        sw, sh = sup[:2]
+        fw, fh = c[:2]
+        same = sum(sup[2][y * sw + x] == c[2][int((y + .5) * fh / sh) * fw + int((x + .5) * fw / sw)]
+                   for y in range(0, sh, 7) for x in range(0, sw, 5))
+        edges = (any(sup[2][x] & 0xFFFFFF for x in range(sw)) and any(sup[2][(sh - 1) * sw + x] & 0xFFFFFF for x in range(sw))
+                 and any(sup[2][y * sw] & 0xFFFFFF for y in range(sh)) and any(sup[2][y * sw + sw - 1] & 0xFFFFFF for y in range(sh)))
+        filled = edges and same >= .95 * len(range(0, sh, 7)) * len(range(0, sw, 5))      # nearest rounds at edges
+        stretched = filled and all(sside[2][y * sh + x] == sup[2][(sh - 1 - x) * sw + y]
+                                   for y in range(0, sw, 3) for x in range(0, sh, 3))
     return [(f'cabinet table {n}: the playfield is the front page, no scoreboard', shown),
             (f'cabinet table {n}: the scoreboard is the rows under the split', score),
             (f'cabinet table {n}: both the same with the scoreboard hidden (Enter)', hidden),
-            (f'cabinet table {n}: --rotate 90 presents the same picture, turned', turned)]
+            (f'cabinet table {n}: --rotate 90 presents the same picture, turned', turned),
+            (f'cabinet table {n}: --stretch fills the display with it, turned too', stretched)]
 
 
-CABINET_CHECKS = 9       # scenario_cabinet_menu's, and scenario_cabinet's on two tables
+CABINET_CHECKS = 11      # scenario_cabinet_menu's, and scenario_cabinet's on two tables
 
 
 def scenario_feedback(out, n, plain_dir):

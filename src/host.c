@@ -43,6 +43,7 @@ static uint32_t frame[FRAME_MAX];
 static uint32_t big[FRAME_MAX];
 static int fw = 320, fh = 200;
 static double frame_aspect = 4.0 / 3;
+static int table_up;                   /* --cabinet: the playfield is a table, not a menu */
 
 static uint32_t score[FRAME_MAX];      /* --cabinet's second screen */
 static int sw = 320, sh = 29;
@@ -64,8 +65,8 @@ static void compose(void)
 static void compose_view(void)
 {
     if (g_opt.cabinet) {
-        int table = vga_compose_playfield(frame, &fw, &fh);
-        frame_aspect = table ? (double)fw / fh : 4.0 / 3;   /* square pixels; the menus' 4:3 */
+        table_up = vga_compose_playfield(frame, &fw, &fh);
+        frame_aspect = table_up ? (double)fw / fh : 4.0 / 3;   /* square pixels; the menus' 4:3 */
         if (!vga_compose_score(score, &sw, &sh)) {
             sw = 320; sh = 29;
             for (int i = 0; i < sw * sh; i++) score[i] = 0xFF000000u;
@@ -76,7 +77,16 @@ static void compose_view(void)
     else compose();
 }
 
-void present_rect(int cw, int ch, int w, int h, double aspect, int mode, RECT *r);
+/* How the playfield is drawn: stretched (F5) only while a table is up, the
+ * menus always in their own shape */
+static Present playfield_how(void)
+{
+    Present p = S;
+    p.stretch = S.stretch && table_up;
+    return p;
+}
+
+void present_rect(int cw, int ch, int w, int h, double aspect, int mode, int fill, RECT *r);
 #ifdef _WIN32
 int  present_window(HWND hw, const uint32_t *f, int w, int h, double aspect, const Present *s);
 #else
@@ -301,8 +311,9 @@ static void settings_save(void)
                 (long)(win_rect.right - win_rect.left), (long)(win_rect.bottom - win_rect.top));
     fprintf(f, "[sound]\noutput=%s\n", g_audio_smooth ? "smooth" : "original");
     int placed = saved_score.right > saved_score.left;
-    if (g_opt.cabinet || placed || saved.rot || saved_display) {    /* kept by ordinary runs too */
-        fprintf(f, "[cabinet]\nrotation=%d\nplayfield_display=%d\n", saved.rot * 90, saved_display);
+    if (g_opt.cabinet || placed || saved.rot || saved.stretch || saved_display) {    /* kept by ordinary runs too */
+        fprintf(f, "[cabinet]\nrotation=%d\nstretch=%d\nplayfield_display=%d\n", saved.rot * 90, saved.stretch,
+                saved_display);
         if (placed)
             fprintf(f, "score_window=%ld,%ld,%ld,%ld\n", (long)saved_score.left, (long)saved_score.top,
                     (long)(saved_score.right - saved_score.left), (long)(saved_score.bottom - saved_score.top));
@@ -321,10 +332,11 @@ static void settings_load(void)
     saved = S;
     int turn = host_parse_turn(ini_get(ini, "cabinet", "rotation", "0", v, sizeof v));
     saved.rot = turn < 0 ? 0 : turn;
+    saved.stretch = atoi(ini_get(ini, "cabinet", "stretch", "0", v, sizeof v)) != 0;
     saved_display = atoi(ini_get(ini, "cabinet", "playfield_display", "0", v, sizeof v));
     if (!host_parse_place(ini_get(ini, "cabinet", "score_window", "", v, sizeof v), &saved_score))
         memset(&saved_score, 0, sizeof saved_score);
-    if (g_opt.cabinet) { S.rot = saved.rot; cab_display = saved_display; cab_score = saved_score; }
+    if (g_opt.cabinet) { S.rot = saved.rot; S.stretch = saved.stretch; cab_display = saved_display; cab_score = saved_score; }
     saved_full = atoi(ini_get(ini, "display", "fullscreen", "0", v, sizeof v));
     if (saved_full) g_opt.fullscreen = 1;
     long x, y, w, h;
@@ -348,6 +360,7 @@ static void settings_args(void)
     if (g_opt.whole) S.whole = 1;
     if (g_opt.classic) { S.mode = PRESENT_NEAREST; S.look = S.bars = S.whole = 0; }
     if (g_opt.rotate) S.rot = host_parse_turn(g_opt.rotate);
+    if (g_opt.stretch) S.stretch = 1;
     if (g_opt.display) cab_display = atoi(g_opt.display);
     if (g_opt.score_window) host_parse_place(g_opt.score_window, &cab_score);
 }
@@ -372,13 +385,14 @@ static void screenshot_key(void)
 }
 
 enum { ID_MODE = 100, ID_LOOK = 120, ID_WHOLE = 130, ID_BARS_BLUR, ID_BARS_BLACK, ID_FULL,
-       ID_SOUND_SMOOTH, ID_SOUND_ORIG, ID_SHOT, ID_PAD, ID_TURN };
+       ID_SOUND_SMOOTH, ID_SOUND_ORIG, ID_SHOT, ID_PAD, ID_TURN, ID_STRETCH };
 
 /* A change made in the window: shown, and remembered */
 static void command(int id)
 {
     if (g_opt.cabinet && (id == ID_WHOLE || id == ID_FULL)) return;     /* it is always both */
     if (g_opt.cabinet && id == ID_TURN) S.rot = saved.rot = (S.rot + 1) % 4;
+    else if (g_opt.cabinet && id == ID_STRETCH) S.stretch = saved.stretch = !S.stretch;
     else if (id >= ID_MODE && id < ID_MODE + PRESENT_MODES) S.mode = saved.mode = id - ID_MODE;
     else if (id == ID_LOOK || id == ID_LOOK + 1) S.look = saved.look = id - ID_LOOK;
     else if (id == ID_WHOLE) S.whole = saved.whole = !S.whole;
@@ -421,7 +435,7 @@ static void set_fullscreen(int on)
 static void paint_gdi(HDC dc)
 {
     RECT c, r; GetClientRect(wnd, &c);
-    present_rect(c.right, c.bottom, fw, fh, frame_aspect, S.mode, &r);
+    present_rect(c.right, c.bottom, fw, fh, frame_aspect, S.mode, S.stretch, &r);
     int w = r.right - r.left, h = r.bottom - r.top;
     PatBlt(dc, 0, 0, c.right, r.top, BLACKNESS); PatBlt(dc, 0, r.bottom, c.right, c.bottom - r.bottom, BLACKNESS);
     PatBlt(dc, 0, 0, r.left, c.bottom, BLACKNESS); PatBlt(dc, r.right, 0, c.right - r.right, c.bottom, BLACKNESS);
@@ -637,8 +651,10 @@ static void board_aside(int aside);
 /* SDL has no popup menus: the settings and keys, with buttons for what no key does */
 static void menu(void)
 {
-    char msg[300], view[80], full[40] = "";
-    if (g_opt.cabinet) snprintf(view, sizeof view, "Playfield turned: %d degrees (F6)", S.rot * 90);
+    char msg[360], view[120], full[40] = "";
+    if (g_opt.cabinet)
+        snprintf(view, sizeof view, "Playfield turned: %d degrees (F6)\nPlayfield stretched: %s (F5)", S.rot * 90,
+                 S.stretch ? "on" : "off");
     else {
         snprintf(view, sizeof view, "Whole table: %s (F7)", S.whole ? "on" : "off");
         snprintf(full, sizeof full, "Fullscreen: F11, Alt+Enter\n");
@@ -702,8 +718,8 @@ static void key(const SDL_KeyboardEvent *k)
     int up = k->type == SDL_KEYUP, s = k->keysym.scancode;
     if (s == SDL_SCANCODE_RETURN && (k->keysym.mod & KMOD_ALT)) { if (!up && !k->repeat) command(ID_FULL); return; }
     if (s == SDL_SCANCODE_PRINTSCREEN) { if (up) screenshot_key(); return; }
-    if (g_opt.cabinet && s == SDL_SCANCODE_F6) {    /* press and release: any key ends the demo */
-        if (!up && !k->repeat) command(ID_TURN);
+    if (g_opt.cabinet && (s == SDL_SCANCODE_F5 || s == SDL_SCANCODE_F6)) {    /* press and release: any key ends the demo */
+        if (!up && !k->repeat) command(s == SDL_SCANCODE_F5 ? ID_STRETCH : ID_TURN);
         return;
     }
     if (s == SDL_SCANCODE_F7 || (s >= SDL_SCANCODE_F9 && s <= SDL_SCANCODE_F12)) {
@@ -858,10 +874,10 @@ static void cabinet_open(void)
     compose_view();
     SDL_ShowWindow(board.wnd);
     if (board.x11) SDL_SetWindowPosition(board.wnd, r.left, r.top);
-    board.how = S; board.how.rot = board.how.bars = 0;
+    board.how = S; board.how.rot = board.how.bars = board.how.stretch = 0;
     present_window(board.wnd, score, sw, sh, (double)sw / sh, &board.how);
     SDL_ShowWindow(wnd);
-    present_window(wnd, frame, fw, fh, frame_aspect, &S);
+    { const Present v = playfield_how(); present_window(wnd, frame, fw, fh, frame_aspect, &v); }
     SDL_RaiseWindow(wnd);
     SDL_ShowCursor(SDL_DISABLE);
     board.dirty = 1;
@@ -885,10 +901,10 @@ static void cabinet_event(const SDL_WindowEvent *e)
 static void cabinet_present(void)
 {
     uint64_t t0 = host_us();
-    present_window(wnd, frame, fw, fh, frame_aspect, &S);
+    { const Present v = playfield_how(); present_window(wnd, frame, fw, fh, frame_aspect, &v); }
     uint64_t t1 = host_us(), t2 = t1;
     Present how = S;
-    how.rot = how.bars = 0;                          /* upright, black round it */
+    how.rot = how.bars = how.stretch = 0;            /* upright, black round it */
     size_t bytes = (size_t)sw * sh * 4;
     if (board.dirty || board.shown_w != sw || board.shown_h != sh
         || memcmp(&how, &board.how, sizeof how) || memcmp(board.shown, score, bytes)) {
@@ -958,7 +974,7 @@ static void window_frame(void)
     if (quit_req) dos_exit(0);
     compose_view();
     if (g_opt.cabinet) cabinet_present();
-    else present_window(wnd, frame, fw, fh, frame_aspect, &S);
+    else { const Present v = playfield_how(); present_window(wnd, frame, fw, fh, frame_aspect, &v); }
 }
 
 /* A queue the main thread fills, as long as waveOut's ring: drop rather than block */
@@ -1101,14 +1117,15 @@ static void write_view(const char *path, const uint32_t *f, int w, int h, double
 void host_snapshot(const char *path)
 {
     compose_view();
-    write_view(path, frame, fw, fh, frame_aspect, &S);
+    const Present v = playfield_how();
+    write_view(path, frame, fw, fh, frame_aspect, &v);
     if (!g_opt.cabinet) return;
     size_t n = strlen(path);
     if (n >= 4 && !_stricmp(path + n - 4, ".bmp")) n -= 4;
     char second[600];
     snprintf(second, sizeof second, "%.*s-score.bmp", (int)n, path);
     Present how = S;
-    how.rot = how.bars = 0;
+    how.rot = how.bars = how.stretch = 0;
     write_view(second, score, sw, sh, (double)sw / sh, &how);
 }
 

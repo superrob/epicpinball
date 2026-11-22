@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format follows
   score display is, and stays live while the game hides its own. `--rotate`,
   `--playfield-display` and `--score-window` set them; `[cabinet]` in
   `epicpinball.ini` keeps them. Conformance 142 (9 of them cabinet's).
+- **F5 in cabinet mode** stretches the table to fill its display, out of its
+  shape, and back; `[cabinet] stretch` keeps it and `--stretch` sets it for a
+  run. The menus and the scoreboard keep their shape. Conformance 154.
 - **`--dof`**, cabinet feedback (Linux): flippers, slingshots, bumpers,
   launch, ball release, drain, nudge, tilt and the extra ball's knocker go to
   libdof as events E101 to E113 of tables `epicpinball_ep01` to `ep13`,

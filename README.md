@@ -29,7 +29,7 @@ ships, the output never does.
 ## Status
 
 **v0.1.0 — alpha. The menus and all thirteen tables boot and play; the
-conformance harness passes 152/152 on Linux.**
+conformance harness passes 154/154 on Linux.**
 
 | | |
 |---|---|
@@ -40,14 +40,14 @@ conformance harness passes 152/152 on Linux.**
 | Dot-matrix scoreboard (the VGA split screen) | ✅ |
 | Music and effects: Sound Blaster 16, 8-bit stereo, 22 kHz | ✅ measured, see below |
 | Windowed play at real speed | ✅ (seen on a virtual monitor) |
-| Linux, natively (gcc, SDL2) | ✅ 152/152 conformance on Arch (133/133 on Debian 13, before cabinet mode); little tried on a real desktop |
+| Linux, natively (gcc, SDL2) | ✅ 154/154 conformance on Arch (133/133 on Debian 13, before cabinet mode); little tried on a real desktop |
 | Gamepad (XInput, `controller.ini`, GOG's DOSBox mapping by default) | implemented, untested on a real pad |
 | `SETUP.EXE` (the sound card menu) | not lifted: its start-up check is answered, and GOG's `SOUNDCRD.INF` (Sound Blaster 16) is used as shipped |
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, with hands on a keyboard | not yet |
 | Cabinet mode, `--cabinet` (Linux only) | ✅ on a real cabinet (table 1) and on virtual displays |
 | Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1; tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick) |
-| **Conformance** ([docs](docs/conformance.md)) | **152/152** on Linux (Windows skips the 9 cabinet checks, and has not run the 10 feedback ones) |
+| **Conformance** ([docs](docs/conformance.md)) | **154/154** on Linux (Windows skips the 11 cabinet checks, and has not run the 10 feedback ones) |
 
 Everything marked ✅ was seen working in scripted headless runs, which the
 conformance harness repeats. The sound was checked by measurement — a stereo
@@ -67,7 +67,8 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   entire table in video memory and only ever showed part of it; this shows
   the rest. Made for a tall window or a monitor turned on its side.
 - **Cabinet mode** (`--cabinet`, Linux): for a virtual pinball machine. The
-  whole table fills the playfield display, turned with F6; the scoreboard is
+  whole table fills the playfield display, turned with F6 and stretched to
+  every pixel of it with F5 while a table is up; the scoreboard is
   a window of its own. [How to set one up](docs/remaster.md#cabinet-mode).
 - **Cabinet feedback** (`--dof`, Linux): flippers, slingshots, bumpers,
   launch, drain, nudge and the rest go to libdof as DOF events, with
@@ -251,6 +252,7 @@ epicpinball [options] [-- arguments for PINBALL.EXE]
 | **Enter** | show or hide the scoreboard |
 | **↑ ↓** | menus; look up and down the table |
 | **Esc** | back, quit |
+| **F5** | with `--cabinet`: stretch the table to fill its display, or back (menus keep their shape) |
 | **F6** | with `--cabinet`: turn the playfield 90° clockwise |
 | **F7** | whole table / scrolling view |
 | **F9** | colour: natural / vivid |
@@ -271,6 +273,7 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 | `--classic` | the game's own picture: nearest, no extras |
 | `--cabinet` | a virtual pinball machine (Linux): the whole table on one display, the scoreboard in its own window, both borderless |
 | `--rotate 0\|90\|180\|270` | with `--cabinet`: the playfield turned clockwise, this run |
+| `--stretch` | with `--cabinet`: the playfield stretched to fill its display, this run |
 | `--playfield-display N` | with `--cabinet`: the display the playfield fills; they are listed at start |
 | `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard goes, this run |
 | `--dof` | DOF events through libdof (Linux): build `dof/build.sh` first; rows in VPinball's DOF files or `saves/directoutputconfig/`; no output limits ([docs](docs/cabinet-feedback.md)) |

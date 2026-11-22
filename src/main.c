@@ -24,6 +24,7 @@
  *                     one display (F6 turns it), the scoreboard in a window
  *                     of its own, neither with a frame
  *   --rotate DEG      with --cabinet, the playfield turned clockwise: 0, 90, 180, 270
+ *   --stretch         with --cabinet, the playfield fills its display, out of shape
  *   --playfield-display N  with --cabinet, the playfield's display (it lists them)
  *   --score-window X,Y,W,H  with --cabinet, the scoreboard's place
  *   --present WxH     --shot-at frames through the presenter at that size
@@ -76,8 +77,8 @@ void trace(const char *fmt, ...)
 static const char *cabinet_check(void)
 {
     if (!g_opt.cabinet) {
-        if (g_opt.rotate || g_opt.display || g_opt.score_window)
-            return "--rotate, --playfield-display and --score-window need --cabinet";
+        if (g_opt.rotate || g_opt.stretch || g_opt.display || g_opt.score_window)
+            return "--rotate, --stretch, --playfield-display and --score-window need --cabinet";
         return NULL;
     }
 #ifdef _WIN32
@@ -150,6 +151,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--classic")) g_opt.classic = 1;
         else if (!strcmp(a, "--cabinet")) g_opt.cabinet = 1;
         else if (!strcmp(a, "--rotate") && v) { g_opt.rotate = v; i++; }
+        else if (!strcmp(a, "--stretch")) g_opt.stretch = 1;
         else if (!strcmp(a, "--playfield-display") && v) { g_opt.display = v; i++; }
         else if (!strcmp(a, "--score-window") && v) { g_opt.score_window = v; i++; }
         else if (!strcmp(a, "--present") && v) { sscanf(v, "%dx%d", &g_opt.present_w, &g_opt.present_h); i++; }

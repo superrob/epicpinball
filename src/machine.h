@@ -47,6 +47,7 @@ typedef struct {
     const char *feedback_log; /* --feedback-log FILE: table events */
     const char *plunger_trace;/* --plunger-trace "ms:percent,...": a scripted sensor */
     int dof;                  /* --dof: cabinet outputs through dof/'s helper */
+    int stretch;              /* --stretch: with --cabinet, the playfield fills its display */
 } Options;
 extern Options g_opt;
 
@@ -58,6 +59,7 @@ typedef struct {
     int bars;                 /* beside the picture: 0 black, 1 a blur of it */
     int whole;                /* the whole table, no scrolling (vga_compose_table) */
     int rot;                  /* --cabinet: quarter turns clockwise (SDL only) */
+    int stretch;              /* --cabinet: the playfield fills its window, out of shape */
 } Present;
 extern int g_audio_smooth;    /* audio.c: interpolate the DSP's samples (else hold them) */
 

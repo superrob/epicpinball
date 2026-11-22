@@ -94,10 +94,12 @@ static void make_backdrop(const uint32_t *f, int w, int h, int *bw, int *bh)
 
 /* ---- drawing -------------------------------------------------------------------- */
 
-void present_rect(int cw, int ch, int w, int h, double aspect, int mode, RECT *r)
+void present_rect(int cw, int ch, int w, int h, double aspect, int mode, int fill, RECT *r)
 {
     int pw, ph;
-    if (mode == PRESENT_INTEGER) {
+    if (fill) {                                        /* every pixel of the window, out of shape */
+        pw = cw; ph = ch;
+    } else if (mode == PRESENT_INTEGER) {
         int k = cw / w < ch / h ? cw / w : ch / h;
         if (k < 1) k = 1;
         pw = w * k; ph = h * k;
@@ -251,7 +253,7 @@ static void draw(ID3D11RenderTargetView *rtv, int cw, int ch, const uint32_t *f,
     if (s->bars) { make_backdrop(f, w, h, &bw, &bh); upload(&d.back, back_buf, bw, bh); }
     else if (!d.back.tex) upload(&d.back, f, 1, 1);
 
-    RECT r; present_rect(cw, ch, w, h, aspect, s->mode, &r);
+    RECT r; present_rect(cw, ch, w, h, aspect, s->mode, s->stretch, &r);
     float covw = (float)cw, covh = (float)(cw / aspect);       /* the backdrop covers the window */
     if (covh < ch) { covh = (float)ch; covw = (float)(ch * aspect); }
     struct { float src[2], pad0[2], pic[4], cover[4]; int mode, look, bars, pad1; } c = {
@@ -432,7 +434,7 @@ static void sdl_draw(Sdl *p, SDL_Texture *dest, int cw, int ch, const uint32_t *
                      double aspect, const Present *s)
 {
     SDL_Renderer *r = p->r;
-    RECT pr; present_rect(cw, ch, w, h, aspect, s->mode, &pr);
+    RECT pr; present_rect(cw, ch, w, h, aspect, s->mode, s->stretch, &pr);
     SDL_Rect d = { (int)pr.left, (int)pr.top, (int)(pr.right - pr.left), (int)(pr.bottom - pr.top) };
 
     SDL_Texture *t = sized(p, &p->frame, &p->fw, &p->fh, w, h, SDL_TEXTUREACCESS_STREAMING);
