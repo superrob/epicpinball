@@ -17,8 +17,13 @@
 //   o               the game stands still: what is held is let go
 //   q               finish (so does end of file)
 //
+// With no epicpinball row anywhere, one is made from the header line of the
+// DOF files (autorow.h), into a folder of the helper's own.
+//
 // "ready" on stdout means libdof is up. Exit: 0 finished, 2 cannot start this
 // table (nothing was switched on), 3 failed, 4 hung, 5 no table has a row.
+#include "autorow.h"
+#include "events.h"
 #include "locate.h"
 
 #include <DOF/Config.h>
@@ -46,17 +51,6 @@ enum { DONE = 0, CANNOT_START = 2, FAILED = 3, HUNG = 4, NOTHING_TO_DO = 5 };
 
 constexpr const char *kRom = "epicpinball";
 
-// The game's names for what it reports (src/feedback.h), in its order: E101 on.
-// The numbers are what people's rows are written in, so never renumber them.
-constexpr const char *kEvent[] = {
-    "flipper_left", "flipper_right", "sling_left", "sling_right",
-    "bumper_left", "bumper_center", "bumper_right",
-    "launch", "ball_release", "drain", "nudge", "tilt", "knocker",
-};
-constexpr int kEvents = sizeof kEvent / sizeof *kEvent;
-constexpr int kFlippers = 2;                    // levels; the rest only happen
-constexpr int kFirstE = 101;
-
 // Only a hung libdof meets these; the game's own timeouts come first. They are
 // for a helper whose game has already gone.
 constexpr unsigned kStartS = 20, kFinishS = 10;
@@ -65,6 +59,9 @@ std::string g_save;
 bool g_all_off;
 volatile sig_atomic_t g_quit;
 std::atomic<bool> g_pico_found{false};
+std::atomic<int> g_unread{0};          // settings libdof could not read, and skips
+int g_unread_once;                      // in one reading of the files
+std::atomic<bool> g_show_unread{true};  // the game's own files: shown, not counted
 
 void say(const std::string &s)
 {
@@ -109,16 +106,17 @@ void dof_log(DOF_LogLevel level, const char *fmt, va_list ap)
             if (!told[i].exchange(true)) say(std::string("libdof (said once): ") + line);
             return;
         }
+    // A Config Tool export has some settings libdof cannot read, in other
+    // games' rows; it skips them, under VPX too. Counted, not printed.
+    if (std::strstr(line, "Could not parse") || std::strstr(line, "Cant parse")
+        || std::strstr(line, "Exception(s) occured when parsing") || std::strstr(line, "Previous exceptions occured")) {
+        if (g_show_unread) say(std::string("libdof: ") + line);
+        else if (std::strstr(line, "Could not parse setting")) g_unread++;
+        return;
+    }
     // no GlobalConfig is normal: libdof then finds the boards itself
     if (level == DOF_LogLevel_ERROR && !std::strstr(line, "no global config loaded"))
         say(std::string("libdof: ") + line);
-}
-
-int event_by_name(const std::string &s)
-{
-    for (int i = 0; i < kEvents; i++)
-        if (s == kEvent[i]) return i;
-    return -1;
 }
 
 // "ep7" is epicpinball_ep07. The zero matters: libdof also takes a row whose
@@ -170,23 +168,90 @@ int usage()
     return CANNOT_START;
 }
 
-// 0: there is a row for this table. Else the exit code, said.
-int check_rows(DOF::DOF *dof, const locate::Files &at, const std::string &rom)
+enum Rows { NONE, OTHER_TABLES, THIS_TABLE };
+
+// What libdof would find for this table, looking where it looks
+Rows rows(DOF::DOF *dof, const fs::path &table, const std::string &rom)
 {
     bool exact = false, every = false, any = false;
-    for (auto &name : dof->GetLedControlRomNames(at.table.c_str())) {
+    for (auto &name : dof->GetLedControlRomNames(table.c_str())) {
         const std::string n = locate::lower(name);
         exact |= n == rom;
         every |= n == kRom;
         any |= n.starts_with(kRom);
     }
-    if (exact || every) return 0;
-    if (any) {
+    return exact || every ? THIS_TABLE : any ? OTHER_TABLES : NONE;
+}
+
+// No row: one from the header of the files libdof reads, or of VPinball's if
+// the game's own have none. Written to work/auto, where it takes the place of
+// those files for this game only. Empty path: none could be made, and
+// `headers` says whether there was a header to make one from.
+fs::path construct(const locate::Files &at, const fs::path &work, const std::string &rom, bool &headers)
+{
+    const fs::path out = work / "auto";
+    std::error_code e;
+    fs::create_directories(out, e);
+    for (auto &f : locate::ini_files(out)) fs::remove(f.second, e);    // one table's, from last time
+    std::vector<fs::path> dirs{ at.rows };
+    if (!at.table.empty()) dirs.push_back(at.base / locate::kDir);
+    headers = false;
+    for (auto &dir : dirs) {
+        bool made = false;
+        for (auto &[number, path] : locate::ini_files(dir)) {
+            const auto names = autorow::header_of(path.string());
+            if (!names) continue;
+            headers = true;
+            const autorow::Row row = autorow::build(*names);
+            for (auto &s : row.said) say(path.filename().string() + ": " + s);
+            if (row.empty()) continue;
+            std::string none;
+            for (int i = 0; i < kEvents; i++)
+                if (!row.fires[i]) none += std::string(none.empty() ? "" : ", ") + kEvent[i];
+            say("no " + rom + " or " + kRom + " row: made one from the header of " + path.string() + ", "
+                + std::to_string(row.outputs) + " of " + std::to_string(row.width) + " outputs"
+                + (none.empty() ? "" : "; no device for " + none));
+            const fs::path name = out / ("directoutputconfig" + (number == 1 ? std::string() : std::to_string(number)) + ".ini");
+            std::ofstream f(name, std::ios::binary);
+            f << autorow::file(rom, row, path.string());
+            if (!f.flush()) {
+                say("cannot write " + name.string());
+                return {};
+            }
+            made = true;
+        }
+        if (made) return out / rom;
+        if (headers) {
+            say("the headers in " + dir.string() + " name no device Epic Pinball has an event for");
+            return {};
+        }
+    }
+    return {};
+}
+
+// 0: there is a row for this table, and `table` is what libdof is told. Else the exit code, said.
+int find_rows(DOF::DOF *dof, const locate::Files &at, const fs::path &work, const std::string &rom, fs::path &table)
+{
+    table = at.table;
+    const Rows found = rows(dof, table, rom);
+    g_unread_once = g_unread;
+    if (found == THIS_TABLE) return 0;
+    bool headers = false;
+    const fs::path made = construct(at, work, rom, headers);
+    if (!made.empty()) {
+        if (rows(dof, made, rom) == THIS_TABLE) {
+            table = made;
+            return 0;
+        }
+        say("libdof does not see the row it was given: an IniFilesPath in the GlobalConfig comes first");
+    }
+    if (found == OTHER_TABLES) {
         say("no " + rom + " and no " + kRom + " row: no feedback on this table");
         return CANNOT_START;
     }
     say(std::string("no ") + kRom + " row in " + at.rows.string()
-        + ", so nothing would fire (docs/cabinet-feedback.md)");
+        + (headers ? std::string(", so nothing would fire (docs/cabinet-feedback.md)")
+                   : ", and no header line to make one from, so nothing would fire (docs/cabinet-feedback.md)"));
     return NOTHING_TO_DO;
 }
 
@@ -256,6 +321,7 @@ int run(int argc, char **argv)
     const fs::path save = fs::absolute(g_save, e).lexically_normal();
     g_save = save.string();
     const locate::Files at = locate::find(save, rom);
+    g_show_unread = at.base == save || !at.table.empty();     // VPinball's export: only counted
     if (!g_all_off)
         for (auto &s : at.said) say(s);
 
@@ -291,12 +357,16 @@ int run(int argc, char **argv)
         return DONE;
     }
 
-    if (const int no = check_rows(dof, at, rom)) return no;
-    dof->Init(at.table.c_str(), rom.c_str());
+    fs::path table_file;
+    if (const int no = find_rows(dof, at, work, rom, table_file)) return no;
+    dof->Init(table_file.c_str(), rom.c_str());
     alarm(0);
     if (!g_pico_found && std::any_of(at.numbers.begin(), at.numbers.end(),
                                      [](int n) { return n >= 120 && n <= 135; }))
         say("there are Pinscape Pico files, and no Pico answers (plugged in? may this user open its hidraw device?)");
+    if (g_unread_once)
+        say("libdof could not read " + std::to_string(g_unread_once) + " settings in the DOF files and skips them,"
+            " as it does under VPinball (saves/dof/DirectOutput.log names them, if logging is on)");
 
     sa.sa_handler = [](int) { g_quit = 1; };
     sa.sa_flags = 0;

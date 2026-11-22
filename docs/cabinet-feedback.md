@@ -9,8 +9,9 @@ you set it up:
 - **`[plunger]`** in `saves/controller.ini`: a plunger position sensor, read
   as a joystick axis, pulls and launches the game's plunger.
 
-None of this has yet run on real hardware: no Pinscape, no coil, no sensor
-([what was tested](#what-was-tested)). The first run on coils is yours.
+Both work on a real cabinet with a Pinscape Pico, on table 1: its outputs
+from a Config Tool export, and its plunger. Tables 2 to 13 have only run in a
+sandbox ([what was tested](#what-was-tested)).
 
 ## No output limits here: set them in your controller
 
@@ -25,6 +26,12 @@ timeLimit: 100,     // ms at full power; omitted or 0 means no limit
 powerLimit: 0,      // what it drops to when that runs out, not a maximum: 0 is off
 coolingTime: 100,   // ms after switching off before full power again
 ```
+
+**This matters from the first run.** A DOF folder from the Config Tool fires
+outputs even before you write a row for this game: the helper makes one from
+the folder's header ([below](#no-row-one-is-made-from-the-header)), and that
+row holds a flipper's output on for as long as the flipper is up, as VPinball
+tables do.
 
 Suspending output management in the board's console disables these, and they
 have not been checked in its Safe Mode. This is from the firmware's reference
@@ -107,8 +114,8 @@ epicpinball_ep07,E101 50,E102 50,E103 50 I32,E104 50 I32
 - **The file's number** is the DOF unit: 120 is Pinscape Pico unit 1, 121 is
   unit 2, and so on.
 - **The table's name** is `epicpinball_ep01` to `epicpinball_ep13`. A table
-  without a row of its own uses `epicpinball`. With neither, it has no
-  feedback, and nothing is switched on.
+  without a row of its own uses `epicpinball`. With neither, one is made from
+  the file's header ([below](#no-row-one-is-made-from-the-header)).
 - **The events:**
 
 | Number | `--test` name | When | Signal |
@@ -132,6 +139,57 @@ An instant event is a 1 and at once a 0, so the row gives it its length:
 | `E103 50 I32` | 50 ms at two thirds of full |
 | `E101 50` | a 50 ms pulse as the flipper starts up |
 | `E101` | on for as long as the flipper is up |
+
+### No row: one is made from the header
+
+The Config Tool writes, as the line after `[Config DOF]`, which device is on
+each output, the first after `"Rom"` on output 1. An RGB device takes three
+outputs, so it is followed by two blank names:
+
+```ini
+[Config DOF]
+# "Rom","Flipper Left","Flipper Right","Slingshot Left","Slingshot Right","ZB Launch Ball","Exit","RGB Flippers","","","Knocker"
+```
+
+When no row for the table and no `epicpinball` row is found, the helper makes
+one from that line, for each file that has one, and gives it to libdof in
+place of those files, for this game only. It is written to `saves/dof/auto/`
+at every table start; nothing is written into the DOF folder. For the header
+above:
+
+```ini
+epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113
+```
+
+| Device | Gets |
+|---|---|
+| `Flipper Left`, `Flipper Right` | `E101`, `E102`: on while the flipper is up |
+| `Slingshot Left`, `Slingshot Right` | `E103`, `E104` |
+| `10 Bumper Back Left`, `Center`, `Right` | `E105`, `E106`, `E107` |
+| `10 Bumper Middle ...`, `8 Bumper Left`, `Center`, `Right` | the same, only where there is no such back-row device |
+| `Knocker` | `E113` |
+| `Beacon` | `E113 2000` |
+| `Shaker` | `E111 300 I32/E112 600 I32` |
+| `Start Button`, `Exit`, `Coin` | `ON` |
+| `RGB Flippers` | `ON White` |
+| everything else | `0` |
+
+- **`ZB Launch Ball` is always 0.** It is not a lamp: it switches a Pinscape's
+  plunger into a launch button, which would stop the analog plunger.
+- **Launch, ball release and drain have no device** of their own, so a made
+  row never fires them. Write a row if you want them felt.
+- **Only the header is read.** Intensities and times the Config Tool puts in
+  other games' rows are not copied.
+- **The helper says** which file it used, how many outputs got something, and
+  which events have no device.
+- **To switch it off,** write `epicpinball,0` into
+  `saves/directoutputconfig/directoutputconfig120.ini` (with a `[Colors DOF]`
+  entry). In VPinball's files the next export would erase it. A row for only
+  some tables leaves the others made.
+
+The names are the Config Tool's, as listed in the Pinscape build guide's
+[device appendix](http://mjrnet.org/pinscape/BuildGuideV2/BuildGuide.php?sid=dofDeviceList),
+in any case. The `8 Bumper` ones are taken from the guide alone.
 
 ### 5. Try a row
 
@@ -157,8 +215,9 @@ Events from before libdof is up are dropped, not sent late. A whole Config
 Tool export (4 MB) took it one to two seconds here; a ball arrives about
 two and a half seconds into a table.
 
-The demo and the menus send nothing. A pause, a prompt and the settings
-dialog let go of held flippers. `--feedback-log FILE` lists every event with
+The demo and the menus send no events, though `ON` outputs (button lamps in
+a made row) stay lit whenever a table is up, the demo's included. A pause, a
+prompt and the settings dialog let go of held flippers. `--feedback-log FILE` lists every event with
 its time, marked `felt` or `muted`, and needs neither a board nor the helper.
 
 ## What to watch for in DOF
@@ -185,6 +244,8 @@ its time, marked `felt` or `muted`, and needs neither a board nor the helper.
   and `{TableName}` see a table file named `epicpinball_epNN`. If such a
   pattern matches a file, libdof 0.5.4 crashes (it reads the table file in
   that file's place): keep table XMLs out of `saves/directoutputconfig/`.
+- **A Config Tool export has settings libdof cannot read**, in other games'
+  rows. It skips them, as under VPinball, and the helper only counts them.
 - **libdof 0.5.4, which the helper pins**, ignores `Cabinet.xml` toys other
   than `LedWizEquivalent` and `LedStrip` (a shaker works as a plain output
   with an intensity), and its schedules and table overrides do not act on a
@@ -269,12 +330,15 @@ signatures are proven on GOG 1.01 only.
 | Message or symptom | What to do |
 |---|---|
 | `--dof needs dof/build/epicpinball-dof` | run `dof/build.sh` |
-| `no epicpinball row in ...` | write rows there, or in `saves/directoutputconfig/` |
+| `no epicpinball row in ..., and no header line` | write rows there, or in `saves/directoutputconfig/` |
 | `no epicpinball_epNN and no epicpinball row` | that table has no row |
 | `VPinball has no .../directoutputconfig` | put the Config Tool's export there, or ignore it: `saves/directoutputconfig/` is used |
 | `Error searching for legacy PinOne COM port` | harmless without a PinOne: libdof could not list serial ports while looking for one |
 | `no Pico answers` | the udev rule, the cable, the board's unit number |
 | a row does nothing | the file's number, `M1`, the traps [above](#what-to-watch-for-in-dof), `saves/dof/DirectOutput.log` |
+| `made one from the header of ...` | no row was found, so one was made ([how](#no-row-one-is-made-from-the-header)); write one to change it |
+| `the headers in ... name no device` | the header has no device this game has an event for |
+| `libdof does not see the row it was given` | an `IniFilesPath` in the GlobalConfig: write a row there |
 | `the helper stopped (signal 11)` | a Cabinet.xml libdof cannot read, or a file matching `TableConfigFilePatterns` |
 | `the helper stopped`, `did not start` | feedback is off until the table is started again; the lines before say why |
 | `no work/feedback/epN.map`, `... of another copy` | `python3 tools/feedback_map.py` |
@@ -283,6 +347,10 @@ signatures are proven on GOG 1.01 only.
 | the plunger is ignored | let it rest first; check `rest` and `pulled` with `--joysticks` |
 
 ## What was tested
+
+On a real cabinet with a Pinscape Pico, on table 1: the outputs, from a
+Config Tool export with no Epic Pinball row (so from the row made from its
+header), and the analog plunger.
 
 Without hardware, in a sandbox with no devices:
 
@@ -300,7 +368,6 @@ Without hardware, in a sandbox with no devices:
 - 70 frames a second in cabinet mode with the helper, a hung helper, and a
   sensor present and absent.
 
-Not tested: a Pico, coils, other controllers, a real Config Tool export,
-Flatpak and portable VPX, a real plunger's feel and noise, udev on a
-cabinet, Windows (its halves were only syntax-checked), other releases of
-the game.
+Not tested: tables 2 to 13 on a cabinet, other controllers and other
+cabinets' Config Tool headers, Flatpak and portable VPX, Windows (its halves
+were only syntax-checked), other releases of the game.

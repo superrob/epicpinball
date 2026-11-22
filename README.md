@@ -46,7 +46,7 @@ conformance harness passes 152/152 on Linux.**
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, with hands on a keyboard | not yet |
 | Cabinet mode, `--cabinet` (Linux only) | ✅ on virtual displays; not yet tried on a cabinet |
-| Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | tested on loopback, a simulated board and a virtual joystick; **never on hardware** |
+| Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1; tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick) |
 | **Conformance** ([docs](docs/conformance.md)) | **152/152** on Linux (Windows skips the 9 cabinet checks, and has not run the 10 feedback ones) |
 
 Everything marked ✅ was seen working in scripted headless runs, which the
@@ -71,7 +71,8 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   a window of its own. [How to set one up](docs/remaster.md#cabinet-mode).
 - **Cabinet feedback** (`--dof`, Linux): flippers, slingshots, bumpers,
   launch, drain, nudge and the rest go to libdof as DOF events, with
-  VPinball's DOF files if there are any (no limits: those are the
+  VPinball's DOF files if there are any (a Config Tool export works as it
+  is: the game's row is made from its device list) (no limits: those are the
   controller's), and a **plunger position sensor** can work the game's plunger.
   [Read this before connecting a coil](docs/cabinet-feedback.md).
 - **Its own window**, drawn with Direct3D 11 (SDL2 on Linux): resizable, borderless

@@ -6,6 +6,7 @@
 // ini files, in directoutputconfig/ of the save folder, take the place of
 // VPX's for this game only: libdof looks beside the "table file" first.
 #pragma once
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -32,10 +33,10 @@ inline std::string trim(const std::string &s)
     return a == std::string::npos ? "" : s.substr(a, b - a + 1);
 }
 
-// The numbers of a folder's directoutputconfigN.ini, named as libdof accepts
-inline std::vector<int> ini_numbers(const fs::path &dir)
+// A folder's directoutputconfigN.ini, named as libdof accepts, by number
+inline std::vector<std::pair<int, fs::path>> ini_files(const fs::path &dir)
 {
-    std::vector<int> found;
+    std::vector<std::pair<int, fs::path>> found;
     std::error_code e;
     const std::string head = kDir;
     for (fs::directory_iterator it(dir, e), end; !e && it != end; it.increment(e)) {
@@ -44,9 +45,17 @@ inline std::vector<int> ini_numbers(const fs::path &dir)
         const std::string n = f.substr(head.size(), f.size() - head.size() - 4);
         if (n.size() > 4 || n.find_first_not_of("0123456789") != std::string::npos) continue;
         std::error_code kind;
-        if (it->is_regular_file(kind)) found.push_back(n.empty() ? 1 : std::stoi(n));
+        if (it->is_regular_file(kind)) found.emplace_back(n.empty() ? 1 : std::stoi(n), it->path());
     }
+    std::sort(found.begin(), found.end());
     return found;
+}
+
+inline std::vector<int> ini_numbers(const fs::path &dir)
+{
+    std::vector<int> n;
+    for (auto &f : ini_files(dir)) n.push_back(f.first);
+    return n;
 }
 
 // DOFPath in [Plugin.DOF] of VPinballX.ini, "" if none

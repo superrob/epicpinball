@@ -19,8 +19,12 @@ All notable changes to this project are documented here. The format follows
   libdof as events E101 to E113 of tables `epicpinball_ep01` to `ep13`,
   through a helper in `dof/` (GPLv3, built only by `dof/build.sh`; the game
   does not link it). It uses VPinball's DOF files where there are some, and
-  the game's own rows in `saves/directoutputconfig/` before those. It sets
-  **no output limits**: they are the controller's. Never yet run on hardware:
+  the game's own rows in `saves/directoutputconfig/` before those. With no
+  row for the game, it makes one from the device list the Config Tool writes
+  after `[Config DOF]`: flippers, slingshots, back-row bumpers, knocker,
+  beacon, shaker and steady button lamps; never `ZB Launch Ball`. It sets
+  **no output limits**: they are the controller's. Tested on a real cabinet
+  with a Pinscape Pico and a Config Tool export, on table 1 only:
   `docs/cabinet-feedback.md`.
 - **An analog plunger** (Linux): `[plunger]` in `controller.ini` names a
   joystick axis; the drawn plunger follows it and a release launches at the

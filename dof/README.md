@@ -14,12 +14,16 @@ you run `build.sh`.
 ```sh
 dof/build.sh           # fetch what is missing, build into dof/build/
 dof/build.sh --fetch   # fetch only
+dof/build/helper/autorow_test
 ```
 
 | | |
 |---|---|
 | `src/main.cpp` | the pipe protocol, the event numbers, a watchdog for a hung start or finish |
 | `src/locate.h` | whose DOF files: VPinball's, or the game's own. No libdof in it |
+| `src/autorow.h` | a row made from a Config Tool file's device header, when there is none. No libdof in it |
+| `src/events.h` | the events and their DOF numbers |
+| `tests/autorow_test.cpp` | those rows, from made-up headers |
 | `patches/` | what is changed in libdof |
 | `example/` | rows to start from |
 

@@ -55,8 +55,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
       - name: Lint (shell)
         run: bash -n setup.sh && sh -n build-linux.sh && sh -n dof/build.sh
-      - name: The DOF helper's folder lookup compiles (no libdof, no hardware)
-        run: echo '#include "locate.h"' | g++ -std=c++20 -fsyntax-only -Idof/src -xc++ -
+      - name: The DOF helper's rows from a header, and its folder lookup (no libdof, no hardware)
+        run: >-
+          g++ -std=c++20 -O2 -Wall -Wextra dof/tests/autorow_test.cpp -o autorow_test && ./autorow_test &&
+          echo '#include "locate.h"' | g++ -std=c++20 -fsyntax-only -Idof/src -xc++ -
       - name: Configure
         run: cmake -B build-linux -DCMAKE_BUILD_TYPE=Release "-DPCRECOMP_HOME=${{ github.workspace }}/_pcrecomp"
       - name: Build selftest

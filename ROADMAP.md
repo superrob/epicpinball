@@ -12,10 +12,9 @@
 - **Try the remaster's hotkeys and menu by hand.** The whole table, the
   presenter and the settings file are checked headless and in a recorded
   window; F7-F12, the menu and the pad were not pressed by a test.
-- **Cabinet feedback on a cabinet.** `--dof` and the analog plunger have only
-  met ArtNet on loopback, a simulated Pico and a virtual joystick
-  (docs/cabinet-feedback.md). A real board, coils and a real plunger's noise
-  will tune the release detection.
+- **Cabinet feedback on every table.** `--dof` and the analog plunger work on
+  a real cabinet on table 1; tables 2 to 13 have only met a sandbox
+  (docs/cabinet-feedback.md).
 - **A netlab recipe**, so builds and conformance run on the farm like the other
   recomps (repo rules, section 8). Needs the MSVC build to run on the clang-cl
   builder, or an MSVC builder.
