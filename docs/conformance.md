@@ -5,7 +5,7 @@ py tools/conformance.py            # needs your game data in original/ and a bui
 py tools/conformance.py --update   # record the current count as the new baseline
 ```
 
-Current figure (2026-11-22, Linux): **142/142.** The whole run takes about 25 seconds:
+Current figure (2026-11-22, Linux): **152/152.** The whole run takes about 33 seconds:
 headless time is deterministic and runs far faster than real time
 ([architecture](architecture.md#time)). Frames, audio and logs of the last run
 stay in `work/conformance/` to explain any FAIL.
@@ -14,7 +14,10 @@ It runs `build\Release\epicpinball.exe` on Windows and `build-linux/epicpinball`
 on Linux (`python3 tools/conformance.py`), or whatever `EPIC_EXE` names. The
 two builds' frames matched bit for bit when last compared (2026-10-22): the
 lifted C and the machine are the same code under either compiler. The 9 cabinet checks are Linux only; Windows
-prints them as skipped and does not count them against the baseline.
+prints them as skipped and does not count them against the baseline. The
+feedback checks are written for both but have only been run on Linux, so the
+baseline of 152 is unproven on Windows. They need `work/feedback`, which the
+harness makes first (`tools/feedback_map.py`).
 
 ## What it checks, and why that is the ground truth
 
@@ -45,6 +48,11 @@ GAME, then SPACE to start, the plunger every few seconds, and both flippers.
 | cabinet table 1, 9: the scoreboard is the rows under the split | it is not, pixel for pixel, the game's split rows at the same moment |
 | cabinet table 1, 9: both the same with the scoreboard hidden (Enter) | Enter took the scoreboard off the cabinet's second screen, or put part of it on the playfield |
 | cabinet table 1, 9: --rotate 90 presents the same picture, turned | a pixel of `--present 1280x720 --rotate 90` differs from `--present 720x1280` turned |
+| feedback table 1, 9: a flipper event for each press unless tilted, within 20 ms | a press was missed, doubled or late |
+| feedback table 1, 9: ball release, launch and bumpers are felt | the map or the watcher no longer sees the game's events |
+| feedback table 1, 9: watching changes no pixel and no sample | `--feedback-log` altered the run: the watcher is no longer read-only |
+| plunger table 1, 9: a sensor at rest changes no pixel and no sample | the plunger wrote to the table with nobody touching it |
+| plunger table 1, 9: a full pull launches as hard as Space | a scripted sensor's release and a held Space give different strengths |
 | determinism: two runs, identical frames | the same script twice gave different frames — time leaked into the run |
 
 ## Without the game

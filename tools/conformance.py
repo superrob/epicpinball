@@ -266,6 +266,65 @@ def scenario_cabinet(out, n):
 CABINET_CHECKS = 9       # scenario_cabinet_menu's, and scenario_cabinet's on two tables
 
 
+def scenario_feedback(out, n, plain_dir):
+    """Cabinet feedback and the analog plunger, on a table of each layout. The
+    script is scenario_table's, so the keys say what must be felt, and that
+    run's frame and sound are what watching must not change."""
+    keys, play, end = table_keys(n)
+    t = end - 500                      # scenario_table's frame `b`
+
+    def go(name, keys, extra, seconds=end / 1000, shots=None):
+        d = os.path.join(out, name)
+        os.makedirs(d, exist_ok=True)
+        ev = os.path.join(d, 'events')
+        for p in [ev, os.path.join(d, 'b.bmp'), os.path.join(d, 'audio.wav')]:
+            if os.path.exists(p):
+                os.remove(p)
+        run(d, seconds, keys, shots, [*extra, '--feedback-log', ev])
+        events = [ln.split() for ln in open(ev)] if os.path.exists(ev) else []
+        return d, [(float(e[0]), e[2], int(e[6])) for e in events if e[3] == '1' and e[-1] == 'felt']
+
+    def same(d):
+        for f in ('b.bmp', 'audio.wav'):
+            a, b = os.path.join(d, f), os.path.join(plain_dir, f)
+            if not (os.path.exists(a) and os.path.exists(b)) or open(a, 'rb').read() != open(b, 'rb').read():
+                return False
+        return True
+
+    d, felt = go('log', keys, [], shots={'b': t})
+    tilted, since = [], None           # the script's long Spaces nudge, and tilt: no flips until the next ball
+    for at, what, _ in felt:
+        if what == 'tilt' and since is None:
+            since = at
+        if what == 'ball_release' and since is not None:
+            tilted.append((since, at))
+            since = None
+    if since is not None:
+        tilted.append((since, end))
+    flips = True
+    for key, side in (('LSHIFT', 'flipper_left'), ('RSHIFT', 'flipper_right')):
+        pressed = [p for p in (int(k.split(':')[0]) for k in keys.split(',') if f':{key}' in k)
+                   if p < end and not any(a <= p < b for a, b in tilted)]
+        rises = [e[0] for e in felt if e[1] == side]
+        flips &= len(rises) == len(pressed) > 0 and all(0 <= r - p < 20 for p, r in zip(pressed, rises))
+    kinds = {e[1] for e in felt}
+    played = {'ball_release', 'launch'} <= kinds and any(k.startswith('bumper_') for k in kinds)
+    idle, _ = go('idle', keys, ['--plunger-trace', '0:0'], shots={'b': t})
+
+    # a whole pull and a release, beside Space held down and let go
+    lane = play + 1500
+    menu = ','.join(k for k in keys.split(',') if int(k.split(':')[0]) < play)
+    secs = (lane + 4000) / 1000
+    _, by_key = go('key', f'{menu},{lane}:SPACE+2000', [], secs)
+    _, by_axis = go('axis', menu, ['--plunger-trace', f'0:0,{lane}:0,{lane + 300}:100,{lane + 2000}:100,{lane + 2035}:0'], secs)
+    strength = lambda evs: [e[2] for e in evs if e[1] == 'launch' and e[0] >= lane][:1]
+    return [(f'feedback table {n}: a flipper event for each press unless tilted, within 20 ms', flips),
+            (f'feedback table {n}: ball release, launch and bumpers are felt', played),
+            (f'feedback table {n}: watching changes no pixel and no sample', same(d)),
+            (f'plunger table {n}: a sensor at rest changes no pixel and no sample', same(idle)),
+            (f'plunger table {n}: a full pull launches as hard as Space', strength(by_key) == strength(by_axis) != [])]
+
+
 def scenario_determinism(out):
     """Headless time is deterministic: the same script twice, the same frame."""
     keys, play, end = table_keys(1)
@@ -318,6 +377,10 @@ def main():
             results += scenario_cabinet_menu(sub('cabinet-menu'))
             for n in (1, 9):
                 results += scenario_cabinet(sub(f'cabinet{n}'), n)
+        subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'feedback_map.py')],
+                       cwd=ROOT, capture_output=True)    # work/feedback; a FAIL below if it cannot
+        for n in (1, 9):
+            results += scenario_feedback(sub(f'feedback{n}'), n, os.path.join(tmp, f'table{n}'))
         results += scenario_determinism(sub('det'))
     for name, ok in results:
         print(f'{"PASS" if ok else "FAIL"}  {name}')

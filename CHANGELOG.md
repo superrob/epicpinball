@@ -14,8 +14,25 @@ All notable changes to this project are documented here. The format follows
   score display is, and stays live while the game hides its own. `--rotate`,
   `--playfield-display` and `--score-window` set them; `[cabinet]` in
   `epicpinball.ini` keeps them. Conformance 142 (9 of them cabinet's).
+- **`--dof`**, cabinet feedback (Linux): flippers, slingshots, bumpers,
+  launch, ball release, drain, nudge, tilt and the extra ball's knocker go to
+  libdof as events E101 to E113 of tables `epicpinball_ep01` to `ep13`,
+  through a helper in `dof/` (GPLv3, built only by `dof/build.sh`; the game
+  does not link it). It uses VPinball's DOF files where there are some, and
+  the game's own rows in `saves/directoutputconfig/` before those. It sets
+  **no output limits**: they are the controller's. Never yet run on hardware:
+  `docs/cabinet-feedback.md`.
+- **An analog plunger** (Linux): `[plunger]` in `controller.ini` names a
+  joystick axis; the drawn plunger follows it and a release launches at the
+  strength pulled to. `--joysticks` lists devices and axes. It is the first
+  feature to write the game's memory, and only when configured.
+- `--feedback-log` and `--plunger-trace`, for testing both. Conformance 152.
 
 ### Fixed
+- A cabinet board in gamepad mode held both flippers up: SDL reads its
+  centred sensor axes as half-pulled triggers. Such boards now count for
+  their buttons only. Keys a pad held are let go when it is unplugged or the
+  window loses the front; they used to stay down.
 - The whole table shook up and down on tables 9-13: their two pages are 395
   rows apart, not the 400 of tables 1-8, so every other frame was drawn five
   rows off. It also jumped on every table while Enter slid the scoreboard in

@@ -22,6 +22,10 @@
  * plays the tables.
  */
 #include "machine.h"
+#include "feedback.h"
+#include "dof_pipe.h"
+#include "plunger.h"
+#include "watch.h"
 #include <ctype.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -83,8 +87,11 @@ void present_close(void);
 int  present_offscreen(const uint32_t *f, int w, int h, double aspect, const Present *s,
                        int ow, int oh, uint32_t *out);
 void pad_load(void);
-void pad_poll(void);
+void pad_poll(int front);
 const char *pad_ini(void);
+int pad_plunger_on(void);
+int pad_plunger(int front, PlungerInput *in);
+static void plunger_let_go(void);
 
 /* ---- recording ------------------------------------------------------------ */
 
@@ -453,6 +460,8 @@ static void menu(int x, int y)
     AppendMenuA(m, MF_STRING, ID_PAD, "Controller mapping...");
     AppendMenuA(m, MF_STRING, ID_SHOT, "Screenshot\tPrtSc");
     uint64_t t = host_us();
+    feedback_all_off();                            /* the game stands still under it */
+    plunger_let_go();
     int id = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, x, y, 0, wnd, NULL);
     machine_paused(host_us() - t);                 /* the game stood still meanwhile */
     DestroyMenu(m);                                /* and its submenus */
@@ -560,12 +569,14 @@ static void window_open(void)
     if (!g_opt.mute) wave_open();
 }
 
+static int window_front(void) { return GetForegroundWindow() == wnd; }
+
 /* Messages, the pad, and the picture */
 static void window_frame(void)
 {
     MSG msg;
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) { TranslateMessage(&msg); DispatchMessageA(&msg); }
-    if (GetForegroundWindow() == wnd) pad_poll();
+    pad_poll(window_front());
     if (quit_req) dos_exit(0);
     compose_view();
     paint();
@@ -650,6 +661,8 @@ static void menu(void)
     int cursor = SDL_ShowCursor(SDL_QUERY);
     SDL_ShowCursor(SDL_ENABLE);
     board_aside(1);                                /* the dialog would open under the scoreboard */
+    feedback_all_off();                            /* and the game stands still under it */
+    plunger_let_go();
     SDL_ShowMessageBox(&d, &id);
     board_aside(0);
     SDL_ShowCursor(cursor);
@@ -922,6 +935,11 @@ static void window_open(void)
     }
 }
 
+static int window_front(void)
+{
+    return g_opt.cabinet ? SDL_GetKeyboardFocus() != NULL : (SDL_GetWindowFlags(wnd) & SDL_WINDOW_INPUT_FOCUS) != 0;
+}
+
 /* Events, the pad, and the picture */
 static void window_frame(void)
 {
@@ -936,8 +954,7 @@ static void window_frame(void)
             if (e.window.event == SDL_WINDOWEVENT_MOVED || e.window.event == SDL_WINDOWEVENT_RESIZED) remember_place();
         }
     }
-    if (g_opt.cabinet ? SDL_GetKeyboardFocus() != NULL : (SDL_GetWindowFlags(wnd) & SDL_WINDOW_INPUT_FOCUS) != 0)
-        pad_poll();
+    pad_poll(window_front());
     if (quit_req) dos_exit(0);
     compose_view();
     if (g_opt.cabinet) cabinet_present();
@@ -970,6 +987,48 @@ void host_audio(const int16_t *s, int frames)
     if (wnd) window_audio(s, frames);
 }
 
+/* ---- the analog plunger (plunger.c) ---------------------------------------- */
+
+static Plunger plunger;
+static int plunger_used;             /* only then is the table ever written */
+
+static const WatchMap *plunger_table(uint8_t **ds, uint8_t **cs)
+{
+    uint32_t d, c;
+    const WatchMap *m = watch_table(&d, &c);
+    if (m) { *ds = g_cpu.mem + d; *cs = g_cpu.mem + c; }
+    return m;
+}
+
+static void plunger_let_go(void)
+{
+    uint8_t *ds = NULL, *cs = NULL;
+    if (!plunger_used) return;
+    const WatchMap *m = plunger_table(&ds, &cs);
+    plunger_cancel(&plunger, m, ds, cs);
+}
+
+static void plunger_poll(void)
+{
+    PlungerInput in;
+    const double ms = pit_now() * 1000.0 / PIT_HZ;
+    if (plunger_traced()) plunger_trace_at(ms, &in);
+    else if (wnd && pad_plunger_on()) pad_plunger(window_front(), &in);
+    else {                           /* switched off in the ini while the game runs */
+        plunger_let_go();
+        plunger_used = 0;
+        return;
+    }
+    if (!plunger_used) {
+        plunger_init(&plunger);
+        watch_wanted();
+        plunger_used = 1;
+    }
+    uint8_t *ds = NULL, *cs = NULL;
+    const WatchMap *m = plunger_table(&ds, &cs);
+    plunger_step(&plunger, m, ds, cs, watch_running(), ms, &in);
+}
+
 void host_init(void)
 {
     keys_parse();
@@ -986,6 +1045,9 @@ void host_frame(void)
 {
     static uint64_t last_present;
     keys_due();
+    dof_tick();                      /* the helper's starts and ends */
+    watch_tick();                    /* first: a table it has lost is not written */
+    plunger_poll();
     uint64_t now = pit_now();
     shots_due(now);
     if (g_opt.seconds > 0 && now >= (uint64_t)(g_opt.seconds * PIT_HZ)) dos_exit(0);
@@ -1052,6 +1114,8 @@ void host_snapshot(const char *path)
 
 void host_shutdown(void)
 {
+    feedback_close();
+    dof_close();
     rec_close();
     if (wav_out) { wav_header(wav_out, (uint32_t)wav_samples); fclose(wav_out); wav_out = NULL; }
     window_close();

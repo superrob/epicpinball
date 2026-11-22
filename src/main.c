@@ -29,12 +29,26 @@
  *   --present WxH     --shot-at frames through the presenter at that size
  * Settings changed in the window are kept in epicpinball.ini in the save
  * folder; the options above win over it, and headless runs read only them.
+ *   --feedback-log FILE  what a cabinet would feel, as a list: flippers, slings,
+ *                     bumpers, launch, drain ... (docs/cabinet-feedback.md)
+ *   --dof             table events to libdof, with VPinball's DOF files or
+ *                     directoutputconfig/ in the save folder; no limits, they
+ *                     are the controller's. Build it with dof/build.sh
+ *                     (Linux; docs/cabinet-feedback.md first)
+ *   --joysticks       list joysticks and their axes as they move, to set up
+ *                     [plunger] in controller.ini (Linux)
+ *   --plunger-trace LIST  a scripted plunger sensor: "ms:percent,..." pulled,
+ *                     straight lines between, "-" for unplugged
  *   --trace           log DOS calls to stderr
  *   --shot FILE.bmp   write the last frame at exit
  *   --shot-at LIST    frames at emulated times: "ms:file.bmp,..."
  *   --wav OUT.wav     write the audio (no ffmpeg needed)
  */
 #include "machine.h"
+#include "feedback.h"
+#include "dof_pipe.h"
+#include "plunger.h"
+#include "watch.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #ifdef _WIN32
@@ -49,6 +63,7 @@ extern jmp_buf g_exit_jmp;
 extern int g_exit_code;
 void host_snapshot(const char *path);
 int host_parse_turn(const char *s);
+int pad_list(double seconds);
 int host_parse_place(const char *s, RECT *r);
 
 void trace(const char *fmt, ...)
@@ -99,6 +114,7 @@ static void mkdirs(const char *p)
 int main(int argc, char **argv)
 {
     static char tail[256];
+    int list_joysticks = 0;
     const char *volatile shot = NULL;    /* read after the longjmp */
 #ifndef _WIN32
     /* Windows links a 16 MB stack (CMakeLists.txt). Linux grows the main
@@ -122,6 +138,10 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--wav") && v) { g_opt.wav = v; i++; }
         else if (!strcmp(a, "--mute")) g_opt.mute = 1;
         else if (!strcmp(a, "--trace")) g_opt.trace = 1;
+        else if (!strcmp(a, "--feedback-log") && v) { g_opt.feedback_log = v; i++; }
+        else if (!strcmp(a, "--dof")) g_opt.dof = 1;
+        else if (!strcmp(a, "--joysticks")) list_joysticks = 1;
+        else if (!strcmp(a, "--plunger-trace") && v) { g_opt.plunger_trace = v; i++; }
         else if (!strcmp(a, "--window") && v) { g_opt.window = atoi(v); i++; }
         else if (!strcmp(a, "--scale") && v) { g_opt.scale = v; i++; }
         else if (!strcmp(a, "--look") && v) { g_opt.look = v; i++; }
@@ -143,12 +163,28 @@ int main(int argc, char **argv)
             }
         } else { fprintf(stderr, "unknown option %s (see the top of src/main.c)\n", a); return 2; }
     }
+    if (list_joysticks) return pad_list(g_opt.seconds);
     const char *wrong = cabinet_check();
+    if (!wrong && g_opt.plunger_trace && !plunger_trace(g_opt.plunger_trace))
+        wrong = "--plunger-trace takes ms:percent,... in order of time, e.g. 20000:0,20500:100,20540:0";
+    if (!wrong && g_opt.dof && g_opt.headless && !g_opt.realtime)
+        wrong = "--dof needs a window or --realtime: libdof times pulses by the wall clock";
     if (wrong) { fprintf(stderr, "%s\n", wrong); return 2; }
     if (!g_opt.datadir) g_opt.datadir = "original";
     if (!g_opt.savedir) g_opt.savedir = "saves";
     g_opt.args = tail;
     mkdirs(g_opt.savedir);
+    if (g_opt.feedback_log) {
+        if (!feedback_log(g_opt.feedback_log)) fatal("cannot write %s", g_opt.feedback_log);
+        watch_wanted();
+    }
+    if (g_opt.dof) {
+        if (!dof_open(DOF_HELPER, g_opt.savedir)) return 2;
+        watch_wanted();
+    }
+    if (g_opt.plunger_trace) watch_wanted();
+    atexit(feedback_close);            /* fatal() does not come through host_shutdown */
+    atexit(dof_close);
 
     if (cpu_alloc_mem(&g_cpu) != 0) return 1;
     vga_init();

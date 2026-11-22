@@ -44,6 +44,9 @@ typedef struct {
     const char *rotate;       /* --rotate 0|90|180|270 */
     const char *display;      /* --playfield-display N */
     const char *score_window; /* --score-window X,Y,W,H */
+    const char *feedback_log; /* --feedback-log FILE: table events */
+    const char *plunger_trace;/* --plunger-trace "ms:percent,...": a scripted sensor */
+    int dof;                  /* --dof: cabinet outputs through dof/'s helper */
 } Options;
 extern Options g_opt;
 
@@ -73,6 +76,7 @@ void bios_key_push(uint8_t scan, uint8_t ascii);
 void images_placed(const char *file, const uint8_t *raw, uint32_t rawlen, uint16_t seg, uint32_t len);
 void images_gone(uint16_t seg);
 void (*images_lookup(uint16_t seg, uint16_t off))(CPU *);
+const LiftedImage *images_at(uint16_t seg);
 void images_miss(const char *how, uint16_t seg, uint16_t off);
 
 /* machine.c: PIC, PIT, keyboard controller, speaker, IRQ delivery */

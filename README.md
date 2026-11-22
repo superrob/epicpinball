@@ -29,7 +29,7 @@ ships, the output never does.
 ## Status
 
 **v0.1.0 — alpha. The menus and all thirteen tables boot and play; the
-conformance harness passes 142/142 on Linux.**
+conformance harness passes 152/152 on Linux.**
 
 | | |
 |---|---|
@@ -40,13 +40,14 @@ conformance harness passes 142/142 on Linux.**
 | Dot-matrix scoreboard (the VGA split screen) | ✅ |
 | Music and effects: Sound Blaster 16, 8-bit stereo, 22 kHz | ✅ measured, see below |
 | Windowed play at real speed | ✅ (seen on a virtual monitor) |
-| Linux, natively (gcc, SDL2) | ✅ 142/142 conformance on Arch (133/133 on Debian 13, before cabinet mode); little tried on a real desktop |
+| Linux, natively (gcc, SDL2) | ✅ 152/152 conformance on Arch (133/133 on Debian 13, before cabinet mode); little tried on a real desktop |
 | Gamepad (XInput, `controller.ini`, GOG's DOSBox mapping by default) | implemented, untested on a real pad |
 | `SETUP.EXE` (the sound card menu) | not lifted: its start-up check is answered, and GOG's `SOUNDCRD.INF` (Sound Blaster 16) is used as shipped |
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, with hands on a keyboard | not yet |
 | Cabinet mode, `--cabinet` (Linux only) | ✅ on virtual displays; not yet tried on a cabinet |
-| **Conformance** ([docs](docs/conformance.md)) | **142/142** on Linux (Windows skips the 9 cabinet checks) |
+| Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | tested on loopback, a simulated board and a virtual joystick; **never on hardware** |
+| **Conformance** ([docs](docs/conformance.md)) | **152/152** on Linux (Windows skips the 9 cabinet checks, and has not run the 10 feedback ones) |
 
 Everything marked ✅ was seen working in scripted headless runs, which the
 conformance harness repeats. The sound was checked by measurement — a stereo
@@ -68,6 +69,11 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
 - **Cabinet mode** (`--cabinet`, Linux): for a virtual pinball machine. The
   whole table fills the playfield display, turned with F6; the scoreboard is
   a window of its own. [How to set one up](docs/remaster.md#cabinet-mode).
+- **Cabinet feedback** (`--dof`, Linux): flippers, slingshots, bumpers,
+  launch, drain, nudge and the rest go to libdof as DOF events, with
+  VPinball's DOF files if there are any (no limits: those are the
+  controller's), and a **plunger position sensor** can work the game's plunger.
+  [Read this before connecting a coil](docs/cabinet-feedback.md).
 - **Its own window**, drawn with Direct3D 11 (SDL2 on Linux): resizable, borderless
   fullscreen (F11, Alt+Enter), remembered where you left it.
 - **Scaling** (F12): sharp-bilinear (default), smooth, CRT, nearest, integer.
@@ -266,6 +272,9 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 | `--rotate 0\|90\|180\|270` | with `--cabinet`: the playfield turned clockwise, this run |
 | `--playfield-display N` | with `--cabinet`: the display the playfield fills; they are listed at start |
 | `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard goes, this run |
+| `--dof` | DOF events through libdof (Linux): build `dof/build.sh` first; rows in VPinball's DOF files or `saves/directoutputconfig/`; no output limits ([docs](docs/cabinet-feedback.md)) |
+| `--joysticks` | list joysticks and their live axes, to set up `[plunger]` in `saves/controller.ini` (Linux) |
+| `--feedback-log FILE`, `--plunger-trace "ms:percent,..."` | testing: what a cabinet would feel; a scripted plunger sensor |
 | `--mute` | |
 | `--headless` | no window, no audio device, deterministic time — works over RDP |
 | `--record out.mp4` | video and audio through ffmpeg (with `--headless`: unattended) |
@@ -293,10 +302,12 @@ The [Step by step](#step-by-step) route is the build. What else is here:
 | `tools/lift.py` | one program or driver → C, at the segment it runs at |
 | `tools/discover.py` | lift, build, play, repeat |
 | `tools/conformance.py` | the scripted checks; `--update` records a new baseline |
+| `tools/feedback_map.py` | where each table keeps what cabinet feedback and the plunger use |
+| `dof/` | the optional output helper: its own program, GPLv3, built by `dof/build.sh` |
 | `setup.sh`, `build-linux.sh` | the Linux quick start and rebuild |
-| `tests/selftest.c` | the split screen, SB16 stereo and the image registry, with no game data — what CI runs (`cmake --build build --target selftest`) |
-| `src/` | the DOS machine: `dos.c` (DOS, BIOS, EXEC), `images.c` (which lifted code is where), `machine.c` (PIC, PIT, keyboard, interrupts), `vga.c`, `audio.c` (SB16, DMA), `host.c` (window, input, recording: Win32, or SDL2 on Linux), `present.c` (Direct3D 11, or SDL2), `pad.c` |
-| `docs/` | [architecture](docs/architecture.md), [lifting](docs/lifting.md), [conformance](docs/conformance.md) |
+| `tests/selftest.c` | the split screen, SB16 stereo, the image registry, the feedback watcher, the plunger and the helper's pipe, with no game data — what CI runs (`cmake --build build --target selftest`) |
+| `src/` | the DOS machine: `dos.c` (DOS, BIOS, EXEC), `images.c` (which lifted code is where), `machine.c` (PIC, PIT, keyboard, interrupts), `vga.c`, `audio.c` (SB16, DMA), `host.c` (window, input, recording: Win32, or SDL2 on Linux), `present.c` (Direct3D 11, or SDL2), `pad.c`, `watch.c` and `feedback.c` (table events), `dof_pipe.c`, `plunger.c` |
+| `docs/` | [architecture](docs/architecture.md), [cabinet feedback](docs/cabinet-feedback.md), [lifting](docs/lifting.md), [conformance](docs/conformance.md) |
 
 A trace build (`cmake -B build-dbg -DEPIC_TRACE=ON`, then
 `cmake --build build-dbg --config RelWithDebInfo`) keeps a ring of the lifted
@@ -312,6 +323,7 @@ copy, and `.gitignore` keeps it out of this repository.
 
 ## License
 
-MIT for this repository's code ([LICENSE](LICENSE)). Epic Pinball is commercial
+MIT for this repository's code ([LICENSE](LICENSE)), except `dof/`, a separate
+program under the GPLv3 ([dof/LICENSE](dof/LICENSE)). Epic Pinball is commercial
 software; no part of the game, and nothing generated from it, is in this
 repository ([NOTICE](NOTICE)).

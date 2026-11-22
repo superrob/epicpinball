@@ -140,6 +140,41 @@ drawing a line between the DSP's samples (or holding each, as an option;
 [remaster](remaster.md#sound)). There is no FM chip to model: MASI mixes
 samples itself.
 
+## Cabinet feedback
+
+```
+lifted game ──read only──► watch.c ──► feedback.c ──► dof_pipe.c ══pipe══► dof/ (GPLv3) ──► libdof ──► board
+joystick axis ──► pad.c ──► plunger.c ──pull + Ctrl flag──► lifted game
+```
+
+The tables are one engine at different offsets. `tools/feedback_map.py` finds
+each one's by instruction signatures and writes `work/feedback/epN.map`,
+keyed by the EXE's size and FNV; no address is committed. `src/watch.c` reads
+a running table through three seams, none needing a re-lift:
+
+- `RECOMP_ENTER`, at the top of each lifted function (`src/lifted.h`): the
+  physics step, and the kicker with the touched pixel still in ES:BX. One
+  flag test when off. A generator that emits no `RECOMP_ENTER` makes the map
+  tool fail;
+- the memory write hook (`src/vga.c`): the stores that mean one thing. A hit
+  is the kicker storing its strength, since it also turns back (tilt, a weak
+  zone); a launch is the game zeroing the pull and then changing the velocity;
+- a sample in each `host_frame`, for the flippers.
+
+`src/feedback.h` is the interface: no CPU and no SDL, so another version of
+the game could feed the same log and helper. Events only go out.
+`src/dof_pipe.c` starts a helper per table and never waits on it: one thread
+runs the game, and it has a 1.4 ms retrace to catch. The helper only
+translates: the table's name becomes DOF's ROM name, an event its E number.
+Neither side times or limits an output; that is for the DOF files and the
+controller.
+
+`src/plunger.c` is the one thing that writes into a table. It sets the pull
+and the Ctrl-held flag together from inside `host_frame`, which follows
+interrupt delivery in `recomp_tick`, so the game's main loop never sees one
+without the other. A release is the one pull without the flag, and is then
+left alone until the game has zeroed it ([cabinet feedback](cabinet-feedback.md)).
+
 ## Host
 
 Windowed: a Win32 window drawn by the Direct3D 11 presenter (`src/present.c`,

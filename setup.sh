@@ -126,6 +126,7 @@ export PCRECOMP_HOME
 step "[4/5] Lifting and building, then playing each table headless to find the rest"
 python3 tools/discover.py
 [ -x build-linux/epicpinball ] || fail "the build finished but build-linux/epicpinball is missing."
+python3 tools/feedback_map.py || say "  No feedback map: cabinet feedback and the analog plunger will be off. The game is fine."
 
 # ---- 6. launcher --------------------------------------------------------------------
 printf '#!/bin/sh\ncd "$(dirname "$0")" && exec build-linux/epicpinball "$@"\n' > epicpinball.sh

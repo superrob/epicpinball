@@ -1,0 +1,84 @@
+/*
+ * feedback.c - table events, to the log and to whoever drives outputs.
+ *
+ * The log (--feedback-log) has everything, the demo included, a line each:
+ *
+ *   ms table event on x y a b felt|muted
+ *
+ * so a scripted run can be checked against what the game did. The sink gets
+ * only what a player should feel. An off is never held back.
+ */
+#include "feedback.h"
+#include <stdio.h>
+#include <string.h>
+
+static const char *const names[FB_EVENTS] = {
+    "flipper_left", "flipper_right", "sling_left", "sling_right",
+    "bumper_left", "bumper_center", "bumper_right",
+    "launch", "ball_release", "drain", "nudge", "tilt", "knocker",
+    "game_over", "table_start", "table_end", "table_lost",
+};
+
+static FILE *log_file;
+static const FbSink *out;
+static char table[16];
+static int muted;
+
+const char *feedback_name(FbEvent e) { return (unsigned)e < FB_EVENTS ? names[e] : "?"; }
+
+int feedback_by_name(const char *name)
+{
+    for (int i = 0; i < FB_OUTPUTS; i++) if (!strcmp(name, names[i])) return i;
+    return -1;
+}
+
+int feedback_log(const char *path)
+{
+    log_file = fopen(path, "w");
+    return log_file != NULL;
+}
+
+void feedback_sink(const FbSink *sink) { out = sink; }
+
+void feedback_table(double ms, const char *name)
+{
+    muted = 0;
+    if (!name && *table) feedback_event(ms, FB_TABLE_END, 1, (FbDetail){ 0, 0, 0, 0 });
+    if (out) {
+        out->all_off();
+        out->table(name);
+    }
+    snprintf(table, sizeof table, "%s", name ? name : "");
+    if (name) feedback_event(ms, FB_TABLE_START, 1, (FbDetail){ 0, 0, 0, 0 });
+    if (log_file) fflush(log_file);
+}
+
+void feedback_mute(int on)
+{
+    if (on == muted) return;
+    muted = on;
+    if (on && out) out->all_off();
+}
+
+void feedback_event(double ms, FbEvent e, int on, FbDetail d)
+{
+    if (log_file)
+        fprintf(log_file, "%.2f %s %s %d %d %d %d %d %s\n", ms, *table ? table : "-",
+                feedback_name(e), on, d.x, d.y, d.a, d.b, muted ? "muted" : "felt");
+    if (out && e < FB_OUTPUTS && (!on || !muted)) out->event(e, on);
+}
+
+void feedback_all_off(void)
+{
+    if (out) out->all_off();
+}
+
+void feedback_close(void)
+{
+    if (out) {
+        out->all_off();
+        out->table(NULL);
+        out = NULL;
+    }
+    if (log_file) { fclose(log_file); log_file = NULL; }
+}

@@ -1,0 +1,306 @@
+# Cabinet feedback and the analog plunger
+
+For a virtual pinball machine (Linux). Two separate things, each off until
+you set it up:
+
+- **`--dof`**: the game tells [libdof](https://github.com/vpinball/libdof)
+  which table is up and what happens on it. Your DOF files say what that
+  fires.
+- **`[plunger]`** in `saves/controller.ini`: a plunger position sensor, read
+  as a joystick axis, pulls and launches the game's plunger.
+
+None of this has yet run on real hardware: no Pinscape, no coil, no sensor
+([what was tested](#what-was-tested)). The first run on coils is yours.
+
+## No output limits here: set them in your controller
+
+**The game and its helper limit nothing.** No pulse is cut short, no held
+output times out, no duty is counted: what your rows ask for is what the
+board is sent, and a frozen game or a lost USB write leaves an output as it
+was. A coil held on burns out, and can start a fire, so limits belong in the
+controller. On a Pinscape Pico, for each solenoid port:
+
+```js
+timeLimit: 100,     // ms at full power; omitted or 0 means no limit
+powerLimit: 0,      // what it drops to when that runs out, not a maximum: 0 is off
+coolingTime: 100,   // ms after switching off before full power again
+```
+
+Suspending output management in the board's console disables these, and they
+have not been checked in its Safe Mode. This is from the firmware's reference
+(`Firmware/JSONConfigRef.txt` in
+[mjrgh/PinscapePico](https://github.com/mjrgh/PinscapePico)) and source, not
+from a board: try it with the coil supply off first.
+
+## Setting up DOF
+
+### 1. Build the helper
+
+```sh
+dof/build.sh
+```
+
+It needs g++, CMake 3.25, autoconf, automake, libtool, patch, curl and
+libudev. It downloads libdof and four libraries at pinned commits (about
+1.5 MB, checked by SHA-256), patches one libdof bug
+([dof/README.md](../dof/README.md)) and builds in `dof/build/`. Nothing is
+installed elsewhere. The helper is GPLv3 like libdof and is a program of its
+own; the game stays MIT and does not link it.
+
+### 2. Let your user reach the board
+
+libdof talks to the Pico over hidraw, which is root's by default. As
+`/etc/udev/rules.d/70-pinscape.rules`:
+
+```
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="eaea|eaeb", TAG+="uaccess"
+```
+
+The file's number has to be below 73. Then:
+
+```sh
+sudo udevadm control --reload
+```
+
+and plug the board in again.
+
+### 3. Which DOF files are used
+
+1. **VPinball's**, if it is installed and has a `directoutputconfig` folder:
+
+   ```
+   ~/.local/share/VPinballX/10.8/directoutputconfig/
+   ```
+
+   That is `$XDG_DATA_HOME` in place of `~/.local/share` if set, and the
+   newest version folder with a `VPinballX.ini`, even if only an older one
+   has DOF files. A `DOFPath` under `[Plugin.DOF]` in that ini wins (a setting
+   of newer VPX builds; where it is saved was inferred, not seen). VPX's DOF
+   plugin does not need to be switched on.
+2. **Otherwise** `saves/directoutputconfig/`.
+3. **The game's own rows:** `directoutputconfig*.ini` files in
+   `saves/directoutputconfig/` take the place of VPinball's ini files, for
+   this game only. Its `Cabinet.xml` and `GlobalConfig_B2SServer.xml` still
+   apply. Keep the rows there: a new Config Tool export replaces the files
+   it goes into.
+
+The helper prints which it took. It writes nothing into VPinball's folder;
+libdof itself writes a log wherever that folder's GlobalConfig asks for one,
+as it does under VPX. Without one, the log is `saves/dof/DirectOutput.log`.
+
+### 4. Write rows
+
+Copy [the example](../dof/example/directoutputconfig120.ini) to
+`saves/directoutputconfig/` and make it your own, or put the same rows into
+VPinball's files.
+
+```ini
+[Colors DOF]
+White=48,48,48
+
+[Config DOF]
+# One column per output, from 1 (an RGB column takes three).
+epicpinball,E101 50,E102 50,E103 50,E104 50
+epicpinball_ep07,E101 50,E102 50,E103 50 I32,E104 50 I32
+```
+
+- **The file's number** is the DOF unit: 120 is Pinscape Pico unit 1, 121 is
+  unit 2, and so on.
+- **The table's name** is `epicpinball_ep01` to `epicpinball_ep13`. A table
+  without a row of its own uses `epicpinball`. With neither, it has no
+  feedback, and nothing is switched on.
+- **The events:**
+
+| Number | `--test` name | When | Signal |
+|---|---|---|---|
+| E101, E102 | `flipper_left`, `flipper_right` | the flipper starts up (not the key: never while tilted). EP4's and EP12's extra flippers share their side | on while it is up |
+| E103, E104 | `sling_left`, `sling_right` | the slingshot kicks, by where the ball touched it. EP8 has none, EP9 only a left one | instant |
+| E105, E106, E107 | `bumper_left`, `bumper_center`, `bumper_right` | a bumper kicks, by its place on the table. Tables with more than three share these; EP4 has one | instant |
+| E108 | `launch` | the game launches the ball | instant |
+| E109 | `ball_release` | a ball arrives in the shooter lane for a new game or the next ball | instant |
+| E110 | `drain` | a ball is lost | instant |
+| E111, E112 | `nudge`, `tilt` | each one | instant |
+| E113 | `knocker` | an extra ball. The game has no replay or match, and EP1 and EP5 never give one | instant |
+
+An instant event is a 1 and at once a 0, so the row gives it its length:
+
+| Setting | What comes out |
+|---|---|
+| `E103` | libdof's default minimum, 60 ms |
+| `E103 50` | 50 ms; a hit during it starts the 50 ms again |
+| `E103 M1` | **nothing**: 1 ms is over before it is sent |
+| `E103 50 I32` | 50 ms at two thirds of full |
+| `E101 50` | a 50 ms pulse as the flipper starts up |
+| `E101` | on for as long as the flipper is up |
+
+### 5. Try a row
+
+With the game closed:
+
+```sh
+dof/build/epicpinball-dof --table ep7 --test sling_left
+```
+
+It sends that one event (a flipper is held half a second), waits three
+seconds and switches off.
+
+### 6. Play
+
+```sh
+./epicpinball.sh --cabinet --dof
+```
+
+`--dof` also works in the ordinary window, and headless with `--realtime`.
+On Windows it says that it is not supported yet.
+
+Events from before libdof is up are dropped, not sent late. A whole Config
+Tool export (4 MB) took it one to two seconds here; a ball arrives about
+two and a half seconds into a table.
+
+The demo and the menus send nothing. A pause, a prompt and the settings
+dialog let go of held flippers. `--feedback-log FILE` lists every event with
+its time, marked `felt` or `muted`, and needs neither a board nor the helper.
+
+## What to watch for in DOF
+
+- **libdof looks for boards itself.** Opening it already asks any Pinscape
+  for its identity and sets its clock, and with auto-config (no Cabinet.xml,
+  or one that does not switch it off) it probes every controller type it
+  knows.
+- **`Cabinet.xml` needs a GlobalConfig.** libdof reads it only when
+  `GlobalConfig_B2SServer.xml` in the same folder names it:
+
+  ```xml
+  <GlobalConfig>
+    <CabinetConfigFilePattern>{GlobalConfigDir}/Cabinet.xml</CabinetConfigFilePattern>
+  </GlobalConfig>
+  ```
+
+- **`IniFilesPath`** in a GlobalConfig beats the game's own rows.
+- **A table's own row in any ini file** switches off the `epicpinball` row in
+  all the others, on that table. Give the table a row in each.
+- **Only `#` starts a comment**, and a file without a `[Colors DOF]` entry
+  is ignored whole.
+- **With the game's own rows**, a GlobalConfig's `TableConfigFilePatterns`
+  and `{TableName}` see a table file named `epicpinball_epNN`. If such a
+  pattern matches a file, libdof 0.5.4 crashes (it reads the table file in
+  that file's place): keep table XMLs out of `saves/directoutputconfig/`.
+- **libdof 0.5.4, which the helper pins**, ignores `Cabinet.xml` toys other
+  than `LedWizEquivalent` and `LedStrip` (a shaker works as a plain output
+  with an intensity), and its schedules and table overrides do not act on a
+  Pico. A Cabinet.xml it cannot parse can crash it; the game goes on.
+- **VPX bundles its own libdof** (0.4.7 in builds of 2026), so the same files
+  can behave a little differently there.
+
+## What still switches outputs off
+
+These are the ends of things, not limits.
+
+| What happens | What switches off |
+|---|---|
+| the table ends, the game quits | libdof, finishing |
+| the game crashes or is killed | the helper sees the pipe close and finishes libdof |
+| pause, a prompt, the settings dialog | held flippers are let go; effects already running play out |
+| the helper dies, or hangs starting or stopping | it is killed, `--all-off` runs once, that table goes on without feedback |
+| libdof hangs and the game is gone | the helper restarts itself as `--all-off` after 10 to 20 seconds |
+| the game freezes | **nothing: your controller's limits** |
+| the helper freezes in play | **nothing until the table ends** or the pipe to it fills: your controller's limits |
+| a USB write fails or never returns | **nothing: your controller's limits** |
+| the computer or the cable fails | **nothing: your controller's limits** |
+
+`--all-off` is a fresh process that connects with the same cabinet and no
+table, so no row can fire, and finishes, which switches a Pico's ports off.
+
+## The plunger
+
+```sh
+./epicpinball.sh --joysticks
+```
+
+lists the joysticks and prints their axes as they move. Pull the plunger and
+note the axis and its two ends. Then, in `saves/controller.ini` (a file from
+before this feature has no such section: add it at the end):
+
+```ini
+[plunger]
+device = Pinscape Pico       ; the name or GUID from that list
+axis = 2                     ; the number from that list, or X Y Z RX RY RZ
+rest = 0
+pulled = 32767               ; swap the sign if yours reads backwards
+speed_axis = none            ; optional
+```
+
+Pico configurations commonly use Z. The names assume a board with all six
+axes; the number is always right. The file is read again when the window
+comes back to the front.
+
+- **It follows** while a ball rests in the lane. The drawn plunger moves a
+  pixel a frame, as the keyboard moves it, so it can trail your hand by up
+  to a third of a second.
+- **Let it go** and the ball launches at the strength you pulled to, rounded
+  to one the keyboard can produce, however far the drawing had got. Letting
+  go is a fall from nine tenths of the pull to rest within 90 ms, judged on
+  the last 150 ms. Easing it home does nothing, and neither does a pull under
+  15%. With `speed_axis` set, a reading of a quarter of that axis's range
+  also counts as letting go (not tried with a real board's units).
+- **Enigma** (EP8) has one strength: a release from 25% or more fires it.
+- **Nothing fires** on unplugging, losing focus, pausing, the settings
+  dialog or the table ending. After any of those, and at the start, the
+  plunger counts again once it has been seen at rest.
+- **Space and Ctrl** still work.
+- A cabinet board's axes (and the plunger device's) no longer act as a pad's
+  triggers and stick. Its buttons still press what `controller.ini` says.
+  A centred axis used to read as both triggers pulled, holding both flippers.
+
+This is the one feature that writes the game's memory: the pull value and
+the Ctrl-held flag, only with a plunger configured, and only on a table whose
+file matches its map.
+
+## The maps
+
+Both features find their way around the tables with `work/feedback/epN.map`,
+made from your own copy and lifted code by `tools/feedback_map.py`.
+`build-linux.sh` and `setup.sh` run it. A table whose map is missing, or of
+another file, plays normally without either feature, and says so. The
+signatures are proven on GOG 1.01 only.
+
+## Troubleshooting
+
+| Message or symptom | What to do |
+|---|---|
+| `--dof needs dof/build/epicpinball-dof` | run `dof/build.sh` |
+| `no epicpinball row in ...` | write rows there, or in `saves/directoutputconfig/` |
+| `no epicpinball_epNN and no epicpinball row` | that table has no row |
+| `VPinball has no .../directoutputconfig` | put the Config Tool's export there, or ignore it: `saves/directoutputconfig/` is used |
+| `Error searching for legacy PinOne COM port` | harmless without a PinOne: libdof could not list serial ports while looking for one |
+| `no Pico answers` | the udev rule, the cable, the board's unit number |
+| a row does nothing | the file's number, `M1`, the traps [above](#what-to-watch-for-in-dof), `saves/dof/DirectOutput.log` |
+| `the helper stopped (signal 11)` | a Cabinet.xml libdof cannot read, or a file matching `TableConfigFilePatterns` |
+| `the helper stopped`, `did not start` | feedback is off until the table is started again; the lines before say why |
+| `no work/feedback/epN.map`, `... of another copy` | `python3 tools/feedback_map.py` |
+| `the table's stack has left its bounds` | a fault in the game, seen on African Safari: feedback and the plunger stop for that table until it is started again |
+| no joysticks listed | your user must be able to read `/dev/input` |
+| the plunger is ignored | let it rest first; check `rest` and `pulled` with `--joysticks` |
+
+## What was tested
+
+Without hardware, in a sandbox with no devices:
+
+- events against the game's own instructions on all 13 tables, over 100,000
+  of them. Knockers were never seen on EP3, 4, 6, 10, 11, 12 and 13 (the
+  code that awards them is there; no scripted game earned one), and one
+  kicker on EP5 and one on EP13 were never hit;
+- the helper on ArtNet over loopback and against a simulated Pico's HID
+  interface: file lookup, rows, effects, holds, kills, hangs;
+- the plunger by scripted sensor (`--plunger-trace "ms:percent,..."`) on all
+  13 tables, and by a virtual joystick through SDL. Its launch strengths are
+  the keyboard's and so are the speeds the ball leaves with. A ball's later
+  path still differs with the millisecond of release, as it does from the
+  keyboard;
+- 70 frames a second in cabinet mode with the helper, a hung helper, and a
+  sensor present and absent.
+
+Not tested: a Pico, coils, other controllers, a real Config Tool export,
+Flatpak and portable VPX, a real plunger's feel and noise, udev on a
+cabinet, Windows (its halves were only syntax-checked), other releases of
+the game.

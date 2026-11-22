@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Lint (Python compiles)
-        run: python -m py_compile tools/lift.py tools/discover.py tools/conformance.py
+        run: python -m py_compile tools/lift.py tools/discover.py tools/conformance.py tools/feedback_map.py
       - name: Configure
         run: cmake -B build -G "Visual Studio 17 2022" -A x64 "-DPCRECOMP_HOME=${{ github.workspace }}/_pcrecomp"
       - name: Build selftest
@@ -54,7 +54,9 @@ jobs:
       - name: Packages
         run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
       - name: Lint (shell)
-        run: bash -n setup.sh && sh -n build-linux.sh
+        run: bash -n setup.sh && sh -n build-linux.sh && sh -n dof/build.sh
+      - name: The DOF helper's folder lookup compiles (no libdof, no hardware)
+        run: echo '#include "locate.h"' | g++ -std=c++20 -fsyntax-only -Idof/src -xc++ -
       - name: Configure
         run: cmake -B build-linux -DCMAKE_BUILD_TYPE=Release "-DPCRECOMP_HOME=${{ github.workspace }}/_pcrecomp"
       - name: Build selftest

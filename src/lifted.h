@@ -13,6 +13,18 @@
 #define RECOMP_IRQ               /* loops poll the timer/keyboard/SB */
 #include "recomp16/cpu.h"
 
+/* Every lifted function begins with RECOMP_ENTER("name"). While a table is
+ * watched for cabinet feedback (src/watch.c) that says the function is
+ * called; otherwise it is one test. */
+extern int g_watch_on;
+void watch_enter(CPU *cpu, const char *fn);
+#undef RECOMP_ENTER
+#ifdef RECOMP_TRACE
+#define RECOMP_ENTER(name) do { recomp_enter(name); if (g_watch_on) watch_enter(cpu, name); } while (0)
+#else
+#define RECOMP_ENTER(name) do { if (g_watch_on) watch_enter(cpu, name); } while (0)
+#endif
+
 /* ---- services ---- */
 void dos_int21(CPU *cpu);
 void bios_int10(CPU *cpu);

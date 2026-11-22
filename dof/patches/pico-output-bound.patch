@@ -1,0 +1,18 @@
+PinscapePico::UpdateOutputs: stay inside the value buffer.
+
+The buffer is made before the board is open, so it has 128 values whatever
+the board has. The loop ran to the board's own count, and with more than 128
+ports it sent unset memory to them. No value changes; ports past 128 get
+none, as they have no outputs in libdof anyway.
+
+--- a/src/cab/out/pspico/PinscapePico.cpp
++++ b/src/cab/out/pspico/PinscapePico.cpp
+@@ -316,7 +316,7 @@
+    int firstChangedIndex = -1;
+    int lastChangedIndex = -1;
+ 
+-   for (int i = 0; i < GetNumberOfOutputs(); ++i)
++   for (int i = 0; i < GetNumberOfOutputs() && i < static_cast<int>(newOutputValues.size()); ++i)
+    {
+       int val = newOutputValues[i];
+       bool changed = (newOutputValues[i] != m_oldOutputValues[i]);

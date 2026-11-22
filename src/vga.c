@@ -18,6 +18,7 @@
  * mode a plain linear store (plane = addr & 3, offset = addr >> 2).
  */
 #include "machine.h"
+#include "watch.h"
 #include "recomp16/platform/font8x8.h"
 #ifdef EPIC_DEBUG
 #include <intrin.h>
@@ -89,7 +90,10 @@ int recomp_mem_write8(CPU *cpu, uint32_t a, uint8_t v)
 #ifdef EPIC_DEBUG
     { void watch_write(uint32_t, uint8_t); watch_write(a, v); }
 #endif
-    if (a - 0xA0000u >= 0x10000u) return 0;
+    if (a - 0xA0000u >= 0x10000u) {
+        if (g_watch_on && a - g_watch_ds < 0x10000u && g_watched[a - g_watch_ds]) watch_write_byte(a, v);
+        return 0;
+    }
 #ifdef EPIC_DEBUG
     { void vgaprof_note(void *ra); vgaprof_note(_ReturnAddress()); }
 #endif

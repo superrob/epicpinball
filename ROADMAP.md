@@ -12,6 +12,10 @@
 - **Try the remaster's hotkeys and menu by hand.** The whole table, the
   presenter and the settings file are checked headless and in a recorded
   window; F7-F12, the menu and the pad were not pressed by a test.
+- **Cabinet feedback on a cabinet.** `--dof` and the analog plunger have only
+  met ArtNet on loopback, a simulated Pico and a virtual joystick
+  (docs/cabinet-feedback.md). A real board, coils and a real plunger's noise
+  will tune the release detection.
 - **A netlab recipe**, so builds and conformance run on the farm like the other
   recomps (repo rules, section 8). Needs the MSVC build to run on the clang-cl
   builder, or an MSVC builder.
@@ -33,6 +37,12 @@
   swap chain per window and the turn in the shader.
 - **Cabinet mode on a cabinet**: it is tested on virtual displays. Real
   screens, KDE and wlroots, and SDL2 proper (not sdl2-compat) are untried.
+- **More cabinet feedback**: scoops, kickbacks, targets, gates, spinners,
+  lamps and LED strips, accelerometer nudge, general joystick buttons,
+  Windows, and an entry in the DOF Config Tool's database.
+- **African Safari's overrun**: a ball reaching x = -1 overruns a sprite
+  buffer into the timer chain. Feedback stops for that table when it happens;
+  whether the DOS original does the same is not known.
 - **Saves**: high scores and `CONFIG.PIN` go to `saves\`; check that every
   table's high-score entry round-trips.
 

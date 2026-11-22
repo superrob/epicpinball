@@ -11,3 +11,7 @@ set -e
 cd "$(dirname "$0")"
 cmake -B build-linux -DCMAKE_BUILD_TYPE=Release
 cmake --build build-linux -j "$(nproc)"
+# where the tables keep what cabinet feedback and the analog plunger use
+if [ -d work/gen/ep1 ] && [ -d original ]; then
+    python3 tools/feedback_map.py || echo "build-linux.sh: no feedback map; the game itself is fine" >&2
+fi

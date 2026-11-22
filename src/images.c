@@ -118,6 +118,14 @@ void images_placed(const char *file, const uint8_t *raw, uint32_t rawlen, uint16
     trace("[image] %s live at %04X (%u bytes)%s\n", file, seg, len, li ? "" : ", not lifted");
 }
 
+/* What was lifted from the program loaded there, or NULL */
+const LiftedImage *images_at(uint16_t seg)
+{
+    for (int i = 0; i < nplaced; i++)
+        if (placed[i].live && placed[i].base == (uint32_t)seg * 16) return placed[i].li;
+    return NULL;
+}
+
 /* A program has exited: its memory is free, its code is gone. */
 void images_gone(uint16_t seg)
 {

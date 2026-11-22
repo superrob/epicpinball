@@ -102,6 +102,9 @@ in one. The keys and the pad work whichever window has the focus, and closing
 either quits. F6 is a keyboard key: `controller.ini` presses the game's keys
 and cannot press it.
 
+Solenoids and an analog plunger are set up separately:
+[cabinet feedback](cabinet-feedback.md).
+
 - **Wayland** does not let a program place a window, so cabinet mode uses
   X11 (XWayland) when there is one. `SDL_VIDEODRIVER=wayland` overrides that:
   the playfield still fills its display, and the scoreboard, which cannot be
@@ -187,7 +190,11 @@ An Xbox controller (XInput) presses keys, so it does whatever the key does.
 
 Each line is `input = KEY` (`none` for nothing); `trigger` and `stick` set how
 far they go before they count. Settings menu → *Controller mapping...* opens
-the file; it is read again when the window comes back to the front. Not yet
+the file; it is read again when the window comes back to the front. What the
+pad holds is let go when the window loses the front or the pad is unplugged.
+On Linux a cabinet board's axes are never taken for triggers or a stick (only
+its buttons count), and `[plunger]` in the same file sets up an
+[analog plunger](cabinet-feedback.md#the-plunger). Not yet
 tried on a real pad.
 
 ## On Linux

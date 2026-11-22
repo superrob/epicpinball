@@ -6,13 +6,34 @@
  * One check per behaviour the game is known to depend on; each comment says
  * which. Built by CMake as `selftest`, with no lifted code at all.
  */
+#if !defined(_WIN32) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE               /* mkdtemp, usleep */
+#endif
 #undef NDEBUG                     /* the asserts ARE the test, in every build */
 #include "machine.h"
+#include "feedback.h"
+#include "plunger.h"
+#include "dof_pipe.h"
 #include <assert.h>
+#ifndef _WIN32
+#include <time.h>
+#include <unistd.h>
+#endif
 
 CPU g_cpu;
 Options g_opt;
-uint64_t host_us(void) { return 0; }
+static int real_clock;            /* the pipe test's time is the helper's */
+uint64_t host_us(void)
+{
+#ifndef _WIN32
+    if (real_clock) {
+        struct timespec t;
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        return (uint64_t)t.tv_sec * 1000000u + (uint64_t)t.tv_nsec / 1000u;
+    }
+#endif
+    return 0;
+}
 void trace(const char *fmt, ...) { (void)fmt; }
 void fatal(const char *fmt, ...) { (void)fmt; abort(); }
 static int16_t heard[4096 * 2];
@@ -289,6 +310,288 @@ static void test_images(void)
     assert(images_lookup(0x4001, 0) == NULL);
 }
 
+/* ---- cabinet feedback and the plunger ---- */
+
+static const char k_map[] =
+    "epicpinball-feedback 1\nimage ep1 16 69691905\n"
+    "ds 10\ncs 2000\nactive 100\nx 110\ny 120\nvx 130\nvy 140\nslots 5\n"
+    "flip_l 150\nflip_r 152\nup_l 154\nup_r 155\ntilt 160\nmeter 161\ncooldown 162\ndemo 163\n"
+    "extra 164\nover 165\ncount 166\ndrain_y 18F\nkick 167\nweak_y 180\nsling_line C7\nmap 170\n"
+    "pull 180\npull_inc C\npull_max 2C4\npull_shift 5\nctrl 297\nspace 296\n"
+    "lane_off 0\nlane_x 118\nlane_y DC\nover_pull 0\n"
+    "step_fn ep1_step\nkicker_fn ep1_kick\nbumper 100 60 0\nbumper 200 60 2\nend\n";
+
+static void test_feedback_map(void)
+{
+    /* a map is read strictly: half of one would name arbitrary guest memory */
+    static char cut[sizeof k_map];
+    const char *why = "";
+    WatchMap m;
+    assert(watch_map_parse(k_map, &m, &why));
+    assert(!strcmp(m.name, "ep1") && m.size == 16 && m.fnv == 0x69691905u && m.pull_max == 708 && m.nbumpers == 2);
+    assert(watch_kick_event(&m, 90, 70) == FB_BUMPER_LEFT && watch_kick_event(&m, 210, 70) == FB_BUMPER_RIGHT);
+    assert(watch_kick_event(&m, 40, 300) == FB_SLING_LEFT && watch_kick_event(&m, 280, 300) == FB_SLING_RIGHT);
+    for (size_t n = 0; n < sizeof k_map - 5; n++) {       /* cut short anywhere */
+        memcpy(cut, k_map, n);
+        cut[n] = 0;
+        assert(!watch_map_parse(cut, &m, &why));
+    }
+    memcpy(cut, k_map, sizeof k_map);
+    *strstr(cut, " 1\n") = '\t';
+    strstr(cut, "\t1\n")[1] = '2';                        /* another version */
+    assert(!watch_map_parse(cut, &m, &why));
+    memcpy(cut, k_map, sizeof k_map);
+    strstr(cut, "pull 180")[0] = 'q';                     /* a key it does not know */
+    assert(!watch_map_parse(cut, &m, &why));
+}
+
+static int seen[FB_OUTPUTS];
+static void seen_table(const char *name) { (void)name; }
+static void seen_event(FbEvent e, int on) { seen[e] += on; }
+static void seen_off(void) { }
+
+static void store8(uint32_t a, uint8_t v)
+{
+    watch_write_byte(a, v);                               /* as vga.c's hook: before the store */
+    g_cpu.mem[a] = v;
+}
+
+static void test_watch(void)
+{
+    /* a hit is the kicker storing its strength, not being entered: tilted, it
+     * turns back, and tables 11-13 only bounce in a low zone */
+    static const FbSink sink = { seen_table, seen_event, seen_off };
+    const char *why = "";
+    WatchMap m;
+    assert(watch_map_parse(k_map, &m, &why));
+    feedback_sink(&sink);
+    g_cpu.ss = 0x9000; g_cpu.sp = 0x0100;
+    assert(watch_map_use(&m, 0x1000));
+    uint8_t *ds = g_cpu.mem + g_watch_ds;
+    uint32_t kick = g_watch_ds + m.kick, vy = g_watch_ds + m.vy, pull = g_watch_ds + m.pull;
+    g_cpu.sp = 0x00F0;
+    ds[m.map + 1] = 0x50;                                 /* the collision map's segment */
+    g_cpu.es = 0x5000; g_cpu.bx = (uint16_t)(60 * 320 + 95); g_cpu.di = 0;
+    ds[m.y] = 50;
+
+    store8(kick, 9);                                      /* not from the kicker */
+    assert(!seen[FB_BUMPER_LEFT]);
+    watch_enter(&g_cpu, "ep1_kick");                      /* entered, and turned back */
+    assert(!seen[FB_BUMPER_LEFT]);
+    store8(kick, 9);
+    store8(kick, 9);                                      /* one entry, one hit */
+    assert(seen[FB_BUMPER_LEFT] == 1);
+    ds[m.y] = 0x80; ds[m.y + 1] = 1;                      /* at weak_y */
+    watch_enter(&g_cpu, "ep1_kick");
+    store8(kick, 3);
+    assert(seen[FB_BUMPER_LEFT] == 1);
+
+    ds[m.demo] = 1;                                       /* the demo is never felt */
+    ds[m.y] = 50; ds[m.y + 1] = 0;
+    watch_enter(&g_cpu, "ep1_kick");
+    store8(kick, 9);
+    assert(seen[FB_BUMPER_LEFT] == 1);
+    ds[m.demo] = 0;
+
+    ds[m.pull] = 0; ds[m.pull + 1] = 0;                   /* the host cancelling a pull is no launch */
+    store8(vy, 4); store8(vy + 1, 0);
+    assert(!seen[FB_LAUNCH]);
+    ds[m.pull] = 0xC4; ds[m.pull + 1] = 2;                /* the game: zeroes it, then the velocity */
+    store8(pull, 0); store8(pull + 1, 0);
+    store8(vy, 0x3C); store8(vy + 1, 0xFD);
+    assert(seen[FB_LAUNCH] == 1);
+    watch_table_end();
+    feedback_sink(NULL);
+}
+
+static uint8_t pds[0x10000], pcs[0x10000];
+static Plunger plung;
+static int launched, shown, jumped;
+static double pms;
+
+static uint16_t word(const uint8_t *m, uint16_t o) { return (uint16_t)(m[o] | m[o + 1] << 8); }
+static void put(uint8_t *m, uint16_t o, uint16_t v) { m[o] = (uint8_t)v; m[o + 1] = (uint8_t)(v >> 8); }
+
+/* The table's plunger block, a 14 ms frame at a time, under a sensor going
+ * straight from `from` to `to` in `ms` */
+static void sensor(const WatchMap *m, int ms, int from, int to, int running)
+{
+    for (int i = 1; i <= ms; i++) {
+        pms += 1;
+        PlungerInput in = { from >= 0, from + (to - from) * i / ms, 0 };
+        plunger_step(&plung, m, pds, pcs, running, pms, &in);
+        uint16_t pull = word(pds, m->pull);
+        assert(!pull || pcs[m->ctrl] == 1 || plung.state);          /* never a pull without the flag */
+        assert(!pcs[m->space]);                                     /* never Space */
+        assert(pull <= m->pull_max);
+        if (!running || (int)pms % 14) continue;
+        if (pcs[m->ctrl] == 1) {
+            if (pull < m->pull_max) pull = (uint16_t)(pull + m->pull_inc);
+            put(pds, m->pull, pull);
+            int px = pull >> m->pull_shift;
+            if (abs(px - shown) > 1) jumped++;                      /* further leaves a trail */
+            shown = px;
+        } else if (pull) {
+            launched = pull;
+            shown = 0;
+            put(pds, m->pull, 0);
+        }
+    }
+}
+
+static void lane(const WatchMap *m)
+{
+    memset(pds, 0, sizeof pds); memset(pcs, 0, sizeof pcs);
+    put(pds, m->active, 1); put(pds, m->x, 284); put(pds, m->y, 336);
+    plunger_init(&plung);
+    launched = shown = jumped = 0;
+    pms = 0;
+    sensor(m, 400, 0, 0, 1);
+}
+
+static void test_plunger(void)
+{
+    /* the analog plunger writes the game's memory: only as the keyboard could */
+    const char *why = "";
+    WatchMap m;
+    assert(watch_map_parse(k_map, &m, &why));
+
+    lane(&m);                                             /* let fly: the strength pulled to, once */
+    sensor(&m, 200, 0, 1000, 1);
+    sensor(&m, 900, 1000, 1000, 1);
+    assert(!launched && shown == 708 >> 5 && !jumped);
+    sensor(&m, 35, 1000, 0, 1);
+    sensor(&m, 40, 0, 0, 1);
+    assert(launched == 708);
+    launched = 0;
+    sensor(&m, 30, 0, 380, 1); sensor(&m, 30, 380, 0, 1); /* its bounce */
+    sensor(&m, 500, 0, 0, 1);
+    assert(!launched && !word(pds, m.pull) && !pcs[m.ctrl]);
+
+    lane(&m);                                             /* half: a strength the keyboard can make */
+    sensor(&m, 100, 0, 500, 1); sensor(&m, 300, 500, 500, 1); sensor(&m, 30, 500, 0, 1); sensor(&m, 40, 0, 0, 1);
+    assert(launched == 360 && launched % m.pull_inc == 0);
+
+    lane(&m);                                             /* eased home: no launch, no trail */
+    sensor(&m, 200, 0, 1000, 1); sensor(&m, 600, 1000, 1000, 1);
+    sensor(&m, 700, 1000, 0, 1); sensor(&m, 900, 0, 0, 1);
+    assert(!launched && !shown && !jumped && !pcs[m.ctrl] && !word(pds, m.pull));
+
+    lane(&m);                                             /* unplugged: axes centre, which is no release */
+    sensor(&m, 200, 0, 1000, 1); sensor(&m, 400, 1000, 1000, 1);
+    sensor(&m, 900, -1, -1, 1);
+    assert(!launched && !shown && !pcs[m.ctrl] && !word(pds, m.pull));
+
+    lane(&m);                                             /* paused: let go, and nothing on resuming */
+    sensor(&m, 200, 0, 1000, 1); sensor(&m, 100, 1000, 1000, 1);
+    sensor(&m, 100, 1000, 1000, 0);
+    assert(!word(pds, m.pull) && !pcs[m.ctrl]);
+    sensor(&m, 35, 1000, 0, 0); sensor(&m, 400, 0, 0, 1);
+    assert(!launched);
+
+    for (int no = 0; no < 3; no++) {                      /* demo, game over, no ball: nothing written */
+        lane(&m);
+        if (no == 0) pds[m.demo] = 1;
+        if (no == 1) pds[m.over] = 1;
+        if (no == 2) put(pds, m.x, 100);
+        sensor(&m, 200, 0, 1000, 1); sensor(&m, 400, 1000, 1000, 1);
+        assert(!word(pds, m.pull) && !pcs[m.ctrl]);
+        sensor(&m, 30, 1000, 0, 1); sensor(&m, 60, 0, 0, 1);
+        assert(!launched && !word(pds, m.pull) && !pcs[m.ctrl]);
+    }
+
+    WatchMap e = m;                                       /* Enigma: one strength, past a quarter */
+    e.pull_inc = 0; e.pull_shift = 0; e.pull_max = 700;
+    lane(&e);
+    put(pds, e.active, 0);
+    sensor(&e, 100, 0, 200, 1); sensor(&e, 300, 200, 200, 1); sensor(&e, 20, 200, 0, 1); sensor(&e, 400, 0, 0, 1);
+    assert(!launched);
+    sensor(&e, 100, 0, 400, 1); sensor(&e, 300, 400, 400, 1); sensor(&e, 30, 400, 0, 1); sensor(&e, 40, 0, 0, 1);
+    assert(launched == 700);
+
+    assert(plunger_trace("0:0,100:100,140:0,200:-"));
+    PlungerInput in;
+    plunger_trace_at(50, &in); assert(in.have && in.pos == 500);
+    plunger_trace_at(250, &in); assert(!in.have);
+    assert(!plunger_trace("100:0,50:0") && !plunger_trace("10:101") && !plunger_trace("x") && !plunger_trace(""));
+}
+
+#ifndef _WIN32
+static void pump(int ms)
+{
+    for (uint64_t end = host_us() + (uint64_t)ms * 1000u; host_us() < end; ) { dof_tick(); usleep(1000); }
+}
+
+static void test_dof_pipe(void)
+{
+    /* the pipe protocol, with a shell script for the helper */
+    char dir[256], path[320], got[65536];
+    const char *t = getenv("TMPDIR");
+    snprintf(dir, sizeof dir, "%s/epicpinball-selftest.XXXXXX", t && *t ? t : "/tmp");
+    assert(mkdtemp(dir));
+    snprintf(path, sizeof path, "%s/helper", dir);
+    FILE *f = fopen(path, "w");
+    assert(f);
+    fprintf(f, "#!/bin/sh\necho \"run $*\" >> '%s/got'\n"
+               "case \"$*\" in *--all-off*) exit 0;; *ep3) exit 2;; *ep5) exit 5;; esac\necho ready\n"
+               "while read -r op a b; do echo \"$op $a $b\" >> '%s/got'\n"
+               "case \"$op $a\" in q*) exit 0;; 'e tilt') exit 3;; esac; done\n",
+            dir, dir);
+    fclose(f);
+    assert(chmod(path, 0700) == 0);
+
+    real_clock = 1;
+    assert(dof_open(path, dir));
+    feedback_table(0, "ep1");
+    pump(300);
+    feedback_event(1, FB_FLIPPER_LEFT, 1, (FbDetail){ 0 });
+    pump(1200);                                           /* held, and nothing said: no fault, and no off */
+    feedback_event(1, FB_DRAIN, 1, (FbDetail){ 0 });
+    feedback_mute(1);                                     /* the demo: never sent */
+    feedback_event(2, FB_KNOCKER, 1, (FbDetail){ 0 });
+    feedback_mute(0);
+    feedback_table(3, NULL);                              /* the table's end: q */
+    pump(300);
+    feedback_table(4, "ep2");
+    pump(300);
+    feedback_event(5, FB_TILT, 1, (FbDetail){ 0 });       /* it dies: all off, and none till the next table */
+    pump(500);
+    feedback_table(6, "ep3");                             /* no row for this table: only this one goes without */
+    pump(300);
+    feedback_table(7, "ep4");
+    pump(300);
+    feedback_table(8, "ep5");                             /* no row at all: none for the rest of the run */
+    pump(300);
+    feedback_table(9, "ep6");
+    pump(300);
+    dof_close();
+    real_clock = 0;
+
+    char log[320];
+    snprintf(log, sizeof log, "%s/got", dir);
+    f = fopen(log, "r");
+    assert(f);
+    size_t n = fread(got, 1, sizeof got - 1, f);
+    fclose(f);
+    got[n] = 0;
+    assert(strstr(got, "--table ep1") && strstr(got, "--save") && !strstr(got, "knocker"));
+    const char *up = strstr(got, "e flipper_left 1"), *drain = strstr(got, "e drain 1");
+    assert(up && drain && up < drain);
+    const char *off = strstr(drain, "o  \n");             /* the mute's, after the drain */
+    assert(off && !strstr(got, "\nh "));                  /* and no heartbeat */
+    for (const char *p = up; (p = strchr(p, '\n')) != NULL && ++p < drain; )
+        assert(strncmp(p, "o ", 2) && strncmp(p, "e flipper_left 0", 16));
+    const char *q = strstr(got, "q  \n"), *two = strstr(got, "--table ep2"), *all = strstr(got, "--all-off");
+    assert(q && two && all && q < two && two < all);      /* one a table, the next after the last */
+    assert(!strstr(all + 1, "--all-off"));                /* a table without a row switched nothing on */
+    assert(strstr(got, "--table ep4") && strstr(got, "--table ep5") && !strstr(got, "--table ep6"));
+
+    remove(log);
+    remove(path);
+    assert(rmdir(dir) == 0);                              /* the game writes no configuration */
+}
+#endif
+
 int main(void)
 {
     g_cpu.mem = (uint8_t *)calloc(1, MEM_SIZE);
@@ -300,6 +603,12 @@ int main(void)
     test_cabinet_views();
     test_flip_wait();
     test_images();
+    test_feedback_map();
+    test_watch();
+    test_plunger();
+#ifndef _WIN32
+    test_dof_pipe();
+#endif
     printf("selftest: ok\n");
     return 0;
 }
