@@ -119,9 +119,11 @@ CRTC reprogrammed for 480 scanlines, double-scanned. `src/vga.c` models planar
 memory, the latches, write modes, the DAC, and two things the tables need:
 
 - **the start address**, which is how the playfield scrolls and how pages flip
-  (two copies of the playfield, at `0640h` and around `8F20h`);
+  (two copies of the playfield, at `0640h` and `8340h`; on tables 9-13 at
+  `0960h` and `84D0h`);
 - **line compare** (CRTC 18h plus its overflow bits in 07h and 09h): at
-  scanline 441 the CRTC starts over from address 0, which is where the
+  scanline 441 (421 on tables 9-13; Enter slides it down to 480 and back)
+  the CRTC starts over from address 0, which is where the
   dot-matrix scoreboard lives. That is the bar across the bottom of every table.
 
 PINBALL's own screens are mode 13h at 320×200.

@@ -31,6 +31,7 @@ static uint8_t dac[256][3], dac_wi, dac_ri, dac_wc, dac_rc, dac_mask = 0xFF;
 static int mode = 3;                 /* BIOS mode: 3 text, 0x13 graphics */
 static int chain4 = 0;
 static uint8_t misc_out = 0x63;
+static int table_dmd;                /* the table's scoreboard at full height, in rows */
 
 uint8_t *vga_text_mem(void) { return g_cpu.mem + 0xB8000; }
 
@@ -62,6 +63,7 @@ void vga_set_mode(int m)
     }
     for (int i = 0; i < 16; i++) attr[i] = (uint8_t)i;
     attr[0x10] = (mode == 0x13) ? 0x41 : 0x0C;
+    table_dmd = 0;
     g_cpu.mem[0x449] = (uint8_t)mode;
     chain4 = chained();
 }
@@ -146,6 +148,19 @@ int recomp_mem_read8(CPU *cpu, uint32_t a, uint8_t *out)
     return 1;
 }
 
+/* The rows under the line-compare split: a table's scoreboard, as much of it
+ * as shows right now. 0 when the screen is not Mode X 240 with a split. */
+static int display_rows(void)
+{
+    if (mode != 0x13 || chain4) return 0;
+    unsigned vde = crtc[0x12] | ((crtc[0x07] & 2) << 7) | ((crtc[0x07] & 0x40) << 3);
+    unsigned scan = (crtc[0x09] & 0x1F) + 1;
+    int rows = (int)((vde + 1) / scan);
+    unsigned lc = crtc[0x18] | ((crtc[0x07] & 0x10) << 4) | ((crtc[0x09] & 0x40) << 3);
+    int split = (int)((lc + 1) / scan);
+    return rows == 240 && split > 0 && split < rows ? rows - split : 0;
+}
+
 /* ---- ports 3C0-3DA --------------------------------------------------------- */
 
 static uint64_t t0_us;
@@ -218,7 +233,14 @@ int vga_port_out(uint16_t port, uint8_t v)
         if ((crtc_i & 31) != 0x0C && (crtc_i & 31) != 0x0D && crtc[crtc_i & 31] != v)
             trace("[vga] CRTC %02X = %02X\n", crtc_i & 31, v);
         crtc[crtc_i & 31] = v;
-        if ((crtc_i & 31) == 0x0D) flip_pending = 1;   /* the game writes 0Ch, then 0Dh */
+        if ((crtc_i & 31) == 0x0D) {                   /* the game writes 0Ch, then 0Dh */
+            flip_pending = 1;
+            /* Enter slides the scoreboard away by moving the split; the pages
+             * stay where its full height put them. Taken at a flip, when the
+             * CRTC is whole: half programmed, it shows splits no table has. */
+            int dmd = display_rows();
+            if (dmd > table_dmd) table_dmd = dmd;
+        }
         return 1;
     }
     return 0;
@@ -291,8 +313,8 @@ void vga_compose(uint32_t *out, int *w, int *h)
 }
 
 /* The whole table at once, for the remaster's "whole table" view. VRAM holds
- * each table twice -- two pages 400 rows apart, flipped by the start address --
- * below the dot-matrix display at address 0, and the CRTC only ever shows the
+ * each table twice -- two pages, flipped by the start address -- below the
+ * dot-matrix display at address 0, and the CRTC only ever shows the
  * front page's `split` rows from wherever the start address is. This draws
  * that page from its first row, then the display under it, as on screen:
  * 320 x (page + display). The ball is in the page wherever it is; the game
@@ -300,20 +322,17 @@ void vga_compose(uint32_t *out, int *w, int *h)
  * (anything but Mode X 240 with a line-compare split). */
 int vga_compose_table(uint32_t *out, int *w, int *h)
 {
-    if (mode != 0x13 || chain4) return 0;
-    unsigned vde = crtc[0x12] | ((crtc[0x07] & 2) << 7) | ((crtc[0x07] & 0x40) << 3);
-    unsigned scan = (crtc[0x09] & 0x1F) + 1;
-    int rows = (int)((vde + 1) / scan);
-    unsigned lc = crtc[0x18] | ((crtc[0x07] & 0x10) << 4) | ((crtc[0x09] & 0x40) << 3);
-    int split = (int)((lc + 1) / scan);
-    if (rows != 240 || split <= 0 || split >= rows) return 0;
+    int dmd = display_rows();
+    if (!dmd || !table_dmd) return 0;
     unsigned row = crtc[0x13] ? crtc[0x13] * 2u : 80u;
     unsigned start = ((unsigned)crtc[0x0C] << 8) | crtc[0x0D];
-    int dmd = rows - split;
-    /* The pages start after the display's rows, rounded up to ten: tables 1-8
-     * show 19 and keep 20 (pages at 1600 and 33600), 9-13 show and keep 30
-     * (2400, 34000) -- what every table's start addresses say. */
-    unsigned base0 = (dmd + 9) / 10 * 10 * row, base1 = base0 + 400 * row;
+    /* The pages start after the full display's rows, rounded up to ten, and
+     * halve what is left of the 64K, the first taking the odd row: tables 1-8
+     * show 19 and keep 20 (pages 400 rows apart, at 1600 and 33600), 9-13 show
+     * 29 and keep 30 (395 apart, at 2400 and 34000) -- the addresses in every
+     * table's own flip. */
+    unsigned base0 = (table_dmd + 9) / 10 * 10 * row;
+    unsigned left = (0x10000 - base0) / row, base1 = base0 + (left + 1) / 2 * row;
     if (start < base0) return 0;
     unsigned base = start >= base1 ? base1 : base0;
     int page = (int)((0x10000 - base1) / row);              /* the second page ends at 64K */

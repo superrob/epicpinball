@@ -23,22 +23,24 @@ The game never uses F7–F12 or the mouse, so taking them costs it nothing.
 
 Epic Pinball's tables are taller than the screen. The game draws each one
 whole into video memory and scrolls by moving the CRTC's start address, so a
-320×240 monitor sees 221 rows (210 on tables 9–13) of a table of nearly 400, with the dot-matrix
+320×240 monitor sees 221 rows (211 on tables 9–13) of a table of nearly 400, with the dot-matrix
 scoreboard under them (the line-compare split, see
 [architecture](architecture.md)).
 
-Video memory holds the table twice, in two pages 400 rows (32,000 bytes)
-apart, for flicker-free page flipping:
+Video memory holds the table twice, in two pages that share what the
+scoreboard leaves of the 64 KB plane, for flicker-free page flipping:
 
-| | scoreboard | page 1 | page 2 |
-|---|---|---|---|
-| tables 1–8 | 19 rows shown, 20 kept | offset 1600 | offset 33600 |
-| tables 9–13 | 30 rows shown and kept | offset 2400 | offset 34000 |
+| | scoreboard | page 1 | page 2 | apart |
+|---|---|---|---|---|
+| tables 1–8 | 19 rows shown, 20 kept | offset 1600 | offset 33600 | 400 rows |
+| tables 9–13 | 29 rows shown, 30 kept | offset 2400 | offset 34000 | 395 rows |
 
 The second page runs to the end of the 64 KB plane, which makes a page 399
 rows on tables 1–8 and 394 on 9–13. The start address says which page is in
 front; `vga_compose_table` (src/vga.c) draws that page from its first row and
-the scoreboard under it, 320×418 or 320×424. The ball is in the page wherever
+the scoreboard under it, 320×418 or 320×423. Enter slides the scoreboard
+away by moving the split; the pages don't move, so their places come from
+its full height, and with it gone the screen shows as usual. The ball is in the page wherever
 it is on the table, because the game draws it there before it flips. Nothing
 is redrawn or guessed: it is the game's own picture, more of it.
 

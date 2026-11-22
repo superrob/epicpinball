@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- The whole table shook up and down on tables 9-13: their two pages are 395
+  rows apart, not the 400 of tables 1-8, so every other frame was drawn five
+  rows off. It also jumped on every table while Enter slid the scoreboard in
+  or out, because the pages were placed from the height it had at that moment.
 - The menus ran as fast as the host: PINBALL's page flip waits for "in
   retrace", and up to a hundred of them fitted in one retrace. One retrace
   answers one flip now, so the main menu waits its 13 seconds before the demo

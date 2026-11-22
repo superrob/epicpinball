@@ -85,6 +85,49 @@ static void test_whole_table(void)
     assert(!vga_compose_table(frame, &w, &h));
 }
 
+static void start_at(unsigned a)
+{
+    out(0x3D4, 0x0C); out(0x3D5, (uint8_t)(a >> 8));
+    out(0x3D4, 0x0D); out(0x3D5, (uint8_t)a);
+}
+
+static void test_table_layouts(void)
+{
+    /* tables 1-8 and 9-13 lay their two pages out differently, and Enter
+     * slides either scoreboard away two scanlines a frame: both pages must
+     * put their first row on top, at either end of the scroll (and the fifth
+     * row: 400 apart would call 9-13's first five page 1) and every height */
+    static const struct { unsigned lc, page0, page1; int rows; } t[] = {
+        { 0x1B9, 1600, 33600, 399 },                     /* tables 1-8 */
+        { 0x1A5, 2400, 34000, 394 },                     /* tables 9-13 */
+    };
+    static uint32_t frame[320 * 480]; int w, h;
+    for (int i = 0; i < 2; i++) {
+        vga_set_mode(0x13);
+        out(0x3C4, 4); out(0x3C5, 0x06);
+        out(0x3D4, 0x12); out(0x3D5, 0xDF);
+        out(0x3D4, 0x07); out(0x3D5, 0x3E);
+        out(0x3D4, 0x09); out(0x3D5, 0x01);
+        out(0x3C4, 2); out(0x3C5, 0x01);
+        mem_write8(&g_cpu, 0xA000, (uint16_t)t[i].page0, 5);
+        mem_write8(&g_cpu, 0xA000, (uint16_t)t[i].page1, 7);
+        vga_dac_set(5, 0, 63, 0); vga_dac_set(7, 0, 0, 63);
+        for (unsigned lc = t[i].lc; lc < 479; lc += 2) { /* shown, then sliding away */
+            int split = (int)(lc + 1) / 2;
+            int ys[] = { 0, 4, t[i].rows - split };
+            out(0x3D4, 0x18); out(0x3D5, (uint8_t)lc);
+            for (int k = 0; k < 3; k++)
+                for (int p = 0; p < 2; p++) {
+                    start_at((p ? t[i].page1 : t[i].page0) + ys[k] * 80);
+                    assert(vga_compose_table(frame, &w, &h));
+                    assert(h == t[i].rows + 240 - split);
+                    assert(frame[0] == (p ? 0xFF0000FFu : 0xFF00FF00u));
+                }
+        }
+    }
+    vga_set_mode(0x13);
+}
+
 static int retrace_at(uint64_t us)
 {
     uint8_t v;
@@ -194,6 +237,7 @@ int main(void)
     test_sb16_stereo();
     test_smooth_sound();
     test_whole_table();
+    test_table_layouts();
     test_flip_wait();
     test_images();
     printf("selftest: ok\n");
