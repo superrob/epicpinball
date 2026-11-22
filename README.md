@@ -45,7 +45,7 @@ conformance harness passes 152/152 on Linux.**
 | `SETUP.EXE` (the sound card menu) | not lifted: its start-up check is answered, and GOG's `SOUNDCRD.INF` (Sound Blaster 16) is used as shipped |
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, with hands on a keyboard | not yet |
-| Cabinet mode, `--cabinet` (Linux only) | ✅ on virtual displays; not yet tried on a cabinet |
+| Cabinet mode, `--cabinet` (Linux only) | ✅ on a real cabinet (table 1) and on virtual displays |
 | Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1; tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick) |
 | **Conformance** ([docs](docs/conformance.md)) | **152/152** on Linux (Windows skips the 9 cabinet checks, and has not run the 10 feedback ones) |
 

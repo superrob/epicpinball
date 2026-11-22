@@ -34,8 +34,10 @@
   Rumble on the flippers and bumpers would be the remaster's next touch.
 - **Cabinet mode on Windows**: `--cabinet` is Linux only. Windows needs a
   swap chain per window and the turn in the shader.
-- **Cabinet mode on a cabinet**: it is tested on virtual displays. Real
-  screens, KDE and wlroots, and SDL2 proper (not sdl2-compat) are untried.
+- **Cabinet mode on more cabinets**: it works on one real cabinet under KDE,
+  on table 1, with the scoreboard placed on the second display, and is tested
+  on virtual displays. wlroots compositors and SDL2 proper (not sdl2-compat)
+  are untried.
 - **More cabinet feedback**: scoops, kickbacks, targets, gates, spinners,
   lamps and LED strips, accelerometer nudge, general joystick buttons,
   Windows, and an entry in the DOF Config Tool's database.

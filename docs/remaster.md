@@ -105,6 +105,10 @@ and cannot press it.
 Solenoids and an analog plunger are set up separately:
 [cabinet feedback](cabinet-feedback.md).
 
+It has run on a real cabinet under KDE: the playfield on one display and the
+scoreboard placed on the second. Other desktops are tested on virtual displays
+only.
+
 - **Wayland** does not let a program place a window, so cabinet mode uses
   X11 (XWayland) when there is one. `SDL_VIDEODRIVER=wayland` overrides that:
   the playfield still fills its display, and the scoreboard, which cannot be
