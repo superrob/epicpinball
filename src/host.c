@@ -82,8 +82,8 @@ static int compose_dmd(void)
     return 1;
 }
 
-/* In a cabinet with --dmd, the DMD has the scoreboard's window while a table with a DMD map is up */
-static int board_is_dmd(void) { return g_opt.cabinet && g_opt.dmd && dmd_active(); }
+/* In a cabinet with --dmd the second window is the DMD's, never the game's scoreboard: dark when no table is up */
+static int board_is_dmd(void) { return g_opt.cabinet && g_opt.dmd; }
 
 /* What the player sees: the whole table when that is on and a table is up.
  * In a cabinet, the table without its scoreboard, and the scoreboard (black
@@ -328,6 +328,9 @@ static RECT win_rect;                /* the window's place when not fullscreen *
 /* --cabinet's own: what the ini says, and what this run uses */
 static int saved_display, cab_display;
 static RECT saved_score, cab_score;  /* empty: the default place */
+static RECT saved_dmdw;              /* the DMD window's, in a cabinet with --dmd: kept apart, another shape */
+static char saved_hide[1024];        /* [cabinet] hide_messages as written, kept when the file is written again */
+static int saved_hide_set;
 
 /* --score-window's and the ini's X,Y,W,H */
 int host_parse_place(const char *s, RECT *r)
@@ -359,13 +362,17 @@ static void settings_save(void)
         fprintf(f, "window=%ld,%ld,%ld,%ld\n", (long)win_rect.left, (long)win_rect.top,
                 (long)(win_rect.right - win_rect.left), (long)(win_rect.bottom - win_rect.top));
     fprintf(f, "[sound]\noutput=%s\n", g_audio_smooth ? "smooth" : "original");
-    int placed = saved_score.right > saved_score.left;
-    if (g_opt.cabinet || placed || saved.rot || saved.stretch || saved_display) {    /* kept by ordinary runs too */
+    int placed = saved_score.right > saved_score.left, placed_dmd = saved_dmdw.right > saved_dmdw.left;
+    if (g_opt.cabinet || placed || placed_dmd || saved_hide_set || saved.rot || saved.stretch || saved_display) {
         fprintf(f, "[cabinet]\nrotation=%d\nstretch=%d\nplayfield_display=%d\n", saved.rot * 90, saved.stretch,
                 saved_display);
         if (placed)
             fprintf(f, "score_window=%ld,%ld,%ld,%ld\n", (long)saved_score.left, (long)saved_score.top,
                     (long)(saved_score.right - saved_score.left), (long)(saved_score.bottom - saved_score.top));
+        if (placed_dmd)
+            fprintf(f, "dmd_window=%ld,%ld,%ld,%ld\n", (long)saved_dmdw.left, (long)saved_dmdw.top,
+                    (long)(saved_dmdw.right - saved_dmdw.left), (long)(saved_dmdw.bottom - saved_dmdw.top));
+        if (saved_hide_set) fprintf(f, "hide_messages=%s\n", saved_hide);
     }
     fclose(f);
 }
@@ -384,13 +391,18 @@ static void settings_load(void)
     saved.stretch = atoi(ini_get(ini, "cabinet", "stretch", "0", v, sizeof v)) != 0;
     saved_display = atoi(ini_get(ini, "cabinet", "playfield_display", "0", v, sizeof v));
     {                                              /* messages a cabinet does not show: the built-in list unless set */
-        static char hide[1024];
-        const char *h = ini_get(ini, "cabinet", "hide_messages", "\x01", hide, sizeof hide);
-        if (h[0] != 1) dmd_set_hidden(h);
+        const char *h = ini_get(ini, "cabinet", "hide_messages", "\x01", saved_hide, sizeof saved_hide);
+        saved_hide_set = h[0] != 1;
+        if (saved_hide_set) { if (h != saved_hide) snprintf(saved_hide, sizeof saved_hide, "%s", h); dmd_set_hidden(saved_hide); }
     }
     if (!host_parse_place(ini_get(ini, "cabinet", "score_window", "", v, sizeof v), &saved_score))
         memset(&saved_score, 0, sizeof saved_score);
-    if (g_opt.cabinet) { S.rot = saved.rot; S.stretch = saved.stretch; cab_display = saved_display; cab_score = saved_score; }
+    if (!host_parse_place(ini_get(ini, "cabinet", "dmd_window", "", v, sizeof v), &saved_dmdw))
+        memset(&saved_dmdw, 0, sizeof saved_dmdw);
+    if (g_opt.cabinet) {
+        S.rot = saved.rot; S.stretch = saved.stretch; cab_display = saved_display;
+        cab_score = g_opt.dmd ? saved_dmdw : saved_score;      /* the second window: the DMD's or the scoreboard's */
+    }
     saved_full = atoi(ini_get(ini, "display", "fullscreen", "0", v, sizeof v));
     if (saved_full) g_opt.fullscreen = 1;
     long x, y, w, h;
@@ -824,7 +836,7 @@ static void board_moved(void)
 {
     if (!board.x11) return;                        /* it has no place to speak of */
     RECT r = board_place();
-    if (host_us() >= board.settled && memcmp(&r, &board.at, sizeof r)) saved_score = r;
+    if (host_us() >= board.settled && memcmp(&r, &board.at, sizeof r)) *(g_opt.dmd ? &saved_dmdw : &saved_score) = r;
     board.at = r;
 }
 
@@ -866,6 +878,10 @@ static int cabinet_hints(void)
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");          /* a first right-click counts */
     return chose;
 }
+
+/* With a real DMD (--dmd-device) the scoreboard is on it: no window for it,
+ * unless --dmd asks for the DMD in a window too */
+static int board_wanted(void) { return !g_opt.dmd_device || g_opt.dmd; }
 
 static void cabinet_open(void)
 {
@@ -911,27 +927,34 @@ static void cabinet_open(void)
     const uint32_t flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
     /* CENTERED_DISPLAY, not UNDEFINED_DISPLAY: sdl2-compat drops the latter's display on Wayland */
     int any = SDL_WINDOWPOS_CENTERED_DISPLAY(bd), there = SDL_WINDOWPOS_CENTERED_DISPLAY(pd);
-    board.wnd = SDL_CreateWindow("Epic Pinball scoreboard", board.x11 ? (int)r.left : any, board.x11 ? (int)r.top : any,
-                                 r.right - r.left, r.bottom - r.top, flags | SDL_WINDOW_ALWAYS_ON_TOP);
-    if (!board.wnd) fatal("SDL scoreboard window: %s", SDL_GetError());
+    if (board_wanted()) {
+        board.wnd = SDL_CreateWindow(g_opt.dmd ? "Epic Pinball DMD" : "Epic Pinball scoreboard",
+                                     board.x11 ? (int)r.left : any, board.x11 ? (int)r.top : any,
+                                     r.right - r.left, r.bottom - r.top, flags | SDL_WINDOW_ALWAYS_ON_TOP);
+        if (!board.wnd) fatal("SDL scoreboard window: %s", SDL_GetError());
+    } else fprintf(stderr, "[cabinet] the scoreboard is on the DMD: no window for it\n");
     wnd = SDL_CreateWindow("Epic Pinball", there, there, 640, 480, flags);
     if (!wnd) fatal("SDL window: %s", SDL_GetError());
-    SDL_SetWindowMinimumSize(board.wnd, 32, 8);
-    if (SDL_SetWindowHitTest(board.wnd, board_hit, NULL))
-        fprintf(stderr, "[cabinet] the scoreboard cannot be dragged here: %s\n", SDL_GetError());
-    if (!present_prepare(wnd) || !present_prepare(board.wnd)) fatal("--cabinet needs two SDL renderers");
+    if (board.wnd) {
+        SDL_SetWindowMinimumSize(board.wnd, 32, 8);
+        if (SDL_SetWindowHitTest(board.wnd, board_hit, NULL))
+            fprintf(stderr, "[cabinet] the scoreboard cannot be dragged here: %s\n", SDL_GetError());
+    }
+    if (!present_prepare(wnd) || (board.wnd && !present_prepare(board.wnd))) fatal("--cabinet needs two SDL renderers");
     if (SDL_SetWindowFullscreen(wnd, SDL_WINDOW_FULLSCREEN_DESKTOP))
         fprintf(stderr, "[cabinet] fullscreen: %s\n", SDL_GetError());
-    if (board.fills && SDL_SetWindowFullscreen(board.wnd, SDL_WINDOW_FULLSCREEN_DESKTOP))
+    if (board.wnd && board.fills && SDL_SetWindowFullscreen(board.wnd, SDL_WINDOW_FULLSCREEN_DESKTOP))
         fprintf(stderr, "[cabinet] scoreboard fullscreen: %s\n", SDL_GetError());
 
     /* the scoreboard first, the playfield last, which gets the keys. Wayland
      * maps a window at its first picture, so they get one here. */
     compose_view();
-    SDL_ShowWindow(board.wnd);
-    if (board.x11) SDL_SetWindowPosition(board.wnd, r.left, r.top);
     board.how = S; board.how.rot = board.how.bars = board.how.stretch = 0;
-    present_window(board.wnd, score, sw, sh, (double)sw / sh, &board.how);
+    if (board.wnd) {
+        SDL_ShowWindow(board.wnd);
+        if (board.x11) SDL_SetWindowPosition(board.wnd, r.left, r.top);
+        present_window(board.wnd, score, sw, sh, (double)sw / sh, &board.how);
+    }
     SDL_ShowWindow(wnd);
     { const Present v = playfield_how(); present_window(wnd, frame, fw, fh, frame_aspect, &v); }
     SDL_RaiseWindow(wnd);
@@ -943,7 +966,7 @@ static void cabinet_open(void)
 
 static void cabinet_event(const SDL_WindowEvent *e)
 {
-    int b = e->windowID == SDL_GetWindowID(board.wnd);
+    int b = board.wnd && e->windowID == SDL_GetWindowID(board.wnd);
     if (e->event == SDL_WINDOWEVENT_CLOSE) quit_req = 1;   /* SDL_QUIT waits for the last window */
     if (e->event == SDL_WINDOWEVENT_ENTER) SDL_ShowCursor(b ? SDL_ENABLE : SDL_DISABLE);
     if (!b) return;
@@ -962,8 +985,8 @@ static void cabinet_present(void)
     Present how = S;
     how.rot = how.bars = how.stretch = 0;            /* upright, black round it */
     size_t bytes = (size_t)sw * sh * 4;
-    if (board.dirty || board.shown_w != sw || board.shown_h != sh
-        || memcmp(&how, &board.how, sizeof how) || memcmp(board.shown, score, bytes)) {
+    if (board.wnd && (board.dirty || board.shown_w != sw || board.shown_h != sh
+        || memcmp(&how, &board.how, sizeof how) || memcmp(board.shown, score, bytes))) {
         present_window(board.wnd, score, sw, sh, (double)sw / sh, &how);
         memcpy(board.shown, score, bytes);
         board.shown_w = sw; board.shown_h = sh; board.how = how; board.dirty = 0;
@@ -1221,7 +1244,7 @@ void host_snapshot(const char *path)
         snprintf(second, sizeof second, "%.*s-dmd.bmp", (int)n, path);
         write_bmp(second, dmd_px, DMD_W, DMD_H);
     }
-    if (!g_opt.cabinet || g_opt.dmd) return;      /* --dmd took the scoreboard's window */
+    if (!g_opt.cabinet || g_opt.dmd || g_opt.dmd_device) return;   /* the DMD took the scoreboard's place */
     snprintf(second, sizeof second, "%.*s-score.bmp", (int)n, path);
     Present how = S;
     how.rot = how.bars = how.stretch = 0;

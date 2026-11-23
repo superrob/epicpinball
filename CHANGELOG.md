@@ -50,8 +50,9 @@ All notable changes to this project are documented here. The format follows
   animated shapes for the awards, jackpots and the extra ball; without it,
   bands as before. Tested on a real cabinet with all three MXs, on table 1.
 - **A DMD** (`--dmd`, `--dmd-device`; on the `dmd` branch): a 128x32 picture
-  of every table, in a window of its own (with `--cabinet`, in the
-  scoreboard's) or on a ZeDMD through libdmdutil, by a GPLv3 helper in `dmd/`
+  of every table, in a window of its own (in a cabinet, in place of the
+  scoreboard window, which then never opens) or on a ZeDMD through
+  libdmdutil, by a GPLv3 helper in `dmd/`
   the game does not link. The messages are the game's own, followed through
   the one message engine all 13 tables share and set again for 128x32 in the
   table's fonts and colours: wrapped, doubled when they fit, paged when tall,

@@ -79,6 +79,10 @@ game goes on drawing them when Enter hides its scoreboard, so this window
 stays live. It is black when no table is up. Drag it to move it, drag an edge
 to resize it; right-click is still the settings.
 
+With a DMD (`--dmd` or `--dmd-device`, [dmd](dmd.md)) there is no scoreboard
+window: the DMD shows it, `--dmd` in a window of its own placed the same way
+(`dmd_window` in `[cabinet]`).
+
 Messages are where the game puts them: on the playfield for tables 1–8, in
 the scoreboard for 9–13. Those about keys a cabinet has not got are left
 out: the help screens before a game (USE UP/DOWN ARROW KEYS TO VIEW ALL OF
@@ -106,6 +110,7 @@ rotation=90           ; 0, 90, 180, 270: F6 writes it
 stretch=0             ; 1: a table fills its display; F5 writes it
 playfield_display=0
 score_window=1920,0,1280,116
+dmd_window=1920,0,1024,256  ; with --dmd: the DMD window's place
 ; hide_messages=USE UP/DOWN ARROW KEYS TO|PRESS SPACE TO BEGIN   ; replaces the list; empty: hide none
 ```
 

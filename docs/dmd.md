@@ -11,12 +11,16 @@ picture is put together.
 ```sh
 python3 tools/dmd_survey.py                    # once: work/dmd/epN.map, from your copy of the game
 ./epicpinball.sh --dmd                         # a DMD window beside the game
-./epicpinball.sh --cabinet --dmd               # in a cabinet: the DMD takes the scoreboard's window
+./epicpinball.sh --cabinet --dmd               # in a cabinet: a DMD window, no scoreboard window
 dmd/build.sh                                   # once, for a real DMD (Linux; fetches libdmdutil)
-./epicpinball.sh --cabinet --dmd-device        # the DMD on a ZeDMD (or Pixelcade, PinDMD3)
+./epicpinball.sh --cabinet --dmd-device        # the DMD on a ZeDMD (or Pixelcade, PinDMD3), no scoreboard window
 ```
 
-`--dmd` and `--dmd-device` go together or alone. Either takes the messages
+`--dmd` and `--dmd-device` go together or alone. In a cabinet with either,
+no scoreboard window opens: the DMD shows the scoreboard. With `--dmd` the
+second window is the DMD's (borderless, on top, dragged and remembered like
+the scoreboard's, as `[cabinet] dmd_window`), dark when no table is up and
+never the game's bar. Either takes the messages
 of tables 1-8 off the playfield, since the DMD shows them. Closing the DMD
 window hides it; the game goes on.
 
