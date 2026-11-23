@@ -1,8 +1,8 @@
 # The scoreboard, the messages, and a DMD
 
-On the `dmd` branch: a 128x32 DMD picture of every table, in a window or on
-a real DMD (a ZeDMD, through libdmdutil), with the messages tables 1-8 put on
-the playfield moved to it. Below: how to turn it on, what each table shows
+A 128x32 DMD picture of every table, in a window or on a real DMD (a ZeDMD,
+through libdmdutil), with the messages tables 1-8 put on the playfield moved
+to it. Below: how to turn it on, what each table shows
 where (read from its lifted code and checked by running it), and how the
 picture is put together.
 
