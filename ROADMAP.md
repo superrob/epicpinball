@@ -49,6 +49,7 @@
   (jackpots, modes, high score entry); Windows.
 - **SSF** (works on a real cabinet's exciters): each table's own board
   effects beyond slots 0-6 (table 1's are listed); Windows.
+- **`--table`**: Windows; a frontend's own start and exit keys.
 - **African Safari's overrun**: a ball reaching x = -1 overruns a sprite
   buffer into the timer chain. Feedback stops for that table when it happens;
   whether the DOS original does the same is not known.

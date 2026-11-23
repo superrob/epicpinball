@@ -63,6 +63,7 @@ void watch_tick(void);               /* each host_frame */
 void watch_enter(CPU *cpu, const char *fn);   /* RECOMP_ENTER, through seam_enter (dmd.c) */
 void watch_released(void);           /* the host let everything go (a dialog): send levels again */
 int  watch_running(void);            /* the table's physics is stepping */
+int  watch_game_over(void);          /* 1 no game runs (over), 0 one does; -1 no table followed */
 void watch_write_byte(uint32_t a, uint8_t v);                /* vga.c's write hook */
 const WatchMap *watch_table(uint32_t *ds, uint32_t *cs);     /* the live table, or NULL */
 /* Where the last kicker hit (kicker 1) or switch (0) was, if that recent; or

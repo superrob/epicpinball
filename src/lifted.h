@@ -14,15 +14,16 @@
 #include "recomp16/cpu.h"
 
 /* Every lifted function begins with RECOMP_ENTER("name"). While a table is
- * watched for cabinet feedback (src/watch.c) or followed for a DMD
- * (src/dmd.c) that says the function is called; otherwise it is one test. */
-extern int g_watch_on, g_dmd_on;
+ * watched for cabinet feedback (src/watch.c), followed for a DMD (src/dmd.c),
+ * or PINBALL's menus are driven for --table (src/autostart.c), that says the
+ * function is called; otherwise it is one test. */
+extern int g_watch_on, g_dmd_on, g_auto_on;
 void seam_enter(CPU *cpu, const char *fn);
 #undef RECOMP_ENTER
 #ifdef RECOMP_TRACE
-#define RECOMP_ENTER(name) do { recomp_enter(name); if (g_watch_on | g_dmd_on) seam_enter(cpu, name); } while (0)
+#define RECOMP_ENTER(name) do { recomp_enter(name); if (g_watch_on | g_dmd_on | g_auto_on) seam_enter(cpu, name); } while (0)
 #else
-#define RECOMP_ENTER(name) do { if (g_watch_on | g_dmd_on) seam_enter(cpu, name); } while (0)
+#define RECOMP_ENTER(name) do { if (g_watch_on | g_dmd_on | g_auto_on) seam_enter(cpu, name); } while (0)
 #endif
 
 /* ---- services ---- */

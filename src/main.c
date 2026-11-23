@@ -36,6 +36,9 @@
  *                     scoreboard's window, else a window of its own; the
  *                     messages of tables 1-8 leave the playfield for it
  *                     (docs/dmd.md)
+ *   --table N         straight to table N (1-13) and a one-player game; quitting
+ *                     the table quits the program, PINBALL saving as it does
+ *                     (docs/table.md)
  *   --ssf             7.1 for a cabinet with exciters: front left and right
  *                     the game's sound, the side and rear pairs the board's
  *                     sounds where on the table they happen (docs/ssf.md)
@@ -62,6 +65,7 @@
 #include "dmd.h"
 #include "dmd_pipe.h"
 #include "ssf.h"
+#include "autostart.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #ifdef _WIN32
@@ -156,6 +160,11 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--dmd")) g_opt.dmd = 1;
         else if (!strcmp(a, "--dmd-device")) g_opt.dmd_device = 1;
         else if (!strcmp(a, "--ssf")) g_opt.ssf = 1;
+        else if (!strcmp(a, "--table") && v) {
+            char *e; long n = strtol(v, &e, 10);
+            if (*e || n < 1 || n > 13) { fprintf(stderr, "--table: a table from 1 to 13, not %s\n", v); return 2; }
+            g_opt.table = (int)n; i++;
+        }
         else if (!strcmp(a, "--joysticks")) list_joysticks = 1;
         else if (!strcmp(a, "--plunger-trace") && v) { g_opt.plunger_trace = v; i++; }
         else if (!strcmp(a, "--window") && v) { g_opt.window = atoi(v); i++; }
@@ -205,6 +214,7 @@ int main(int argc, char **argv)
     if (g_opt.plunger_trace) watch_wanted();
     if (g_opt.dmd || g_opt.dmd_device || g_opt.cabinet) dmd_wanted();   /* a cabinet hides keyboard messages */
     if (g_opt.ssf) { ssf_wanted(); watch_wanted(); }              /* SSF places sounds by what watch.c follows */
+    if (g_opt.table) { autostart_wanted(g_opt.table); watch_wanted(); }   /* the watcher says when its game runs */
     if (g_opt.dmd_device && !dmd_pipe_open(DMD_HELPER, g_opt.savedir)) return 2;
     atexit(feedback_close);
     atexit(dmd_pipe_close);            /* fatal() does not come through host_shutdown */

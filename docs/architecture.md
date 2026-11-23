@@ -179,6 +179,9 @@ left alone until the game has zeroed it ([cabinet feedback](cabinet-feedback.md)
 `src/ssf.c` changes one register of the sound driver's: with `--ssf`, the volume
 the driver gives a board effect's voice becomes 0 as it is set, and the effect
 plays on the exciters instead ([ssf](ssf.md)).
+`src/autostart.c` writes nothing into the game: with `--table`, it sends
+keys into the keyboard queue as PINBALL's menus wait for them, and sets the
+players digit of the table's command tail ([table](table.md)).
 
 ## Host
 

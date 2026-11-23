@@ -29,6 +29,7 @@
 #include "dmd.h"
 #include "dmd_pipe.h"
 #include "ssf.h"
+#include "autostart.h"
 #include <ctype.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -287,8 +288,13 @@ static void keys_parse(void)
 
 static int ext_of(int sc) { return sc == 0x48 || sc == 0x50 || sc == 0x4B || sc == 0x4D; }
 
+/* --table: while PINBALL is driven to the table, and out after it, the
+ * player's keys and pad are not the game's; Esc while starting cancels */
+static int driven(void) { return g_auto_on ? autostart_busy() : 0; }
+
 static void keys_due(void)
 {
+    if (driven()) return;                          /* --keys counts from the table's game */
     while (kev_i < nkev && kev[kev_i].at <= pit_now()) {
         int sc = kev[kev_i].sc;
         if (ext_of(sc)) kbd_scancode(0xE0);
@@ -602,6 +608,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
             return 0;
         }
         if (!up && (lp & (1 << 30))) return 0;      /* the game does its own repeat */
+        if (driven()) { if (!up && wp == VK_ESCAPE && driven() == 1) quit_req = 1; return 0; }
         int sc = (lp >> 16) & 0xFF;
         if (lp & (1 << 24)) kbd_scancode(0xE0);
         kbd_scancode((uint8_t)(sc | (up ? 0x80 : 0)));
@@ -684,16 +691,24 @@ static void window_open(void)
 
 static int window_front(void) { return GetForegroundWindow() == wnd; }
 
-/* Messages, the pad, and the picture */
-static void window_frame(void)
+/* Messages and the pad */
+static void window_events(void)
 {
     MSG msg;
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) { TranslateMessage(&msg); DispatchMessageA(&msg); }
-    pad_poll(window_front());
-    if (quit_req) dos_exit(0);
+    pad_poll(window_front() && !driven());
+    if (quit_req && driven() != 2) dos_exit(0);    /* leaving: PINBALL is saving */
+}
+
+/* Messages, the pad, and the picture */
+static void window_frame(void)
+{
+    window_events();
     compose_view();
     paint();
 }
+
+static void window_live(void) {}
 
 static void window_audio(const int16_t *s, int frames) { if (wout) wave_push(s, frames); }
 
@@ -832,6 +847,7 @@ static void key(const SDL_KeyboardEvent *k)
         return;
     }
     if (k->repeat) return;                          /* the game does its own repeat */
+    if (driven()) { if (!up && s == SDL_SCANCODE_ESCAPE && driven() == 1) quit_req = 1; return; }
     int sc = pc_scancode(s);
     if (!sc) return;
     if (sc & 0x100) kbd_scancode(0xE0);
@@ -1097,8 +1113,8 @@ static int window_front(void)
     return g_opt.cabinet ? SDL_GetKeyboardFocus() != NULL : (SDL_GetWindowFlags(wnd) & SDL_WINDOW_INPUT_FOCUS) != 0;
 }
 
-/* Events, the pad, and the picture */
-static void window_frame(void)
+/* Events and the pad */
+static void window_events(void)
 {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
@@ -1116,8 +1132,17 @@ static void window_frame(void)
             if (e.window.event == SDL_WINDOWEVENT_MOVED || e.window.event == SDL_WINDOWEVENT_RESIZED) remember_place();
         }
     }
-    pad_poll(window_front());
-    if (quit_req) dos_exit(0);
+    pad_poll(window_front() && !driven());
+    if (quit_req && driven() != 2) dos_exit(0);    /* leaving: PINBALL is saving */
+}
+
+/* --table: the game is on; what was mixed while driving is not heard */
+static void window_live(void) { if (aud) SDL_ClearQueuedAudio(aud); }
+
+/* Events, the pad, and the picture */
+static void window_frame(void)
+{
+    window_events();
     compose_view();
     if (g_opt.cabinet) cabinet_present();
     else {
@@ -1154,7 +1179,7 @@ void host_audio(const int16_t *s, int frames)
 {
     if (rec_audio) { fwrite(s, 4, frames, rec_audio); rec_samples += frames; }
     if (wav_out) { fwrite(s, 4, frames, wav_out); wav_samples += frames; }
-    if (wnd) window_audio(s, frames);
+    if (wnd && !machine_is_fast()) window_audio(s, frames);
 }
 
 /* --ssf: the front pair and the four exciters as 7.1, FL FR FC LFE BL BR SL
@@ -1172,7 +1197,7 @@ void host_audio_ssf(const int16_t *front, const int16_t *exciters, int frames)
         }
         if (rec_audio) { fwrite(front + done * 2, 4, n, rec_audio); rec_samples += n; }
         if (wav_out) { fwrite(out, 16, n, wav_out); wav_samples += n; }
-        if (wnd) window_audio(out, n);
+        if (wnd && !machine_is_fast()) window_audio(out, n);
         done += n;
     }
 }
@@ -1248,6 +1273,17 @@ void host_init(void)
 void host_frame(void)
 {
     static uint64_t last_present;
+    static int was_driven, live;
+    if (g_auto_on) {
+        autostart_poll();
+        const int d = driven();
+        if (was_driven == 1 && !d) {               /* a game of the table is on */
+            if (!live++)                           /* the first: --keys count from it */
+                for (int i = kev_i; i < nkev; i++) kev[i].at += pit_now();
+            if (wnd) window_live();
+        }
+        was_driven = d;
+    }
     keys_due();
     dof_tick();                      /* the helper's starts and ends */
     dmd_pipe_tick();
@@ -1263,6 +1299,11 @@ void host_frame(void)
             const uint32_t *f = as_rec();
             while ((rec_frames + 1) * per <= now) { fwrite(f, 4, (size_t)rec_w * rec_h, rec_video); rec_frames++; }
         }
+    }
+    if (machine_is_fast()) {                       /* --table: nothing shown, events now and then */
+        static uint64_t last_pump;
+        if (wnd && host_us() - last_pump >= 15000) { last_pump = host_us(); window_events(); }
+        return;
     }
     if (now - last_present < (uint64_t)(PIT_HZ / 70)) return;
     if (!wnd) {

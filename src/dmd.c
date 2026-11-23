@@ -15,6 +15,7 @@
 #include "machine.h"
 #include "watch.h"
 #include "ssf.h"
+#include "autostart.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +30,7 @@ void seam_enter(CPU *cpu, const char *fn)
     if (g_watch_on) watch_enter(cpu, fn);
     if (g_dmd_on) dmd_enter(cpu, fn);
     if (g_ssf_on) ssf_enter(cpu, fn);
+    if (g_auto_on) autostart_enter(cpu, fn);
 }
 
 /* ---- the map ------------------------------------------------------------------ */

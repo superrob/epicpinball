@@ -267,10 +267,24 @@ void sb_irq_ack(void);
 #define POLL_US 300
 static uint64_t virt_us, polls;
 
+/* --table: until the table's game runs, and from its end, time runs as fast
+ * as the guest goes, as headless (src/autostart.c) */
+static int fast;
+
 uint64_t emu_us(void)
 {
-    return g_opt.headless && !g_opt.realtime ? virt_us : host_us() - t_start;
+    return (g_opt.headless && !g_opt.realtime) || fast ? virt_us : host_us() - t_start;
 }
+
+void machine_fast(int on)
+{
+    if (g_opt.headless && !g_opt.realtime) return;
+    if (on && !fast) virt_us = host_us() - t_start;          /* on from where the clock is */
+    if (!on && fast) t_start = host_us() - virt_us;          /* and the clock on from there */
+    fast = on;
+}
+
+int machine_is_fast(void) { return fast; }
 
 /* A port read that a guest polls in a loop costs emulated time, as an ISA
  * read costs about a microsecond on the real bus. Without it a loop inside

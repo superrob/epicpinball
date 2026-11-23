@@ -65,6 +65,15 @@ All notable changes to this project are documented here. The format follows
   screens before a game, PRESS SPACE TO BEGIN, PRESS ENTER) are left out;
   `[cabinet] hide_messages` changes the list. Tested on a real cabinet on
   table 1; tables 2-13 only headless.
+- **`--table N`**: straight to table N with a one-player game, for a
+  frontend. PINBALL's own menus are driven to it unseen and unheard, a key at
+  a time from where PINBALL is (its code and memory, never a clock), in
+  about half a second; the game is shown as its ball is served. Quitting the
+  table quits the program by PINBALL's own way out, so the high scores are
+  saved; initials are yours, and after a game over so is the table's screen
+  (PLAY GAME again, or EXIT). `tools/feedback_map.py` finds PINBALL's menus in
+  your copy (`work/feedback/pin.map`). Tested on a real cabinet, and headless
+  on all 13 tables.
 - **SSF** (`--ssf`, Linux): 7.1 for a cabinet with
   exciters, wired as vpinball wires one. The front pair keeps the game's mix;
   the board's sounds (bumpers, slingshots, flippers, drop targets, plunger,

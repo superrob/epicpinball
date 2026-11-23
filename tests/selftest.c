@@ -16,6 +16,7 @@
 #include "dof_pipe.h"
 #include "dmd.h"
 #include "ssf.h"
+#include "autostart.h"
 #include <assert.h>
 #ifndef _WIN32
 #include <time.h>
@@ -45,6 +46,11 @@ void host_audio(const int16_t *s, int frames)
     for (int i = 0; i < frames && nheard < 4096; i++, nheard++) { heard[nheard * 2] = s[i * 2]; heard[nheard * 2 + 1] = s[i * 2 + 1]; }
 }
 void host_audio_ssf(const int16_t *front, const int16_t *exciters, int frames) { (void)front; (void)exciters; (void)frames; }
+static uint8_t keys_sent[64];          /* what --table pressed (src/autostart.c) */
+static int nkeys_sent, fast_now;
+void kbd_scancode(uint8_t sc) { if (nkeys_sent < 64) keys_sent[nkeys_sent++] = sc; }
+void machine_fast(int on) { fast_now = on; }
+int machine_is_fast(void) { return fast_now; }
 void host_frame(void) {}
 void host_backtrace(void) {}
 static uint64_t pit_at;                                   /* moved by the feedback tests */
@@ -1088,6 +1094,106 @@ static void test_dof_pipe(void)
 }
 #endif
 
+/* --table (src/autostart.c): the menus map; the list's place of a table among
+ * those installed; and a drive through fake PINBALL memory, a key a frame:
+ * the intro, the main menu, the list to table 3, its screen, the EXEC (one
+ * player), its end, out, and initials handed to the player */
+static int sent(int sc) { for (int i = 0; i < nkeys_sent; i++) if (keys_sent[i] == sc) return 1; return 0; }
+
+static void test_autostart(void)
+{
+    static const char map[] =
+        "epicpinball-menus 1\nimage pin 37461 E8DF0C9E\ncursor 6C5E\nend_fn pin_E\nexec_fn pin_X\n"
+        "frame_fn pin_F\ninitials 1D65\nintro_fn pin_I\nkey 3B4B\nmenu_frames 2E\nmenus_fn pin_M\n"
+        "present 6969\nscreen_cursor 6C61\nscreen_fn pin_S\nscroll 1B8A\nselected 6C5C\n"
+        "sub_fn pin_O\nsub_fn pin_R\nend\n";
+    MenusMap m;
+    const char *why = "";
+    assert(autostart_map_parse(map, &m, &why));
+    assert(m.size == 37461 && m.fnv == 0xE8DF0C9Eu && m.cursor == 0x6C5E && m.nsub == 2);
+    assert(!strcmp(m.frame_fn, "pin_F") && !strcmp(m.sub_fn[1], "pin_R"));
+    char bad[sizeof map];
+    strcpy(bad, map);
+    *strstr(bad, "initials") = 'X';                                   /* a field missing */
+    assert(!autostart_map_parse(bad, &m, &why));
+    strcpy(bad, map);
+    bad[18] = '2';                                                    /* another version */
+    assert(!autostart_map_parse(bad, &m, &why));
+    assert(autostart_map_parse(map, &m, &why));
+
+    uint8_t present[26] = { 0 };
+    for (int i = 0; i < 13; i++) present[2 * i] = 1;
+    assert(autostart_list_position(present, 1) == 0 && autostart_list_position(present, 13) == 12);
+    present[2] = 0;                                                   /* table 2 not installed */
+    assert(autostart_list_position(present, 2) == -1 && autostart_list_position(present, 3) == 1);
+    present[2] = 1;
+
+    const uint32_t cs = 0x2000 * 16;
+    uint8_t *M = g_cpu.mem + cs;
+    memset(M, 0, 0x10000);
+    memcpy(M + 0x6969, present, sizeof present);
+    const int watching = g_watch_on;
+    g_watch_on = 0;                                                   /* no feedback map: shown at its start */
+    pit_at = 0;
+    nkeys_sent = 0;
+    autostart_wanted(3);
+    autostart_begin_map(&m, 0x2000);
+    assert(g_auto_on && fast_now && autostart_busy() == 1);
+    CPU c = { 0 };
+    #define FRAMES(fn, n) for (int f_ = 0; f_ < (n); f_++) { autostart_enter(&c, fn); \
+                                                         pit_at += (uint64_t)(PIT_HZ / 70); autostart_poll(); }
+    FRAMES("pin_I", 8);                                                /* the intro: Enter, let go */
+    assert(sent(0x1C) && sent(0x9C));
+    nkeys_sent = 0;
+    M[0x6C5E] = 2;                                                    /* the main menu, cursor not on BEGIN */
+    FRAMES("pin_F", 10);
+    assert(sent(0xE0) && sent(0x48) && !sent(0x1C));                  /* Up */
+    M[0x6C5E] = 0;
+    nkeys_sent = 0;
+    FRAMES("pin_F", 10);
+    assert(sent(0x1C));                                               /* Enter on BEGIN */
+    autostart_enter(&c, "pin_M");                                     /* the list */
+    nkeys_sent = 0;
+    for (int i = 0; i < 40 && M[0x6C5E] + M[0x1B8A] < 2; i++) {       /* Down to table 3's place */
+        int n = nkeys_sent;
+        FRAMES("pin_F", 1);
+        if (nkeys_sent > n && keys_sent[nkeys_sent - 1] == 0x50) M[0x6C5E]++;
+    }
+    assert(M[0x6C5E] == 2);
+    nkeys_sent = 0;
+    FRAMES("pin_F", 10);
+    assert(sent(0x1C) && !sent(0x50));                                /* Enter on it */
+    M[0x6C5C] = 2;
+    autostart_enter(&c, "pin_S");                                     /* its screen */
+    nkeys_sent = 0;
+    FRAMES("pin_F", 10);
+    assert(sent(0x1C));                                               /* PLAY GAME */
+    autostart_enter(&c, "pin_X");
+    uint8_t tail[16] = { 3, ' ', '2', '<', 0x0D };
+    autostart_exec("C:\\EP3.EXE", tail);
+    assert(tail[2] == '1');                                           /* one player */
+    autostart_enter(&c, "ep3_step");                                  /* the table runs: the player's */
+    assert(!fast_now && autostart_busy() == 0);
+    autostart_exec_done();                                            /* quit (no map: as if) */
+    assert(fast_now && autostart_busy() == 2);
+    nkeys_sent = 0;
+    FRAMES("pin_F", 10);                                              /* its screen: Esc, out */
+    assert(sent(0x01) && autostart_busy() == 2);
+    M[0x1D65] = 1;                                                    /* a high score: initials */
+    FRAMES("pin_F", 2);
+    assert(!fast_now && autostart_busy() == 0);
+    nkeys_sent = 0;
+    FRAMES("pin_F", 30);
+    assert(nkeys_sent == 0);                                          /* none pressed while typed */
+    M[0x1D65] = 0;
+    FRAMES("pin_F", 10);
+    assert(fast_now && autostart_busy() == 2 && sent(0x01));          /* then out again */
+    #undef FRAMES
+    g_watch_on = watching;
+    g_auto_on = 0;
+    pit_at = 0;
+}
+
 int main(void)
 {
     g_cpu.mem = (uint8_t *)calloc(1, MEM_SIZE);
@@ -1104,6 +1210,7 @@ int main(void)
     test_plunger();
     test_dmd();
     test_ssf();
+    test_autostart();
 #ifndef _WIN32
     test_dof_pipe();
 #endif

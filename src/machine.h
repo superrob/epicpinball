@@ -51,6 +51,7 @@ typedef struct {
     int dmd;                  /* --dmd: a 128x32 DMD of the table in a window, its messages off the playfield */
     int dmd_device;           /* --dmd-device: the same on a real DMD, through dmd/'s helper */
     int ssf;                  /* --ssf: 7.1, the board's sounds on the cabinet's exciters */
+    int table;                /* --table N: straight to table N's game, out when it is quit; 0 none */
 } Options;
 extern Options g_opt;
 
@@ -94,6 +95,8 @@ uint64_t pit_now(void);
 uint64_t emu_us(void);                /* see machine.c: wall clock, or deterministic */
 void machine_port_wait(unsigned us);  /* a polled port read costs emulated time */
 void machine_paused(uint64_t us);     /* wall-clock time the guest did not see */
+void machine_fast(int on);            /* --table: emulated time as fast as it goes, or the clock again */
+int  machine_is_fast(void);
 void machine_report(void);               /* emulated time in PIT ticks (1.193182 MHz) */
 #define PIT_HZ 1193182.0
 

@@ -617,8 +617,99 @@ def text_of(img, r):
     return '\n'.join(out) + '\n'
 
 
+MENUS_VERSION = 1
+
+
+def scan_menus():
+    """PINBALL's menus, for --table (src/autostart.c): the functions each
+    screen calls while it waits for a key, and the variables that say where
+    its cursor is. -> (file, size, fnv, {key: value})"""
+    file, load, size, fnv = lifted_as('pin')
+    f = read_functions('pin')
+    v = {}
+    # each menu loop: its cursor in AH, the frame call, then the key the
+    # keyboard handler left (a make code below 80h)
+    loops = [(m, name) for name, (text, _) in f.items() for m in re.finditer(
+        rf'mov ah, byte cs:\[{N}\]\npush cs\ncall (pin_\w+)\nmov al, byte cs:\[{N}\]\ncmp al, 0x80\n', text)]
+    _, v['exec_fn'] = find(f, 'table EXEC', r'mov dx, word cs:\[bx\+' + A + r'\]\nmov al, 0x0\nmov ah, 0x4B\n')
+    lists = [(m, name) for m, name in loops if f'call {v["exec_fn"]}\n' in f[name][0]]
+    if len(lists) != 1:
+        raise Missing(f'the table list: {len(lists)} menu loops beside the table EXEC, not one')
+    m, v['menus_fn'] = lists[0]
+    v['cursor'], v['frame_fn'], v['key'] = num(m.group(1)), m.group(2), num(m.group(3))
+    mains = [name for m, name in loops if name != v['menus_fn'] and m.groups() == lists[0][0].groups()]
+    if len(mains) != 1:         # the main menu: the one other loop on the list's cursor
+        raise Missing(f'the main menu: {len(mains)} loops on the list\'s cursor, not one')
+    v['main_fn'] = mains[0]
+    # the table screen's own screens (rules, options): their Esc is back to it
+    subs = sorted(name for m, name in loops if name not in (v['menus_fn'], v['main_fn']))
+    if not subs:
+        raise Missing('the table screen\'s rules and options: no menu loop of their own')
+    v['sub_fns'] = subs
+    m, _ = find(f, 'table screen cursor', rf'mov ah, byte cs:\[{N}\]\ncmp ah, 0x3\n{GO}mov ah, 0x3\npush cs\n'
+                rf'call {v["frame_fn"]}\n', v['menus_fn'])
+    v['screen_cursor'] = num(m.group(1))
+    m, _ = find(f, 'list scroll and selection',
+                rf'mov bl, byte cs:\[0x{v["cursor"]:X}\]\nmov bh, 0x0\nadd bx, word cs:\[{N}\]\n'
+                rf'cmp bx, word cs:\[{A}\]\n{GO}jmp {A}\nmov byte cs:\[{N}\], 0x0\nmov di, 0x0\n'
+                rf'cmp word cs:\[di\+{N}\], 0x1\n', v['menus_fn'])
+    v['scroll'], v['selected'], v['present'] = num(m.group(1)), num(m.group(2)), num(m.group(3))
+    _, v['screen_fn'] = find(f, 'table screen', rf'\Apusha\nmov di, {A}\nmov al, byte cs:\[0x{v["selected"]:X}\]\n'
+                             rf'mov ah, 0x0\nmov bx, 0x28\nmul bx\n')
+    m, _ = find(f, 'initials entry', rf'cmp word cs:\[{N}\], 0x0\n{GO}jmp {A}\ncmp al, 0x1\n{GO}cmp al, 0x1C\n',
+                v['menus_fn'])
+    v['initials'] = num(m.group(1))     # not 0 while a high score's initials are typed
+    m, _ = find(f, 'main menu frames', rf'inc word cs:\[0x([0-9A-F]+)\]\ncmp word cs:\[0x\1\], {A}\n{GO}'
+                rf'push cs\ncall pin_\w+\n', v['main_fn'])
+    v['menu_frames'] = num(m.group(1))  # the main menu's frames toward its demo: only it counts them
+    m, _ = find(f, 'intro frame', rf'push di\npush cs\ncall (pin_\w+)\npop di\ninc di\ncmp di, {A}\n{GO}'
+                rf'cmp byte cs:\[0x{v["key"]:X}\], 0x80\n', v['main_fn'])
+    v['intro_fn'] = m.group(1)
+    _, v['end_fn'] = find(f, 'end screen', rf'inc word cs:\[({A})\]\ncmp word cs:\[\1\], 0x32\n{GO}'
+                          rf'cmp byte cs:\[0x{v["key"]:X}\], 0x80\n')
+    for k in ('frame_fn', 'menus_fn', 'screen_fn', 'exec_fn', 'intro_fn', 'end_fn'):
+        if not f[v[k]][1]:
+            raise Missing(f'{v[k]} has no RECOMP_ENTER, so its calls cannot be seen')
+    # the variables are in PINBALL's first code segment, where these run
+    for k in ('frame_fn', 'menus_fn', 'main_fn', 'screen_fn', 'exec_fn'):
+        if int(v[k].split('_')[1], 16) >= 0x10000:
+            raise Missing(f'{v[k]} is not in the first code segment')
+    for k in v['sub_fns']:
+        if not f[k][1]:
+            raise Missing(f'{k} has no RECOMP_ENTER, so its calls cannot be seen')
+    del v['main_fn']
+    return file, size, fnv, v
+
+
+def menus_text(size, fnv, v):
+    out = [f'epicpinball-menus {MENUS_VERSION}', f'image pin {size} {fnv}']
+    out += [f'{k} {x}' if k.endswith('_fn') else f'{k} {x:X}' for k, x in sorted(v.items()) if k != 'sub_fns']
+    out += [f'sub_fn {x}' for x in v['sub_fns']]
+    out.append('end')
+    return '\n'.join(out) + '\n'
+
+
+def write_menus(show):
+    """work/feedback/pin.map, or why not: --table is then off"""
+    try:
+        _, size, fnv, v = scan_menus()
+    except (Missing, OSError) as e:
+        print(f'menus map: not written (--table will be off): {e}')
+        return
+    os.makedirs(OUT, exist_ok=True)
+    path = os.path.join(OUT, 'pin.map')
+    text = menus_text(size, fnv, v)
+    if not os.path.exists(path) or open(path).read() != text:
+        with open(path, 'w') as out:
+            out.write(text)
+    if show:
+        print('pin: ' + ' '.join(f'{k}={x}' if k.endswith(('_fn', '_fns')) else f'{k}={x:X}' for k, x in v.items()))
+    print('menus map: work/feedback/pin.map')
+
+
 def main():
     show = '--show' in sys.argv
+    write_menus(show)
     found, bad = {}, []
     for n in range(1, TABLES + 1):
         img = f'ep{n}'

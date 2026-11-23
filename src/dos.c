@@ -16,6 +16,7 @@
 #include "watch.h"
 #include "dmd.h"
 #include "ssf.h"
+#include "autostart.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #include <time.h>
@@ -459,6 +460,7 @@ void dos_boot(CPU *cpu)
     if (!raw) fatal("PINBALL.EXE not found in %s -- copy your own Epic Pinball there (README)", g_opt.datadir);
     load_exe(cpu, "PINBALL.EXE", raw, len, g_psp_seg, MEM_TOP, ENV_SEG, tail);
     free(raw);
+    autostart_begin(images_at((uint16_t)(g_psp_seg + 0x10)), (uint16_t)(g_psp_seg + 0x10));
 }
 
 /* INT 21h AX=4B00: load and run a program, as a nested C call; the child's
@@ -475,6 +477,7 @@ static void dos_exec(CPU *c)
     uint16_t toff = (uint16_t)(m[pb + 2] | m[pb + 3] << 8), tseg = (uint16_t)(m[pb + 4] | m[pb + 5] << 8);
     uint8_t tail[130];
     memcpy(tail, m + seg_off(tseg, toff), 129); tail[129] = 0x0D;
+    if (g_auto_on) autostart_exec(name, tail);       /* --table: the table chosen, one player */
     trace("[dos] exec %s tail \"%.*s\"\n", name, tail[0], (const char *)tail + 1);
     { int machine_busy(void); void host_backtrace(void);
       if (machine_busy()) { trace("[dos] exec from inside an interrupt\n"); host_backtrace(); } }
@@ -531,6 +534,7 @@ static void dos_exec(CPU *c)
         last_exit_code = 0;
     }
     exec_jmp = prev;
+    if (g_auto_on) autostart_exec_done();           /* --table: quit or game over, the watcher can tell */
     ssf_table_end();
     watch_table_end();                 /* every way out of a table comes here */
     dmd_table_end();

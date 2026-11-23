@@ -369,6 +369,11 @@ int watch_place(int kicker, double within_ms, int *x, int *y)
     return 1;
 }
 
+int watch_game_over(void)
+{
+    return g_watch_on ? g_cpu.mem[DS + M.over] == 1 : -1;
+}
+
 int watch_running(void)
 {
     return g_watch_on && started && now_ms() - last_step <= IDLE_MS;
