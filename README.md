@@ -44,16 +44,17 @@ conformance harness passes 154/154 on Linux.**
 | Gamepad (XInput, `controller.ini`, GOG's DOSBox mapping by default) | implemented, untested on a real pad |
 | `SETUP.EXE` (the sound card menu) | not lifted: its start-up check is answered, and GOG's `SOUNDCRD.INF` (Sound Blaster 16) is used as shipped |
 | The `DEMO\` folder's shareware version | not supported |
-| A full game, start to final ball, with hands on a keyboard | not yet |
+| A full game, start to final ball, played by hand | ✅ |
 | Cabinet mode, `--cabinet` (Linux only) | ✅ on a real cabinet (table 1) and on virtual displays |
-| Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1; tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick) |
+| Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick) |
+| A 128x32 DMD (`--dmd` in a window, `--dmd-device` on a real DMD through libdmdutil; Linux) | ✅ on a real cabinet with a ZeDMD, on table 1; all 13 tables headless |
 | **Conformance** ([docs](docs/conformance.md)) | **154/154** on Linux (Windows skips the 11 cabinet checks, and has not run the 10 feedback ones) |
 
 Everything marked ✅ was seen working in scripted headless runs, which the
 conformance harness repeats. The sound was checked by measurement — a stereo
 stream whose two channels are each smooth signals with a music-shaped
-spectrum — not yet by ear. Nobody has played a long session yet: treat this as
-an alpha.
+spectrum — not yet by ear. A full game has been played by hand; most tables
+have still seen only scripted play: treat this as an alpha.
 
 ## What the remaster adds
 
@@ -69,11 +70,22 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
 - **Cabinet mode** (`--cabinet`, Linux): for a virtual pinball machine. The
   whole table fills the playfield display, turned with F6 and stretched to
   every pixel of it with F5 while a table is up; the scoreboard is
-  a window of its own. [How to set one up](docs/remaster.md#cabinet-mode).
+  a window of its own. Messages about keys a cabinet has not got (the help
+  screens, PRESS SPACE TO BEGIN) are left out.
+  [How to set one up](docs/remaster.md#cabinet-mode).
+- **A DMD** (`--dmd`, `--dmd-device`, Linux): a 128x32 dot-matrix picture of
+  every table, in a window of its own or on a real DMD (any libdmdutil
+  drives; tested with a ZeDMD), taking the scoreboard window's place in a cabinet. The
+  messages are the game's own, followed through the message engine all 13
+  tables share and set again for 128x32 in each table's fonts and colours,
+  with its explosions and waves; tables 1-8's leave the playfield for it.
+  Between them, the table's score. [How it works](docs/dmd.md).
 - **Cabinet feedback** (`--dof`, Linux): flippers, slingshots, bumpers,
-  launch, drain, nudge and the rest go to libdof as DOF events, with
+  launch, drain, nudge and the rest go to libdof as DOF events (on table 1
+  also its holes, kickback, targets, lanes, ramps, jackpots and awards), with
   VPinball's DOF files if there are any (a Config Tool export works as it
-  is: the game's row is made from its device list) (no limits: those are the
+  is: the game's row is made from its device list, solenoids, flashers and
+  MX strips with DOF's shapes included) (no limits: those are the
   controller's), and a **plunger position sensor** can work the game's plunger.
   [Read this before connecting a coil](docs/cabinet-feedback.md).
 - **Its own window**, drawn with Direct3D 11 (SDL2 on Linux): resizable, borderless
@@ -126,26 +138,6 @@ You need your own copy of the game. GOG's *Epic Pinball: The Complete
 Collection* works, installed or as the offline installer
 (`setup_epic_pinball_the_complete_collection_*.exe`). Other versions are untested.
 
-### The installer (easiest)
-
-From the [releases](https://github.com/sp00nznet/epicpinball/releases),
-download the installer for your system:
-`EpicPinball-Recomp-Installer-windows-x64.exe`, or
-`EpicPinball-Recomp-Installer-linux-x64.tar.gz` (unpack it, then run it).
-
-1. It finds GOG's install by itself. Otherwise, **Choose folder…** and pick
-   the folder holding `PINBALL.EXE`, or the one holding GOG's
-   `setup_epic_pinball_*.exe`.
-2. **Build**: it downloads this repository and pcrecomp, then runs the same
-   setup as below with no questions. On Windows, a first build installs the
-   compilers it needs. On Linux, it tells you which packages to install.
-3. **Play**. Next time it opens straight to this. Its corner shows its
-   version, and it says when a newer release is out.
-
-Nothing of the game is in the installer. The build is made from your copy and
-stays on your machine. The installer isn't signed: Windows SmartScreen asks
-first (**More info**, **Run anyway**).
-
 ### Quick start
 
 1. Download this repository (Code → Download ZIP) and unzip it anywhere.
@@ -160,63 +152,6 @@ builds, and leaves a shortcut here: **Epic Pinball**. On a fast machine that
 takes under two minutes. If anything fails it stops with one sentence on what to
 do and writes the details to `setup.log`; running it again carries on from
 where it stopped.
-
-### Step by step
-
-Prerequisites: Windows 10/11 x64, Python 3.10+ (`py --version`), CMake 3.20+,
-Visual Studio 2022 with the *Desktop development with C++* workload (Build Tools
-is enough), Git. ffmpeg is optional (only `--record` needs it).
-
-1. **Get the toolkit**, next to this folder:
-
-   ```powershell
-   git clone https://github.com/sp00nznet/pcrecomp ..\pcrecomp
-   git -C ..\pcrecomp checkout 1dfdaef
-   $env:PCRECOMP_HOME = (Resolve-Path ..\pcrecomp)
-   ```
-
-2. **Copy the game in.** Everything in the game's folder that sits next to
-   `PINBALL.EXE` goes into `original\` (the `DOSBOX\` folder GOG adds is not
-   needed). From GOG's installer instead, unpack it (nothing is run) and copy
-   the files from `work\gog`:
-
-   ```powershell
-   mkdir work\gog
-   innoextract -d work\gog setup_epic_pinball_the_complete_collection_1.01_gog_v2_(86528).exe
-   ```
-
-3. **Configure, then lift and build until it settles:**
-
-   ```powershell
-   cmake -B build -G "Visual Studio 17 2022" -A x64
-   py tools\discover.py
-   ```
-
-   Expected output:
-
-   ```
-   round 1
-     lift
-     configure
-     build
-     play: boot, then each table
-   round 2
-   ...
-   settled after 4 rounds: every address reached is lifted
-   ```
-
-   Why rounds: where each table loads, and a few entry points (interrupt
-   handlers installed through variables), are learned by running the game. Each
-   round plays PINBALL and every table headless for a few seconds and lifts what
-   that run recorded ([lifting](docs/lifting.md#5-what-only-running-tells-you)).
-
-4. **Play:** `build\Release\epicpinball.exe`
-
-Usual trip-ups: `python` that opens the Microsoft Store is the App Execution
-Alias — use `py`, or turn the alias off in Settings → Apps → Advanced app
-settings. A tool installed in this window is not on `PATH` until you open a new
-one. `cmake` needs the *Visual Studio* generator line in step 3 on the first run
-only.
 
 ### On Linux
 
@@ -275,7 +210,9 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 | `--rotate 0\|90\|180\|270` | with `--cabinet`: the playfield turned clockwise, this run |
 | `--stretch` | with `--cabinet`: the playfield stretched to fill its display, this run |
 | `--playfield-display N` | with `--cabinet`: the display the playfield fills; they are listed at start |
-| `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard goes, this run |
+| `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard (or with `--dmd`, the DMD) window goes, this run |
+| `--dmd` | a 128x32 DMD in a window of its own; in a cabinet, in place of the scoreboard window (Linux) ([docs](docs/dmd.md)) |
+| `--dmd-device` | the DMD on a real one, any libdmdutil drives (ZeDMD, Pixelcade, PinDMD3, ...; tested with a ZeDMD; PIN2DMD is left out of this build): build `dmd/build.sh` first; settings in `saves/dmd/DMDUtil.ini` (Linux) |
 | `--dof` | DOF events through libdof (Linux): build `dof/build.sh` first; rows in VPinball's DOF files or `saves/directoutputconfig/`; no output limits ([docs](docs/cabinet-feedback.md)) |
 | `--joysticks` | list joysticks and their live axes, to set up `[plunger]` in `saves/controller.ini` (Linux) |
 | `--feedback-log FILE`, `--plunger-trace "ms:percent,..."` | testing: what a cabinet would feel; a scripted plunger sensor |
@@ -295,11 +232,16 @@ build\Release\epicpinball.exe --headless --seconds 60 --record android.mp4 `
 ```sh
 # a cabinet: the playfield on display 0, turned; the scoreboard on the screen right of it
 ./epicpinball.sh --cabinet --rotate 90 --playfield-display 0 --score-window 1920,0,1280,116
+
+# a cabinet with a real DMD for the scoreboard, and DOF feedback
+./epicpinball.sh --cabinet --dmd-device --dof
 ```
 
 ## Building from source
 
-The [Step by step](#step-by-step) route is the build. What else is here:
+`Setup.cmd` and `setup.sh` (above) are the build: they fetch pcrecomp and run
+`tools/discover.py`, which lifts, builds and plays the game until every address
+it reaches is lifted. What else is here:
 
 | | |
 |---|---|
@@ -307,11 +249,13 @@ The [Step by step](#step-by-step) route is the build. What else is here:
 | `tools/discover.py` | lift, build, play, repeat |
 | `tools/conformance.py` | the scripted checks; `--update` records a new baseline |
 | `tools/feedback_map.py` | where each table keeps what cabinet feedback and the plunger use |
+| `tools/dmd_survey.py` | each table's message engine for the DMD, and every message a table can show |
 | `dof/` | the optional output helper: its own program, GPLv3, built by `dof/build.sh` |
+| `dmd/` | the optional DMD helper for a real DMD: its own program, GPLv3, built by `dmd/build.sh` |
 | `setup.sh`, `build-linux.sh` | the Linux quick start and rebuild |
-| `tests/selftest.c` | the split screen, SB16 stereo, the image registry, the feedback watcher, the plunger and the helper's pipe, with no game data — what CI runs (`cmake --build build --target selftest`) |
-| `src/` | the DOS machine: `dos.c` (DOS, BIOS, EXEC), `images.c` (which lifted code is where), `machine.c` (PIC, PIT, keyboard, interrupts), `vga.c`, `audio.c` (SB16, DMA), `host.c` (window, input, recording: Win32, or SDL2 on Linux), `present.c` (Direct3D 11, or SDL2), `pad.c`, `watch.c` and `feedback.c` (table events), `dof_pipe.c`, `plunger.c` |
-| `docs/` | [architecture](docs/architecture.md), [cabinet feedback](docs/cabinet-feedback.md), [lifting](docs/lifting.md), [conformance](docs/conformance.md) |
+| `tests/selftest.c` | the split screen, SB16 stereo, the image registry, the feedback watcher, the plunger, the helper's pipe and the DMD's layout, with no game data — what CI runs (`cmake --build build --target selftest`) |
+| `src/` | the DOS machine: `dos.c` (DOS, BIOS, EXEC), `images.c` (which lifted code is where), `machine.c` (PIC, PIT, keyboard, interrupts), `vga.c`, `audio.c` (SB16, DMA), `host.c` (window, input, recording: Win32, or SDL2 on Linux), `present.c` (Direct3D 11, or SDL2), `pad.c`, `watch.c` and `feedback.c` (table events), `dof_pipe.c`, `plunger.c`, `dmd.c` and `dmd_pipe.c` (the DMD) |
+| `docs/` | [architecture](docs/architecture.md), [remaster](docs/remaster.md), [cabinet feedback](docs/cabinet-feedback.md), [dmd](docs/dmd.md), [lifting](docs/lifting.md), [conformance](docs/conformance.md) |
 
 A trace build (`cmake -B build-dbg -DEPIC_TRACE=ON`, then
 `cmake --build build-dbg --config RelWithDebInfo`) keeps a ring of the lifted
@@ -327,7 +271,9 @@ copy, and `.gitignore` keeps it out of this repository.
 
 ## License
 
-MIT for this repository's code ([LICENSE](LICENSE)), except `dof/`, a separate
-program under the GPLv3 ([dof/LICENSE](dof/LICENSE)). Epic Pinball is commercial
+MIT for this repository's code ([LICENSE](LICENSE)), except `dof/` and `dmd/`,
+separate programs under the GPLv3 ([dof/LICENSE](dof/LICENSE),
+[dmd/LICENSE](dmd/LICENSE)), as libdof and libdmdutil are; the game links
+neither. Epic Pinball is commercial
 software; no part of the game, and nothing generated from it, is in this
 repository ([NOTICE](NOTICE)).
