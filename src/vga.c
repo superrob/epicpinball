@@ -260,6 +260,12 @@ int vga_port_out(uint16_t port, uint8_t v)
 void vga_dac_set(int i, uint8_t r, uint8_t g, uint8_t b) { dac[i & 255][0] = r & 63; dac[i & 255][1] = g & 63; dac[i & 255][2] = b & 63; }
 void vga_dac_get(int i, uint8_t *r, uint8_t *g, uint8_t *b) { *r = dac[i & 255][0]; *g = dac[i & 255][1]; *b = dac[i & 255][2]; }
 
+/* One byte of video memory, as vram[] holds it: (address << 2) | plane. For
+ * the DMD (dmd.c), which takes a message's dots out of a picture of the
+ * playfield and puts them back before the game runs again. */
+uint8_t vga_vram_peek(uint32_t i) { return vram[i & 0x3FFFF]; }
+void vga_vram_poke(uint32_t i, uint8_t v) { vram[i & 0x3FFFF] = v; }
+
 /* ---- scanout --------------------------------------------------------------- */
 
 static inline uint32_t rgb(int i)
@@ -271,8 +277,12 @@ static inline uint32_t rgb(int i)
 
 /* What the monitor shows right now, as 0xAARRGGBB. Graphics: 320 x rows, rows
  * from the CRTC (200 for PINBALL's screens, 240 for the tables). Text: 640x400. */
+static int bar_row = -1;             /* in the last picture composed: where video address 0 starts */
+int vga_bar_row(void) { return bar_row; }
+
 void vga_compose(uint32_t *out, int *w, int *h)
 {
+    bar_row = -1;
     if (mode != 0x13) {
         static uint32_t blink;
         const uint8_t *t = vga_text_mem();
@@ -315,6 +325,7 @@ void vga_compose(uint32_t *out, int *w, int *h)
     unsigned lc = crtc[0x18] | ((crtc[0x07] & 0x10) << 4) | ((crtc[0x09] & 0x40) << 3);
     int split = (int)((lc + 1) / scan);
     if (getenv("EPIC_VRAM0")) { start = (unsigned)atoi(getenv("EPIC_VRAM0")); split = rows; }   /* debug: show VRAM from here */
+    if (split < rows) bar_row = split;
     for (int y = 0; y < rows; y++) {
         unsigned base = y < split ? start + y * row : (unsigned)(y - split) * row;
         for (int x = 0; x < 320; x++)
@@ -366,6 +377,7 @@ int vga_compose_table(uint32_t *out, int *w, int *h)
     *w = 320; *h = p.rows + dmd;
     copy_rows(out, p.start >= p.base1 ? p.base1 : p.base0, p.row, p.rows);
     copy_rows(out + p.rows * 320, 0, p.row, dmd);
+    bar_row = p.rows;
     return 1;
 }
 

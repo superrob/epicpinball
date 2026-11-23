@@ -14,6 +14,7 @@
 #include "feedback.h"
 #include "plunger.h"
 #include "dof_pipe.h"
+#include "dmd.h"
 #include <assert.h>
 #ifndef _WIN32
 #include <time.h>
@@ -681,6 +682,217 @@ static void test_plunger(void)
 }
 
 #ifndef _WIN32
+/* --dmd: a message set again for 128x32, moved as the game moves its dots;
+ * a lasting one gives way to the board; the playfield gets back what the
+ * game saved from under its dots while it is composed (src/dmd.c) */
+#define LIT(f, x, y) ((f)[(y) * DMD_W + (x)] & 0xFFFFFF)
+static int lit_in(const uint32_t *f, int x0, int y0, int x1, int y1)
+{
+    int n = 0;
+    for (int y = 0; y < DMD_H; y++)
+        for (int x = 0; x < DMD_W; x++)
+            if (f[y * DMD_W + x] & 0xFFFFFF) { assert(x >= x0 && x < x1 && y >= y0 && y < y1); n++; }
+    return n;
+}
+
+static void test_dmd(void)
+{
+    char map[] = "epicpinball-dmd 1\nimage ep1 1 0\nds 100\nmsg_fn T_msg\nstep_fn T_step\n"
+                 "font large 200 0 8 7 7 16\nfont small 200 300 5 5 5 11\nappend T_app 200 300 5 5 5 11\n"
+                 "list 10\neffect 2\ncount 4\nfamily playfield\nsave 2000 3000\nsave 2400 3002\n";
+    const char *why = "";
+    assert(dmd_map_use(map, 0x1000, &why));
+    const uint32_t DS = 0x11000, FONT = 0x12000;
+    memset(g_cpu.mem + DS, 0, 0x10000);
+    for (int r = 0; r < 7; r++) g_cpu.mem[FONT + ('A' - 32) * 8 + r] = 0xFE;      /* A: a 7x7 block */
+    for (int r = 0; r < 5; r++) g_cpu.mem[FONT + 0x300 + ('B' - 32) * 5 + r] = 0xF8;   /* small B: 5x5 */
+    memcpy(g_cpu.mem + DS + 0x500, "AA", 3);
+    memcpy(g_cpu.mem + DS + 0x510, "B", 2);
+    vga_dac_set(0xFF, 63, 63, 63);
+
+    CPU c = g_cpu;                                                   /* its memory */
+    c.ds = 0x1100; c.bx = 0x500; c.ax = 0x0101; c.di = 320 * 10;   /* large, effect 1: the game ends it */
+    pit_at = 0;
+    dmd_enter(&c, "T_msg");
+    /* the game's own list: centred across 320 (145 = (320 - 2*16)/2 + 1), column by column */
+    uint16_t at = 320 * 10 + 145;
+    int n = 0;
+    for (int ch = 0; ch < 2; ch++, at += 2)
+        for (int col = 0; col < 7; col++, at += 2)
+            for (int row = 0; row < 7; row++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n++), (uint16_t)(at + row * 640));
+    put(g_cpu.mem + DS, 4, 1);                                       /* its frame counter: up */
+
+    uint32_t f[DMD_W * DMD_H];
+    assert(dmd_frame(NULL, 0, 0, f));
+    /* "AA" is 15 dots wide and 7 high: doubled, centred */
+    assert(lit_in(f, 49, 9, 79, 23) == 2 * 49 * 4);
+    assert(f[9 * DMD_W + 49] == 0xFFFFFFFFu);                        /* DAC FFh: white */
+    assert(!dmd_frame(NULL, 0, 0, f));                                /* nothing new */
+    /* an effect moves a dot 4 screen pixels right: 2 font pixels, 4 DMD dots doubled */
+    put(g_cpu.mem + DS, 0x10, (uint16_t)(320 * 10 + 145 + 4));
+    assert(dmd_frame(NULL, 0, 0, f) && LIT(f, 53, 9) && !LIT(f, 49, 9));
+    put(g_cpu.mem + DS, 0x10, 1);                                    /* gone: not drawn; it was on */
+    assert(!dmd_frame(NULL, 0, 0, f) && LIT(f, 53, 9) && !LIT(f, 49, 9));       /* column 2's dot: no change */
+
+    /* a line appended under it: two rows, not doubled; 7 + 2 + 5 high, centred */
+    c.bx = 0x510; c.di = 320 * 30;
+    dmd_enter(&c, "T_app");
+    for (int k = 0; k < 25; k++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * (98 + k)), (uint16_t)(320 * 30 + (k / 5) * 2 + (k % 5) * 640));
+    put(g_cpu.mem + DS, 0x10, (uint16_t)(320 * 10 + 145));
+    assert(dmd_frame(NULL, 0, 0, f));
+    assert(lit_in(f, 56, 9, 72, 23) == 2 * 49 + 25);
+    assert(LIT(f, 61, 18) && !LIT(f, 61, 17));               /* B's top row, under a gap */
+
+    /* effect 3 never ends by itself: after 4 s of play the board (here none:
+     * dark). Waiting on the player (no physics steps), it stays */
+    c.bx = 0x500; c.ax = 0x0103; c.di = 320 * 10;
+    g_cpu.mem[DS + 2] = 3;                                           /* the game's effect byte */
+    dmd_enter(&c, "T_msg");
+    assert(dmd_frame(NULL, 0, 0, f) && lit_in(f, 0, 0, DMD_W, DMD_H));
+    pit_at = (uint64_t)(10.0 * PIT_HZ);                              /* 10 s, nothing played */
+    dmd_enter(&c, "T_step");
+    assert(!dmd_frame(NULL, 0, 0, f) && lit_in(f, 0, 0, DMD_W, DMD_H));
+    for (int ms = 0; ms < 3900; ms += 5) { pit_at += (uint64_t)(0.005 * PIT_HZ); dmd_enter(&c, "T_step"); }
+    assert(!dmd_frame(NULL, 0, 0, f));                               /* 3.9 s played: still up */
+    for (int ms = 0; ms < 200; ms += 5) { pit_at += (uint64_t)(0.005 * PIT_HZ); dmd_enter(&c, "T_step"); }
+    assert(dmd_frame(NULL, 0, 0, f) && !lit_in(f, 0, 0, DMD_W, DMD_H));
+    g_cpu.mem[DS + 2] = 1;                                           /* the game made it explode: it ends itself */
+    assert(dmd_frame(NULL, 0, 0, f) && lit_in(f, 0, 0, DMD_W, DMD_H));
+    put(g_cpu.mem + DS, 4, 0);                                       /* the game ended it */
+    assert(dmd_frame(NULL, 0, 0, f) && !lit_in(f, 0, 0, DMD_W, DMD_H));
+
+    /* taller than the DMD: a page at a time, 2 s each. "AA" and six lines of
+     * B, 7 + 6 * (2 + 5) = 49 high: rows that fit on the first page, the rest
+     * on the second */
+    c.bx = 0x500; c.ax = 0x0100; c.di = 320 * 10;
+    dmd_enter(&c, "T_msg");
+    c.bx = 0x510;
+    for (int k = 0; k < 6; k++) { c.di = (uint16_t)(320 * (30 + 16 * k)); dmd_enter(&c, "T_app"); }
+    for (int i = 0; i < 98; i++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * i), 2);   /* moved nowhere: drawn */
+    n = 0;
+    at = 320 * 10 + 145;
+    for (int ch = 0; ch < 2; ch++, at += 2)
+        for (int col = 0; col < 7; col++, at += 2)
+            for (int row = 0; row < 7; row++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n++), (uint16_t)(at + row * 640));
+    for (int k = 0; k < 6; k++)
+        for (int d = 0; d < 25; d++)
+            put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n++), (uint16_t)(320 * (30 + 16 * k) + (d / 5) * 2 + (d % 5) * 640));
+    put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n), 0);
+    put(g_cpu.mem + DS, 4, 1);
+    assert(dmd_frame(NULL, 0, 0, f));
+    const int first = lit_in(f, 0, 0, DMD_W, DMD_H);                 /* AA and three lines: 7 + 3 * 7 = 28 */
+    assert(first == 2 * 49 + 3 * 25);
+    pit_at += (uint64_t)(2.1 * PIT_HZ);
+    assert(dmd_frame(NULL, 0, 0, f) && lit_in(f, 0, 0, DMD_W, DMD_H) == 3 * 25);
+    pit_at += (uint64_t)(2.0 * PIT_HZ);
+    assert(dmd_frame(NULL, 0, 0, f) && lit_in(f, 0, 0, DMD_W, DMD_H) == first);   /* round again */
+    put(g_cpu.mem + DS, 4, 0);
+
+    /* the playfield: a dot (colour FFh) gets back what was under it, the
+     * ball drawn over another is left; both as they were afterwards */
+    put(g_cpu.mem + DS, 0x3000, 0xA000);
+    put(g_cpu.mem + DS, 0x2000, 0x0010); put(g_cpu.mem + DS, 0x2002, 0x5A01);   /* plane 0, saved 5Ah */
+    put(g_cpu.mem + DS, 0x2004, 0x0011); put(g_cpu.mem + DS, 0x2006, 0x3302);   /* plane 1, saved 33h */
+    put(g_cpu.mem + DS, 0x2008, 0);
+    put(g_cpu.mem + DS, 0x3002, 0xA000); put(g_cpu.mem + DS, 0x2400, 0);
+    vga_vram_poke(0x10 << 2, 0xFF);
+    vga_vram_poke(0x11 << 2 | 1, 0x77);                              /* the ball, over a dot */
+    dmd_hide(1);
+    assert(vga_vram_peek(0x10 << 2) == 0x5A && vga_vram_peek(0x11 << 2 | 1) == 0x77);
+    dmd_hide(0);
+    assert(vga_vram_peek(0x10 << 2) == 0xFF && vga_vram_peek(0x11 << 2 | 1) == 0x77);
+
+    /* a wave (effect 3) moves a dot of "AA", doubled at rows 9-22, 6 font
+     * pixels down, past the bottom: the message is raised the 3 rows it went
+     * over, and stays so */
+    put(g_cpu.mem + DS, 0x2000, 0); put(g_cpu.mem + DS, 0x2400, 0);
+    c.bx = 0x500; c.ax = 0x0103; c.di = 320 * 10;
+    dmd_enter(&c, "T_msg");
+    at = 320 * 10 + 145; n = 0;
+    for (int ch = 0; ch < 2; ch++, at += 2)
+        for (int col = 0; col < 7; col++, at += 2)
+            for (int row = 0; row < 7; row++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n++), (uint16_t)(at + row * 640));
+    put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n), 0);
+    put(g_cpu.mem + DS, 4, 1);
+    g_cpu.mem[DS + 2] = 3;
+    assert(dmd_frame(NULL, 0, 0, f) && LIT(f, 49, 9) && LIT(f, 49, 22));      /* still: not raised */
+    put(g_cpu.mem + DS, 0x10 + 2 * 6, (uint16_t)(320 * 10 + 145 + 12 * 640));   /* column 0's bottom dot */
+    assert(dmd_frame(NULL, 0, 0, f));
+    assert(LIT(f, 49, 6) && LIT(f, 49, 31) && !LIT(f, 49, 20) && !LIT(f, 49, 5));
+    put(g_cpu.mem + DS, 0x10 + 2 * 6, (uint16_t)(320 * 10 + 145 + 6 * 640));    /* back: it stays raised */
+    assert(dmd_frame(NULL, 0, 0, f) && LIT(f, 49, 6) && !LIT(f, 49, 22));
+    put(g_cpu.mem + DS, 4, 0);
+
+    /* messages a cabinet does not show. A listed first line hides the whole
+     * message: the board instead (here none: dark) */
+    put(g_cpu.mem + DS, 0x10, (uint16_t)(320 * 10 + 145));
+    for (int i = 0; i < 98; i++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * i), 0);
+    at = 320 * 10 + 145; n = 0;
+    for (int ch = 0; ch < 2; ch++, at += 2)
+        for (int col = 0; col < 7; col++, at += 2)
+            for (int row = 0; row < 7; row++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n++), (uint16_t)(at + row * 640));
+    for (int d = 0; d < 25; d++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n++), (uint16_t)(320 * 30 + (d / 5) * 2 + (d % 5) * 640));
+    put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n), 0);
+    put(g_cpu.mem + DS, 4, 1);
+    g_cpu.mem[DS + 2] = 1;
+    dmd_set_hidden(" AA | XYZ");                                     /* spaces round them do not count */
+    c.bx = 0x500; c.ax = 0x0101; c.di = 320 * 10; dmd_enter(&c, "T_msg");
+    c.bx = 0x510; c.di = 320 * 30; dmd_enter(&c, "T_app");
+    dmd_frame(NULL, 0, 0, f);
+    assert(!lit_in(f, 0, 0, DMD_W, DMD_H));
+    /* a listed appended line alone goes; the rest is laid out without it */
+    dmd_set_hidden("B");
+    c.bx = 0x500; c.di = 320 * 10; dmd_enter(&c, "T_msg");
+    c.bx = 0x510; c.di = 320 * 30; dmd_enter(&c, "T_app");
+    assert(dmd_frame(NULL, 0, 0, f) && lit_in(f, 49, 9, 79, 23) == 2 * 49 * 4);   /* AA alone: doubled */
+    /* the playfield, in a cabinet with no DMD: only the hidden line's dots get
+     * back what was under them */
+    const uint16_t b_dot = (uint16_t)(320 * 30), a_dot = (uint16_t)(320 * 10 + 145);
+    put(g_cpu.mem + DS, 0x2000, (uint16_t)(b_dot >> 2)); put(g_cpu.mem + DS, 0x2002, (uint16_t)(0x4400 | 1 << (b_dot & 3)));
+    put(g_cpu.mem + DS, 0x2004, (uint16_t)(a_dot >> 2)); put(g_cpu.mem + DS, 0x2006, (uint16_t)(0x5500 | 1 << (a_dot & 3)));
+    put(g_cpu.mem + DS, 0x2008, 0);
+    vga_vram_poke(b_dot, 0xFF);
+    vga_vram_poke(a_dot, 0xFF);
+    dmd_hide(DMD_HIDE_LISTED);
+    assert(vga_vram_peek(b_dot) == 0x44 && vga_vram_peek(a_dot) == 0xFF);
+    dmd_hide(0);
+    assert(vga_vram_peek(b_dot) == 0xFF);
+    dmd_hide(DMD_HIDE_ALL);
+    assert(vga_vram_peek(b_dot) == 0x44 && vga_vram_peek(a_dot) == 0x55);
+    dmd_hide(0);
+    dmd_set_hidden("");                                              /* nothing hidden */
+    dmd_hide(DMD_HIDE_LISTED);
+    assert(vga_vram_peek(b_dot) == 0xFF);
+    dmd_hide(0);
+    put(g_cpu.mem + DS, 4, 0);
+    dmd_table_end();
+
+    /* tables 9-13: hidden dots painted out of a picture of the bar, in its background */
+    char bar_map[] = "epicpinball-dmd 1\nimage ep9 1 0\nds 100\nmsg_fn T_msg\nstep_fn T_step\n"
+                     "font large 200 0 8 7 7 16\nfont small 200 300 5 5 5 11\nappend T_app 200 300 5 5 5 11\n"
+                     "list 10\neffect 2\ncount 4\nfamily bar\n";
+    assert(dmd_map_use(bar_map, 0x1000, &why));
+    dmd_set_hidden("B");
+    c.bx = 0x500; c.ax = 0x0101; c.di = 320 * 2; dmd_enter(&c, "T_msg");
+    c.bx = 0x510; c.di = 320 * 20; dmd_enter(&c, "T_app");
+    n = 0; at = 320 * 2 + 145;
+    for (int ch = 0; ch < 2; ch++, at += 2)
+        for (int col = 0; col < 7; col++, at += 2)
+            for (int row = 0; row < 7; row++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n++), (uint16_t)(at + row * 640));
+    for (int d = 0; d < 25; d++) put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n++), (uint16_t)(320 * 20 + (d / 5) * 2 + (d % 5) * 640));
+    put(g_cpu.mem + DS, (uint16_t)(0x10 + 2 * n), 0);
+    put(g_cpu.mem + DS, 4, 1);
+    static uint32_t bar[320 * 30];
+    for (int i = 0; i < 320 * 30; i++) bar[i] = 0xFF101010u;
+    bar[320 * 20] = bar[320 * 2 + 145] = 0xFFFF0000u;                /* a dot of B, a dot of AA */
+    dmd_bar_hide(bar, 320, 30);
+    assert(bar[320 * 20] == 0xFF101010u && bar[320 * 2 + 145] == 0xFFFF0000u);
+    put(g_cpu.mem + DS, 4, 0);
+    dmd_table_end();
+    dmd_set_hidden("USE UP/DOWN ARROW KEYS TO|USE SHIFT KEYS TO CONTROL|PRESS ENTER TO REMOVE|PRESS SPACE TO BEGIN|PRESS ENTER");
+    pit_at = 0;
+}
+
 static void pump(int ms)
 {
     for (uint64_t end = host_us() + (uint64_t)ms * 1000u; host_us() < end; ) { dof_tick(); usleep(1000); }
@@ -771,6 +983,7 @@ int main(void)
     test_feedback_map();
     test_watch();
     test_plunger();
+    test_dmd();
 #ifndef _WIN32
     test_dof_pipe();
 #endif

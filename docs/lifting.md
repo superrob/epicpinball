@@ -148,10 +148,11 @@ file.
 
 ## 12. The scoreboard is the split screen
 
-The bottom 19 rows of every table are the CRTC's line compare (`18h`, with bits
-in `07h` and `09h`: `1B9h`, scanline 441 of 480): the CRTC restarts at address 0
-there, where the tables draw the dot matrix, while the playfield above scrolls
-by start address.
+The bottom 19 rows of tables 1-8, and 29 of tables 9-13, are the CRTC's line
+compare (`18h`, with bits in `07h` and `09h`: `1B9h`, scanline 441 of 480;
+`1A5h`, scanline 421, on 9-13): the CRTC restarts at address 0 there, where the
+tables draw the dot matrix, while the playfield above scrolls by start address
+([dmd](dmd.md)).
 
 ## Debugging kit
 

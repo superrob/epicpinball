@@ -14,4 +14,5 @@ cmake --build build-linux -j "$(nproc)"
 # where the tables keep what cabinet feedback and the analog plunger use
 if [ -d work/gen/ep1 ] && [ -d original ]; then
     python3 tools/feedback_map.py || echo "build-linux.sh: no feedback map; the game itself is fine" >&2
+    python3 tools/dmd_survey.py > /dev/null || echo "build-linux.sh: no DMD maps; the game itself is fine" >&2
 fi

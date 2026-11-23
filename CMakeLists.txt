@@ -48,7 +48,7 @@ endif()
 
 set(GEN "${CMAKE_SOURCE_DIR}/work/gen")
 set(RUNTIME src/main.c src/machine.c src/dos.c src/images.c src/vga.c src/audio.c src/host.c src/present.c src/pad.c
-            src/watch.c src/feedback.c src/dof_pipe.c src/plunger.c)
+            src/watch.c src/feedback.c src/dof_pipe.c src/plunger.c src/dmd.c src/dmd_pipe.c)
 
 if(EXISTS "${GEN}/images_list.c")
     # Each image is its own library: its <image>.h defines SEG_ constants that
@@ -89,5 +89,5 @@ endif()
 
 # The runtime's own pieces on their own, no game data needed: what CI runs.
 add_executable(selftest tests/selftest.c src/vga.c src/audio.c src/images.c src/watch.c src/feedback.c
-               src/plunger.c src/dof_pipe.c)
+               src/plunger.c src/dof_pipe.c src/dmd.c)
 target_include_directories(selftest PRIVATE src "${PCRECOMP_HOME}/runtime")

@@ -26,6 +26,8 @@
 #include "dof_pipe.h"
 #include "plunger.h"
 #include "watch.h"
+#include "dmd.h"
+#include "dmd_pipe.h"
 #include <ctype.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -48,6 +50,11 @@ static int table_up;                   /* --cabinet: the playfield is a table, n
 static uint32_t score[FRAME_MAX];      /* --cabinet's second screen */
 static int sw = 320, sh = 29;
 
+/* --dmd: the 128x32 picture, and as a DMD shows it (round dots), for its window */
+#define DMD_S 8
+static uint32_t dmd_px[DMD_W * DMD_H], dmd_big[DMD_W * DMD_S * DMD_H * DMD_S];
+static int dmd_new = 1;              /* the window has not shown this one yet */
+
 static Present S = { PRESENT_SHARP, 0, 1, 0, 0 };
 static const char *const mode_names[] = { "sharp", "smooth", "crt", "nearest", "integer" };
 
@@ -59,15 +66,55 @@ static void compose(void)
     frame_aspect = 4.0 / 3;
 }
 
+static int dmd_on(void) { return g_opt.dmd || g_opt.dmd_device; }
+static int dmd_showing(void);
+
+/* The DMD picture now: to the helper when it changed, and for the window. 1 if it changed */
+static int compose_dmd(void)
+{
+    static uint32_t bar[320 * 32];
+    int bw = 0, bh = 0;
+    if (!vga_compose_score(bar, &bw, &bh)) bw = bh = 0;
+    if (!dmd_frame(bw ? bar : NULL, bw, bh, dmd_px)) return 0;
+    dmd_new = 1;
+    dmd_pipe_frame(dmd_px);
+    if (g_opt.dmd) dmd_dots(dmd_px, dmd_big, DMD_S);
+    return 1;
+}
+
+/* In a cabinet with --dmd, the DMD has the scoreboard's window while a table with a DMD map is up */
+static int board_is_dmd(void) { return g_opt.cabinet && g_opt.dmd && dmd_active(); }
+
 /* What the player sees: the whole table when that is on and a table is up.
  * In a cabinet, the table without its scoreboard, and the scoreboard (black
- * when no table is up), both from video memory as it is at this moment. */
+ * when no table is up), both from video memory as it is at this moment. With
+ * --dmd the messages go to the DMD, not the playfield, and the DMD takes the
+ * scoreboard's window in a cabinet. */
 static void compose_view(void)
 {
+    static int inside;
+    if ((dmd_on() || g_opt.cabinet) && !inside) {
+        /* every message off the playfield while a DMD shows them; in a
+         * cabinet anyway those it does not show (keyboard help) */
+        dmd_hide(dmd_showing() ? DMD_HIDE_ALL : DMD_HIDE_LISTED);
+        inside = 1;
+        compose_view();
+        inside = 0;
+        dmd_hide(0);
+        if (!dmd_on()) return;
+        const int changed = compose_dmd();
+        if (board_is_dmd() && (changed || sw != DMD_W * DMD_S)) {
+            memcpy(score, dmd_big, sizeof dmd_big);
+            sw = DMD_W * DMD_S; sh = DMD_H * DMD_S;
+        }
+        return;
+    }
     if (g_opt.cabinet) {
         table_up = vga_compose_playfield(frame, &fw, &fh);
         frame_aspect = table_up ? (double)fw / fh : 4.0 / 3;   /* square pixels; the menus' 4:3 */
-        if (!vga_compose_score(score, &sw, &sh)) {
+        if (board_is_dmd() && sw == DMD_W * DMD_S) return;   /* the DMD has the scoreboard's window */
+        if (vga_compose_score(score, &sw, &sh)) dmd_bar_hide(score, sw, sh);
+        else {
             sw = 320; sh = 29;
             for (int i = 0; i < sw * sh; i++) score[i] = 0xFF000000u;
         }
@@ -75,6 +122,8 @@ static void compose_view(void)
     }
     if (S.whole && !g_opt.classic && vga_compose_table(frame, &fw, &fh)) frame_aspect = (double)fw / fh;
     else compose();
+    if (dmd_on() && vga_bar_row() >= 0)                /* with a DMD: hidden ones off the bar too (9-13) */
+        dmd_bar_hide(frame + vga_bar_row() * fw, fw, fh - vga_bar_row());
 }
 
 /* How the playfield is drawn: stretched (F5) only while a table is up, the
@@ -334,6 +383,11 @@ static void settings_load(void)
     saved.rot = turn < 0 ? 0 : turn;
     saved.stretch = atoi(ini_get(ini, "cabinet", "stretch", "0", v, sizeof v)) != 0;
     saved_display = atoi(ini_get(ini, "cabinet", "playfield_display", "0", v, sizeof v));
+    {                                              /* messages a cabinet does not show: the built-in list unless set */
+        static char hide[1024];
+        const char *h = ini_get(ini, "cabinet", "hide_messages", "\x01", hide, sizeof hide);
+        if (h[0] != 1) dmd_set_hidden(h);
+    }
     if (!host_parse_place(ini_get(ini, "cabinet", "score_window", "", v, sizeof v), &saved_score))
         memset(&saved_score, 0, sizeof saved_score);
     if (g_opt.cabinet) { S.rot = saved.rot; S.stretch = saved.stretch; cab_display = saved_display; cab_score = saved_score; }
@@ -847,7 +901,7 @@ static void cabinet_open(void)
     if (!placed) {
         SDL_Rect b = { 0, 0, 960, 87 };
         SDL_GetDisplayBounds(bd, &b);
-        int w = b.w < 960 ? b.w : 960, h = w * 29 / 320;
+        int w = b.w < 960 ? b.w : 960, h = g_opt.dmd ? w / 4 : w * 29 / 320;
         r.left = b.x + (b.w - w) / 2;
         r.top = n > 1 ? b.y + (b.h - h) / 2 : b.y;
         r.right = r.left + w; r.bottom = r.top + h;
@@ -930,6 +984,15 @@ static void desktop_open(void)
     wnd = SDL_CreateWindow("Epic Pinball", x, y, w, h, SDL_WINDOW_RESIZABLE);
     if (!wnd) fatal("SDL window: %s", SDL_GetError());
     remember_place();
+    if (g_opt.dmd) {                               /* --dmd: a window of its own, beside */
+        board.wnd = SDL_CreateWindow("Epic Pinball DMD", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                                     DMD_W * 6, DMD_H * 6, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        if (!board.wnd) fatal("SDL DMD window: %s", SDL_GetError());
+        if (!present_prepare(wnd) || !present_prepare(board.wnd)) fatal("--dmd needs two SDL renderers");
+        board.how = S; board.how.rot = board.how.bars = board.how.stretch = 0;
+        board.dirty = 1;
+        SDL_RaiseWindow(wnd);
+    }
     if (g_opt.fullscreen) set_fullscreen(1);
 }
 
@@ -968,6 +1031,11 @@ static void window_frame(void)
         else if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_RIGHT) menu();
         else if (e.type == SDL_WINDOWEVENT) {
             if (g_opt.cabinet) cabinet_event(&e.window);
+            else if (board.wnd && e.window.windowID == SDL_GetWindowID(board.wnd)) {
+                if (e.window.event == SDL_WINDOWEVENT_CLOSE) SDL_HideWindow(board.wnd);   /* the game goes on */
+                else board.dirty = 1;
+                continue;
+            }
             if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) pad_load();   /* controller.ini may have been edited */
             if (e.window.event == SDL_WINDOWEVENT_MOVED || e.window.event == SDL_WINDOWEVENT_RESIZED) remember_place();
         }
@@ -976,7 +1044,14 @@ static void window_frame(void)
     if (quit_req) dos_exit(0);
     compose_view();
     if (g_opt.cabinet) cabinet_present();
-    else { const Present v = playfield_how(); present_window(wnd, frame, fw, fh, frame_aspect, &v); }
+    else {
+        const Present v = playfield_how();
+        present_window(wnd, frame, fw, fh, frame_aspect, &v);
+        if (board.wnd && (dmd_new || board.dirty)) {
+            present_window(board.wnd, dmd_big, DMD_W * DMD_S, DMD_H * DMD_S, 4.0, &board.how);
+            dmd_new = board.dirty = 0;
+        }
+    }
 }
 
 /* A queue the main thread fills, as long as waveOut's ring: drop rather than block */
@@ -1047,6 +1122,20 @@ static void plunger_poll(void)
     plunger_step(&plunger, m, ds, cs, watch_running(), ms, &in);
 }
 
+/* Messages leave the playfield only for somewhere they show: the DMD's
+ * window while it is open (headless, the shots), or a helper taking frames */
+static int dmd_showing(void)
+{
+    if (dmd_pipe_alive()) return 1;
+    if (!g_opt.dmd) return 0;
+#ifdef _WIN32
+    return g_opt.headless;                         /* no DMD window on Windows yet */
+#else
+    if (!wnd || g_opt.cabinet) return 1;
+    return board.wnd && (SDL_GetWindowFlags(board.wnd) & SDL_WINDOW_SHOWN);
+#endif
+}
+
 void host_init(void)
 {
     keys_parse();
@@ -1064,6 +1153,7 @@ void host_frame(void)
     static uint64_t last_present;
     keys_due();
     dof_tick();                      /* the helper's starts and ends */
+    dmd_pipe_tick();
     watch_tick();                    /* first: a table it has lost is not written */
     plunger_poll();
     uint64_t now = pit_now();
@@ -1077,8 +1167,11 @@ void host_frame(void)
             while ((rec_frames + 1) * per <= now) { fwrite(f, 4, (size_t)rec_w * rec_h, rec_video); rec_frames++; }
         }
     }
-    if (!wnd) return;
     if (now - last_present < (uint64_t)(PIT_HZ / 70)) return;
+    if (!wnd) {
+        if (g_opt.dmd_device) { last_present = now; compose_dmd(); }   /* no window: the DMD all the same */
+        return;
+    }
     last_present = now;
     window_frame();
 }
@@ -1121,10 +1214,14 @@ void host_snapshot(const char *path)
     compose_view();
     const Present v = playfield_how();
     write_view(path, frame, fw, fh, frame_aspect, &v);
-    if (!g_opt.cabinet) return;
     size_t n = strlen(path);
     if (n >= 4 && !_stricmp(path + n - 4, ".bmp")) n -= 4;
     char second[600];
+    if (dmd_on()) {                                  /* NAME-dmd.bmp: the 128x32 picture itself */
+        snprintf(second, sizeof second, "%.*s-dmd.bmp", (int)n, path);
+        write_bmp(second, dmd_px, DMD_W, DMD_H);
+    }
+    if (!g_opt.cabinet || g_opt.dmd) return;      /* --dmd took the scoreboard's window */
     snprintf(second, sizeof second, "%.*s-score.bmp", (int)n, path);
     Present how = S;
     how.rot = how.bars = how.stretch = 0;
@@ -1135,6 +1232,7 @@ void host_shutdown(void)
 {
     feedback_close();
     dof_close();
+    dmd_pipe_close();
     rec_close();
     if (wav_out) { wav_header(wav_out, (uint32_t)wav_samples); fclose(wav_out); wav_out = NULL; }
     window_close();

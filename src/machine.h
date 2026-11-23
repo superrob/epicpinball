@@ -48,6 +48,8 @@ typedef struct {
     const char *plunger_trace;/* --plunger-trace "ms:percent,...": a scripted sensor */
     int dof;                  /* --dof: cabinet outputs through dof/'s helper */
     int stretch;              /* --stretch: with --cabinet, the playfield fills its display */
+    int dmd;                  /* --dmd: a 128x32 DMD of the table in a window, its messages off the playfield */
+    int dmd_device;           /* --dmd-device: the same on a real DMD, through dmd/'s helper */
 } Options;
 extern Options g_opt;
 
@@ -103,10 +105,13 @@ int  vga_port_in(uint16_t port, uint8_t *v);
 int  vga_port_out(uint16_t port, uint8_t v);
 void vga_dac_set(int i, uint8_t r, uint8_t g, uint8_t b);
 void vga_dac_get(int i, uint8_t *r, uint8_t *g, uint8_t *b);
+uint8_t vga_vram_peek(uint32_t i);    /* vram[(address << 2) | plane] */
+void vga_vram_poke(uint32_t i, uint8_t v);
 void vga_compose(uint32_t *out, int *w, int *h);
 int  vga_compose_table(uint32_t *out, int *w, int *h);   /* the whole table, or 0 */
 int  vga_compose_playfield(uint32_t *out, int *w, int *h);   /* --cabinet's playfield: 1 if it is a table */
 int  vga_compose_score(uint32_t *out, int *w, int *h);   /* --cabinet's scoreboard, or 0 */
+int  vga_bar_row(void);               /* the last vga_compose(_table)'s row of video address 0 (the bar), or -1 */
 #define FRAME_PIXELS (640 * 480)      /* what any of them may write */
 extern int g_tick_hold, g_recomp_tick_budget;
 

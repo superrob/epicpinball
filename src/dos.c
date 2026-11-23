@@ -14,6 +14,7 @@
  */
 #include "machine.h"
 #include "watch.h"
+#include "dmd.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #include <time.h>
@@ -521,6 +522,7 @@ static void dos_exec(CPU *c)
     if (!setjmp(jb)) {
         void (*fn)(CPU *) = images_lookup(c->cs, c->ip);
         watch_table_begin(images_at((uint16_t)(psp + 0x10)), (uint16_t)(psp + 0x10));
+        dmd_table_begin(images_at((uint16_t)(psp + 0x10)), (uint16_t)(psp + 0x10));
         if (fn) fn(c);
         else images_miss("exec", c->cs, c->ip);
         fprintf(stderr, "[dos] %s returned without exiting\n", name);
@@ -528,6 +530,7 @@ static void dos_exec(CPU *c)
     }
     exec_jmp = prev;
     watch_table_end();                 /* every way out of a table comes here */
+    dmd_table_end();
     { void machine_unwound(void); machine_unwound(); }
     trace("[dos] %s exited, code %d\n", name, last_exit_code);
     for (int i = 0; i < narena; )

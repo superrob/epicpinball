@@ -55,6 +55,7 @@ void watch_table_begin(const LiftedImage *img, uint16_t load_seg);
 void watch_table_end(void);
 int  watch_map_use(const WatchMap *m, uint16_t load_seg);    /* the second half of begin: tests/selftest.c */
 void watch_tick(void);               /* each host_frame */
+void watch_enter(CPU *cpu, const char *fn);   /* RECOMP_ENTER, through seam_enter (dmd.c) */
 void watch_released(void);           /* the host let everything go (a dialog): send levels again */
 int  watch_running(void);            /* the table's physics is stepping */
 void watch_write_byte(uint32_t a, uint8_t v);                /* vga.c's write hook */

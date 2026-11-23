@@ -32,6 +32,12 @@
  * folder; the options above win over it, and headless runs read only them.
  *   --feedback-log FILE  what a cabinet would feel, as a list: flippers, slings,
  *                     bumpers, launch, drain ... (docs/cabinet-feedback.md)
+ *   --dmd             a 128x32 DMD of the table: with --cabinet in the
+ *                     scoreboard's window, else a window of its own; the
+ *                     messages of tables 1-8 leave the playfield for it
+ *                     (docs/dmd.md)
+ *   --dmd-device      the DMD on a real one (a ZeDMD) through libdmdutil;
+ *                     build it with dmd/build.sh (Linux)
  *   --dof             table events to libdof, with VPinball's DOF files or
  *                     directoutputconfig/ in the save folder; no limits, they
  *                     are the controller's. Build it with dof/build.sh
@@ -50,6 +56,8 @@
 #include "dof_pipe.h"
 #include "plunger.h"
 #include "watch.h"
+#include "dmd.h"
+#include "dmd_pipe.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #ifdef _WIN32
@@ -141,6 +149,8 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--trace")) g_opt.trace = 1;
         else if (!strcmp(a, "--feedback-log") && v) { g_opt.feedback_log = v; i++; }
         else if (!strcmp(a, "--dof")) g_opt.dof = 1;
+        else if (!strcmp(a, "--dmd")) g_opt.dmd = 1;
+        else if (!strcmp(a, "--dmd-device")) g_opt.dmd_device = 1;
         else if (!strcmp(a, "--joysticks")) list_joysticks = 1;
         else if (!strcmp(a, "--plunger-trace") && v) { g_opt.plunger_trace = v; i++; }
         else if (!strcmp(a, "--window") && v) { g_opt.window = atoi(v); i++; }
@@ -185,7 +195,10 @@ int main(int argc, char **argv)
         watch_wanted();
     }
     if (g_opt.plunger_trace) watch_wanted();
-    atexit(feedback_close);            /* fatal() does not come through host_shutdown */
+    if (g_opt.dmd || g_opt.dmd_device || g_opt.cabinet) dmd_wanted();   /* a cabinet hides keyboard messages */
+    if (g_opt.dmd_device && !dmd_pipe_open(DMD_HELPER, g_opt.savedir)) return 2;
+    atexit(feedback_close);
+    atexit(dmd_pipe_close);            /* fatal() does not come through host_shutdown */
     atexit(dof_close);
 
     if (cpu_alloc_mem(&g_cpu) != 0) return 1;

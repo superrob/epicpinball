@@ -80,7 +80,12 @@ stays live. It is black when no table is up. Drag it to move it, drag an edge
 to resize it; right-click is still the settings.
 
 Messages are where the game puts them: on the playfield for tables 1–8, in
-the scoreboard for 9–13.
+the scoreboard for 9–13. Those about keys a cabinet has not got are left
+out: the help screens before a game (USE UP/DOWN ARROW KEYS TO VIEW ALL OF
+THE PLAYFIELD, USE SHIFT KEYS TO CONTROL THE FLIPPERS, PRESS ENTER TO REMOVE
+THE SCORE BOARD), PRESS SPACE TO BEGIN, and the PRESS ENTER under the bonus.
+The gameplay tips between the help screens stay. On 9-13 the scoreboard is
+blank while one of them would be up ([dmd](dmd.md#messages-a-cabinet-does-not-show)).
 
 To set a machine up:
 
@@ -101,6 +106,7 @@ rotation=90           ; 0, 90, 180, 270: F6 writes it
 stretch=0             ; 1: a table fills its display; F5 writes it
 playfield_display=0
 score_window=1920,0,1280,116
+; hide_messages=USE UP/DOWN ARROW KEYS TO|PRESS SPACE TO BEGIN   ; replaces the list; empty: hide none
 ```
 
 F5, F6 and dragging are remembered there. `--stretch`, `--rotate`,

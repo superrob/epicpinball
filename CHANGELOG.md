@@ -49,6 +49,21 @@ All notable changes to this project are documented here. The format follows
   draws the Config Tool's flasher circles, a bumper's on its own spots, and
   animated shapes for the awards, jackpots and the extra ball; without it,
   bands as before. Tested on a real cabinet with all three MXs, on table 1.
+- **A DMD** (`--dmd`, `--dmd-device`; on the `dmd` branch): a 128x32 picture
+  of every table, in a window of its own (with `--cabinet`, in the
+  scoreboard's) or on a ZeDMD through libdmdutil, by a GPLv3 helper in `dmd/`
+  the game does not link. The messages are the game's own, followed through
+  the one message engine all 13 tables share and set again for 128x32 in the
+  table's fonts and colours: wrapped, doubled when they fit, paged when tall,
+  and moved as the game moves its dots (explosions, waves, slides). Between
+  them, the table's board: on 1-8 the scoreboard's own BALL/PLAYER line over
+  its score digits, on 9-13 BALL/PLAYER over the score doubled. Tables 1-8's
+  messages leave the playfield for it. `tools/dmd_survey.py` finds what it
+  needs in each table and lists every message a table can show. In cabinet
+  mode and with a DMD, messages about keys a cabinet has not got (the help
+  screens before a game, PRESS SPACE TO BEGIN, PRESS ENTER) are left out;
+  `[cabinet] hide_messages` changes the list. Tested on a real cabinet on
+  table 1; tables 2-13 only headless.
 - **An analog plunger** (Linux): `[plunger]` in `controller.ini` names a
   joystick axis; the drawn plunger follows it and a release launches at the
   strength pulled to. `--joysticks` lists devices and axes. It is the first
