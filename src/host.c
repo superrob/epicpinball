@@ -30,6 +30,7 @@
 #include "dmd_pipe.h"
 #include "ssf.h"
 #include "autostart.h"
+#include "nudge.h"
 #include <ctype.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -152,6 +153,8 @@ void pad_poll(int front);
 const char *pad_ini(void);
 int pad_plunger_on(void);
 int pad_plunger(int front, PlungerInput *in);
+int pad_nudge_on(void);
+void pad_nudge(int front);
 static void plunger_let_go(void);
 
 /* ---- recording ------------------------------------------------------------ */
@@ -1244,6 +1247,22 @@ static void plunger_poll(void)
     plunger_step(&plunger, m, ds, cs, watch_running(), ms, &in);
 }
 
+/* The accelerometer (or its trace) for the next physics step, and nudge
+ * buttons as the game's keys (pad.c, nudge.c) */
+static void nudge_poll(void)
+{
+    static int wanted;
+    if (nudge_traced()) {
+        int x, y;
+        nudge_trace_at(pit_now() * 1000.0 / PIT_HZ, &x, &y);
+        nudge_reading(1, x, y);
+        return;
+    }
+    if (!wnd || !pad_nudge_on()) { nudge_reading(0, 0, 0); return; }
+    if (!wanted++) watch_wanted();                 /* the push needs the table's map */
+    pad_nudge(window_front() && !driven());
+}
+
 /* Messages leave the playfield only for somewhere they show: the DMD's
  * window while it is open (headless, the shots), or a helper taking frames */
 static int dmd_showing(void)
@@ -1289,6 +1308,7 @@ void host_frame(void)
     dmd_pipe_tick();
     watch_tick();                    /* first: a table it has lost is not written */
     plunger_poll();
+    nudge_poll();
     uint64_t now = pit_now();
     shots_due(now);
     if (g_opt.seconds > 0 && now >= (uint64_t)(g_opt.seconds * PIT_HZ)) dos_exit(0);

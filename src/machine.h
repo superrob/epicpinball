@@ -46,6 +46,7 @@ typedef struct {
     const char *score_window; /* --score-window X,Y,W,H */
     const char *feedback_log; /* --feedback-log FILE: table events */
     const char *plunger_trace;/* --plunger-trace "ms:percent,...": a scripted sensor */
+    const char *nudge_trace;  /* --nudge-trace "ms:x,y,...": a scripted accelerometer */
     int dof;                  /* --dof: cabinet outputs through dof/'s helper */
     int stretch;              /* --stretch: with --cabinet, the playfield fills its display */
     int dmd;                  /* --dmd: a 128x32 DMD of the table in a window, its messages off the playfield */

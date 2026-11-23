@@ -30,7 +30,7 @@ GEN = os.path.join(ROOT, 'work', 'gen')
 DATA = os.path.join(ROOT, 'original')
 OUT = os.path.join(ROOT, 'work', 'feedback')
 TABLES = 13
-VERSION = 4
+VERSION = 5
 MAX_BUMPERS = 6                 # E105-E107 and E118-E120
 RIM = 40                        # a small run this near a bumper is part of it
 
@@ -217,6 +217,12 @@ def tilt_and_nudge(f, v):
     if num(m.group(1)) != v['meter']:
         raise Missing('tilt: not the nudge meter')
     v['tilt'] = num(m.group(2))
+    # the nudge's push on a ball (in the physics step) acts only while this is
+    # within lo-hi, as the cooldown counts down: --nudge pushes by the same rule
+    m, _ = find(f, 'nudge push', rf'cmp byte ds:\[0x{v["cooldown"]:X}\], 0x2\n{GO}cmp byte ds:\[0x([0-9A-F]+)\], '
+                rf'0x([0-9A-F]+)\n{GO}cmp byte ds:\[0x\1\], 0x([0-9A-F]+)\n{GO}mov al, byte ds:\[0x{v["cooldown"]:X}\]\n'
+                rf'shl al, 0x3\n')
+    v['nudge_gate'], v['gate_lo'], v['gate_hi'] = num(m.group(1)), num(m.group(2)), num(m.group(3))
 
 
 def physics_and_kicker(f, v):

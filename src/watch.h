@@ -25,6 +25,7 @@ typedef struct {
     uint16_t active, x, y, vx, vy, slots;      /* the balls: word arrays */
     uint16_t flip_l, flip_r, up_l, up_r;
     uint16_t tilt, meter, cooldown, demo, extra, over, count, drain_y;
+    uint16_t nudge_gate, gate_lo, gate_hi;   /* the game's nudge pushes a ball while gate_lo <= gate <= gate_hi */
     uint16_t kick, weak_y, sling_line, map;
     uint16_t pull, pull_inc, pull_max, pull_shift, ctrl, space;
     uint16_t lane_off, lane_x, lane_y, over_pull;

@@ -171,7 +171,11 @@ translates: the table's name becomes DOF's ROM name, an event its E number.
 Neither side times or limits an output; that is for the DOF files and the
 controller.
 
-`src/plunger.c` is the one thing that writes into a table's state. It sets the pull
+`src/nudge.c` writes into a table too, with an accelerometer set up: each
+ball's speed and the tilt meter, at the start of a physics step (the
+`RECOMP_ENTER` seam on the step function), so a shove lands between steps
+as a key's nudge would ([nudging](cabinet-feedback.md#nudging)).
+`src/plunger.c` writes into a table's state as well. It sets the pull
 and the Ctrl-held flag together from inside `host_frame`, which follows
 interrupt delivery in `recomp_tick`, so the game's main loop never sees one
 without the other. A release is the one pull without the flag, and is then

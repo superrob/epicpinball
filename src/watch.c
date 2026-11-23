@@ -19,6 +19,7 @@
  * player's own copy by tools/feedback_map.py. docs/cabinet-feedback.md.
  */
 #include "watch.h"
+#include "nudge.h"
 #include "feedback.h"
 #include "plunger.h"
 #include <stddef.h>
@@ -105,6 +106,7 @@ static const struct { const char *key; size_t at; } fields[] = {
     FIELD(drain_y), FIELD(kick), FIELD(weak_y), FIELD(sling_line), FIELD(map),
     FIELD(pull), FIELD(pull_inc), FIELD(pull_max), FIELD(pull_shift), FIELD(ctrl), FIELD(space),
     FIELD(lane_off), FIELD(lane_x), FIELD(lane_y), FIELD(over_pull), FIELD(scan_x), FIELD(scan_y),
+    FIELD(nudge_gate), FIELD(gate_lo), FIELD(gate_hi),
 };
 #undef FIELD
 #define NFIELDS (int)(sizeof fields / sizeof fields[0])
@@ -236,7 +238,7 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         if ((int)strlen(side) != m->ntargets) { *why = "a target's number missing"; return 0; }
         snprintf(m->sides + at, sizeof m->sides - at, "%starget:%s", at ? " " : "", side);
     }
-    if (version != 4) *why = "another version's map";
+    if (version != 5) *why = "another version's map";
     else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || got != (1ull << NFIELDS) - 1)
         *why = "incomplete";
     else if (m->nmsgs && !*m->msg_fn) *why = "messages, but no message function";
@@ -501,7 +503,9 @@ static int handled(int colour)
 void watch_enter(CPU *cpu, const char *fn)
 {
     if (!strcmp(fn, M.step_fn)) {
-        if (sound()) stepped();
+        if (!sound()) return;
+        nudge_step(&M, g_cpu.mem + DS);          /* a shove of the cabinet, as this step begins */
+        stepped();
     } else if (!strcmp(fn, M.kicker_fn)) {
         if (!sound()) return;
         uint32_t o = (uint32_t)(uint16_t)(cpu->es - rd16(DS + M.map)) * 16 + cpu->bx;

@@ -18,9 +18,6 @@
 - **A netlab recipe**, so builds and conformance run on the farm like the other
   recomps (repo rules, section 8). Needs the MSVC build to run on the clang-cl
   builder, or an MSVC builder.
-- **Linux on a real desktop.** It is tested headless and through SDL's
-  offscreen driver with Mesa's OpenGL (WSL, Debian 13), not yet in a window
-  on a Linux desktop with sound and a pad.
 
 ## Later
 
@@ -41,7 +38,7 @@
 - **More cabinet feedback**: each table's own holes, kickbacks, targets,
   lanes, ramps and awards, as table 1 has them (`FEATURES` in
   `tools/feedback_map.py`; every table has the same switch handler), gates,
-  spinners, lamps, accelerometer nudge, general joystick buttons, Windows, and
+  spinners, lamps, general joystick buttons, Windows, and
   an entry in the DOF Config Tool's database.
 - **The DMD** (works on a real cabinet on table 1): tables 2-13
   on a cabinet and looked at message by message (several players' scores on 9-13, tables 5 and 6,
@@ -50,6 +47,8 @@
 - **SSF** (works on a real cabinet's exciters): each table's own board
   effects beyond slots 0-6 (table 1's are listed); Windows.
 - **`--table`**: Windows; a frontend's own start and exit keys.
+- **Nudging**: nudge buttons on a board that has them; tables 2-13 by
+  hand on a cabinet; Windows.
 - **African Safari's overrun**: a ball reaching x = -1 overruns a sprite
   buffer into the timer chain. Feedback stops for that table when it happens;
   whether the DOS original does the same is not known.

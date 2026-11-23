@@ -1,6 +1,6 @@
-# Cabinet feedback and the analog plunger
+# Cabinet feedback, the analog plunger and nudging
 
-For a virtual pinball machine (Linux). Two separate things, each off until
+For a virtual pinball machine (Linux). Three separate things, each off until
 you set it up:
 
 - **`--dof`**: the game tells [libdof](https://github.com/vpinball/libdof)
@@ -8,6 +8,9 @@ you set it up:
   fires.
 - **`[plunger]`** in `saves/controller.ini`: a plunger position sensor, read
   as a joystick axis, pulls and launches the game's plunger.
+- **`[nudge]`** in `saves/controller.ini`: an accelerometer's shove pushes
+  the ball by how hard, and nudge buttons are the game's own nudge
+  ([nudging](#nudging)).
 
 Both work on a real cabinet with a Pinscape Pico, on table 1: its outputs
 from a Config Tool export, and its plunger. Tables 2 to 13 have only run in a
@@ -497,13 +500,61 @@ comes back to the front.
   triggers and stick. Its buttons still press what `controller.ini` says.
   A centred axis used to read as both triggers pulled, holding both flippers.
 
-This is the one feature that writes the game's memory: the pull value and
-the Ctrl-held flag, only with a plunger configured, and only on a table whose
-file matches its map.
+This feature writes the game's memory: the pull value and the Ctrl-held
+flag, only with a plunger configured, and only on a table whose file matches
+its map. So does nudging from an accelerometer (below).
+
+## Nudging
+
+The game's own nudge is three keys: **Z** left, **/** right, **Space** up
+(the pad's bumpers press Z and /). A board that types those keys, as
+VPinball's default nudge keys are the same, needs nothing set up.
+
+A cabinet's accelerometer, and nudge buttons a board reports as joystick
+buttons, are set in `saves/controller.ini`. `--joysticks` shows the axes as
+you shove the cabinet, and each button's number as you press it:
+
+```ini
+[nudge]
+device = Pinscape Pico       ; the name or GUID from --joysticks
+x_axis = X                   ; the accelerometer across the cabinet
+y_axis = Y                   ; and along it (Pinscape: X and Y)
+dead = 1500                  ; readings within this of 0 are the cabinet at rest
+strength = 1                 ; 1: a full shove pushes as the game's own nudge
+tilt = 1                     ; how fast shoves fill the tilt meter; 0 never
+invert_x = 0                 ; 1 if a shove sends the ball the wrong way
+invert_y = 0
+left_button = none           ; button numbers: the game's own nudge, Z / and Space
+right_button = none
+up_button = none
+```
+
+- **A shove pushes by how hard.** At the start of each of the table's physics
+  steps, about 200 a second, the accelerometer's reading of that moment,
+  past `dead`, changes the speed of every ball in play by up to 14h, the
+  game's own push for a step, times `strength`. The push is against the
+  cabinet's movement: the cabinet shoved left sends the ball right, as Z does.
+  Small readings add up rather than round away.
+- **Where the game pushes.** The game's own nudge pushes a ball only while a
+  value its physics works out for the ball lies within 4 to 2Ah (the same on
+  every table); a shove pushes by the same rule, as the last step left it.
+  Never while tilted, nor in the demo.
+- **Tilt by the game's rule.** Every game-nudge's worth of push (14h a step
+  for 24 steps) fills the tilt meter by 23h, as one press of Z does. The
+  meter drains as the game drains it, and the game tilts above 50h: hard
+  shaking tilts the table, soft bumps never do. `tilt` scales this.
+- **Buttons** press Z, / and Space while held, the game's nudge exactly,
+  with its own tilt rules.
+- Out of focus, unplugged, or while `--table` drives the menus, there is no
+  shove and the buttons let go.
+
+Writes into the game: each ball's speed and the tilt meter, from the step
+seam, only with an accelerometer configured and a table whose file matches
+its map.
 
 ## The maps
 
-Both features find their way around the tables with `work/feedback/epN.map`,
+These features find their way around the tables with `work/feedback/epN.map`,
 made from your own copy and lifted code by `tools/feedback_map.py`.
 `build-linux.sh` and `setup.sh` run it. A table whose map is missing, or of
 another file, plays normally without either feature, and says so. The
@@ -566,6 +617,16 @@ Without hardware, in a sandbox with no devices:
   through the helper to flashers, the middle-row devices and a beacon on
   ArtNet; from the game, skill shot, lanes lit and a ramp. Then in play on
   the real cabinet;
+- nudging by a scripted accelerometer (`--nudge-trace "ms:x,y,..."`) on
+  tables 1, 5, 9 and 13: a shove left speeds a rolling ball rightwards by 14h
+  a step at full strength; two seconds of hard shaking tilts table 1, of
+  quarter-strength shaking never does; the game's gate holds some steps back.
+  Through SDL, a virtual board (uinput) with X and Y axes and three buttons:
+  `--joysticks` shows its axes and buttons, its X axis pushed the ball in a
+  window, and its button gave the game's own nudge (the feedback log's
+  `nudge`, the meter up 23h). Then on a real cabinet's accelerometer, a
+  Pinscape Pico's X and Y, at the default settings. Nudge buttons not yet on
+  a real board;
 - the plunger by scripted sensor (`--plunger-trace "ms:percent,..."`) on all
   13 tables, and by a virtual joystick through SDL. Its launch strengths are
   the keyboard's and so are the speeds the ball leaves with. A ball's later

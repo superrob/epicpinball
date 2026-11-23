@@ -17,6 +17,7 @@
 #include "dmd.h"
 #include "ssf.h"
 #include "autostart.h"
+#include "nudge.h"
 #include <assert.h>
 #ifndef _WIN32
 #include <time.h>
@@ -323,12 +324,12 @@ static void test_images(void)
 /* ---- cabinet feedback and the plunger ---- */
 
 static const char k_map[] =
-    "epicpinball-feedback 4\nimage ep1 16 69691905\n"
+    "epicpinball-feedback 5\nimage ep1 16 69691905\n"
     "ds 10\ncs 2000\nactive 100\nx 110\ny 120\nvx 130\nvy 140\nslots 5\n"
     "flip_l 150\nflip_r 152\nup_l 154\nup_r 155\ntilt 160\nmeter 161\ncooldown 162\ndemo 163\n"
     "extra 164\nover 165\ncount 166\ndrain_y 18F\nkick 167\nweak_y 180\nsling_line C7\nmap 170\n"
     "pull 180\npull_inc C\npull_max 2C4\npull_shift 5\nctrl 297\nspace 296\n"
-    "lane_off 0\nlane_x 118\nlane_y DC\nover_pull 0\nscan_x 190\nscan_y 192\n"
+    "lane_off 0\nlane_x 118\nlane_y DC\nover_pull 0\nscan_x 190\nscan_y 192\nnudge_gate 16A\ngate_lo 4\ngate_hi 2A\n"
     "step_fn ep1_step\nkicker_fn ep1_kick\nswitch_fn ep1_sw\nbumper 100 60 0\nbumper 200 60 2\n"
     "msg_fn ep1_msg\nlayer 240\non_layer F9 F8 F1\ntilt_pass F0 F6\n"
     "zone hole 1 F5 0 0 319 399 L\nzone hole 2 F6 0 0 219 399 C\nzone hole 3 F6 220 0 319 399 R\n"
@@ -373,7 +374,7 @@ static void test_feedback_map(void)
         assert(!watch_map_parse(cut, &m, &why));
     }
     memcpy(cut, k_map, sizeof k_map);
-    strstr(cut, "feedback 4")[9] = '3';                   /* another version */
+    strstr(cut, "feedback 5")[9] = '4';                   /* another version */
     assert(!watch_map_parse(cut, &m, &why));
     memcpy(cut, k_map, sizeof k_map);
     strstr(cut, "bumper 200")[7] = '0';                   /* not left to right */
@@ -1194,6 +1195,77 @@ static void test_autostart(void)
     pit_at = 0;
 }
 
+/* An accelerometer's shove (src/nudge.c): the push against the shove, the
+ * dead zone, small pushes adding up, the game's gate, nothing tilted or in
+ * the demo, and the tilt meter filling by how hard */
+static void test_nudge(void)
+{
+    assert(nudge_push(1000, 1500, 1) == 0 && nudge_push(-1500, 1500, 1) == 0);
+    assert(nudge_push(32767, 1500, 1) == NUDGE_STEP && nudge_push(-32767, 1500, 2) == -2 * NUDGE_STEP);
+    assert(nudge_push(40000, 0, 1) == NUDGE_STEP);                  /* past full: full */
+
+    WatchMap m;
+    memset(&m, 0, sizeof m);
+    m.active = 0x100; m.vx = 0x110; m.vy = 0x120; m.slots = 2;
+    m.tilt = 0x130; m.meter = 0x131; m.demo = 0x132;
+    m.nudge_gate = 0x140; m.gate_lo = 4; m.gate_hi = 0x2A;
+    static uint8_t ds[0x10000];
+    memset(ds, 0, sizeof ds);
+    ds[0x100] = 1;                                                   /* ball 0 in play, ball 1 not */
+    ds[0x140] = 0x10;
+    NudgeSettings st = { 1500, 1.0, 1.0, 0, 0 };
+    nudge_settings(&st);
+    #define VX(i) ((int16_t)(ds[0x110 + 2 * (i)] | ds[0x111 + 2 * (i)] << 8))
+    #define VY(i) ((int16_t)(ds[0x120 + 2 * (i)] | ds[0x121 + 2 * (i)] << 8))
+    nudge_reading(1, -32767, 0);                                     /* the cabinet shoved left */
+    nudge_step(&m, ds);
+    assert(VX(0) == NUDGE_STEP && VY(0) == 0 && VX(1) == 0);         /* the ball goes right */
+    nudge_reading(1, 0, 32767);                                      /* along it */
+    nudge_step(&m, ds);
+    assert(VY(0) == -NUDGE_STEP);
+    memset(ds + 0x110, 0, 0x20);
+    nudge_reading(1, 1500 + 79, 0);                                  /* a twentieth of a unit a step */
+    for (int i = 0; i < 40; i++) nudge_step(&m, ds);
+    assert(VX(0) == -1 || VX(0) == -2);                              /* adds up, not rounded away */
+    ds[0x131] = 0;
+    memset(ds + 0x110, 0, 0x20);
+    nudge_reading(1, -32767, 0);
+    for (int i = 0; i < 24; i++) nudge_step(&m, ds);                 /* a whole game nudge's push */
+    assert(ds[0x131] >= 0x22 && ds[0x131] <= 0x23);                  /* fills the meter as one */
+    ds[0x140] = 0x2C;                                                /* out of the gate: no push */
+    int before = VX(0), meter = ds[0x131];
+    nudge_step(&m, ds);
+    assert(VX(0) == before && ds[0x131] > meter);                    /* but the meter still fills */
+    ds[0x140] = 0x10;
+    ds[0x130] = 1;                                                   /* tilted: nothing */
+    meter = ds[0x131];
+    nudge_step(&m, ds);
+    assert(VX(0) == before && ds[0x131] == meter);
+    ds[0x130] = 0; ds[0x132] = 1;                                    /* the demo: nothing */
+    nudge_step(&m, ds);
+    assert(VX(0) == before);
+    ds[0x132] = 0;
+    st.invert_x = 1;                                                 /* mounted the other way round */
+    nudge_settings(&st);
+    nudge_step(&m, ds);
+    assert(VX(0) == before - NUDGE_STEP);
+    nudge_reading(0, -32767, 0);                                     /* none: nothing */
+    nudge_step(&m, ds);
+    assert(VX(0) == before - NUDGE_STEP);
+    #undef VX
+    #undef VY
+
+    assert(nudge_trace("1000:-20000,0,1100:0,5000") && nudge_traced());
+    int x, y;
+    nudge_trace_at(500, &x, &y);  assert(x == 0 && y == 0);
+    nudge_trace_at(1050, &x, &y); assert(x == -20000 && y == 0);
+    nudge_trace_at(2000, &x, &y); assert(x == 0 && y == 5000);
+    assert(!nudge_trace("1000:-20000") && !nudge_trace("1000:1,2,500:0,0") && !nudge_trace("1:40000,0"));
+    st.invert_x = 0;
+    nudge_settings(&st);
+    nudge_reading(0, 0, 0);
+}
+
 int main(void)
 {
     g_cpu.mem = (uint8_t *)calloc(1, MEM_SIZE);
@@ -1211,6 +1283,7 @@ int main(void)
     test_dmd();
     test_ssf();
     test_autostart();
+    test_nudge();
 #ifndef _WIN32
     test_dof_pipe();
 #endif

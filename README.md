@@ -39,13 +39,14 @@ conformance harness passes 154/154 on Linux.**
 | All 13 tables: playfield, scrolling, flippers, plunger, tilt | ✅ |
 | Dot-matrix scoreboard (the VGA split screen) | ✅ |
 | Music and effects: Sound Blaster 16, 8-bit stereo, 22 kHz | ✅ measured, see below |
-| Windowed play at real speed | ✅ (seen on a virtual monitor) |
-| Linux, natively (gcc, SDL2) | ✅ 154/154 conformance on Arch (133/133 on Debian 13, before cabinet mode); little tried on a real desktop |
+| Windowed play at real speed | ✅ |
+| Linux, natively (gcc, SDL2) | ✅ played on a real Linux desktop and a cabinet; 154/154 conformance on Arch (133/133 on Debian 13, before cabinet mode) |
 | Gamepad (XInput, `controller.ini`, GOG's DOSBox mapping by default) | implemented, untested on a real pad |
 | `SETUP.EXE` (the sound card menu) | not lifted: its start-up check is answered, and GOG's `SOUNDCRD.INF` (Sound Blaster 16) is used as shipped |
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, played by hand | ✅ |
 | Cabinet mode, `--cabinet` (Linux only) | ✅ on a real cabinet (table 1) and on virtual displays |
+| Nudging from a cabinet: an accelerometer's shove by how hard, nudge buttons as the game's nudge (`[nudge]`, Linux) | ✅ on a real cabinet's accelerometer (a Pinscape Pico); by a scripted accelerometer on four tables and a virtual board in a window; nudge buttons not yet on a real board |
 | Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick) |
 | SSF: the board's sounds on a cabinet's exciters, 7.1 (`--ssf`, Linux) | ✅ headless on all 13 tables (eight channels measured), and on a cabinet's exciters |
 | Straight to a table, `--table N` | ✅ on a real cabinet; headless on all 13 tables (quit, high score, game over, play again); not on Windows |
@@ -226,8 +227,8 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 | `--dmd` | a 128x32 DMD in a window of its own; in a cabinet, in place of the scoreboard window (Linux) ([docs](docs/dmd.md)) |
 | `--dmd-device` | the DMD on a real one, any libdmdutil drives (ZeDMD, Pixelcade, PinDMD3, ...; tested with a ZeDMD; PIN2DMD is left out of this build): build `dmd/build.sh` first; settings in `saves/dmd/DMDUtil.ini` (Linux) |
 | `--dof` | DOF events through libdof (Linux): build `dof/build.sh` first; rows in VPinball's DOF files or `saves/directoutputconfig/`; no output limits ([docs](docs/cabinet-feedback.md)) |
-| `--joysticks` | list joysticks and their live axes, to set up `[plunger]` in `saves/controller.ini` (Linux) |
-| `--feedback-log FILE`, `--plunger-trace "ms:percent,..."` | testing: what a cabinet would feel; a scripted plunger sensor |
+| `--joysticks` | list joysticks, their live axes and buttons pressed, to set up `[plunger]` and `[nudge]` in `saves/controller.ini` (Linux) |
+| `--feedback-log FILE`, `--plunger-trace "ms:percent,..."`, `--nudge-trace "ms:x,y,..."` | testing: what a cabinet would feel; a scripted plunger sensor; a scripted accelerometer |
 | `--mute` | |
 | `--headless` | no window, no audio device, deterministic time — works over RDP |
 | `--record out.mp4` | video and audio through ffmpeg (with `--headless`: unattended) |
@@ -266,7 +267,7 @@ it reaches is lifted. What else is here:
 | `dmd/` | the optional DMD helper for a real DMD: its own program, GPLv3, built by `dmd/build.sh` |
 | `setup.sh`, `build-linux.sh` | the Linux quick start and rebuild |
 | `tests/selftest.c` | the split screen, SB16 stereo, the image registry, the feedback watcher, the plunger, the helper's pipe, the DMD's layout and SSF's placing, with no game data — what CI runs (`cmake --build build --target selftest`) |
-| `src/` | the DOS machine: `dos.c` (DOS, BIOS, EXEC), `images.c` (which lifted code is where), `machine.c` (PIC, PIT, keyboard, interrupts), `vga.c`, `audio.c` (SB16, DMA), `host.c` (window, input, recording: Win32, or SDL2 on Linux), `present.c` (Direct3D 11, or SDL2), `pad.c`, `watch.c` and `feedback.c` (table events), `dof_pipe.c`, `plunger.c`, `dmd.c` and `dmd_pipe.c` (the DMD), `ssf.c` (the exciters), `autostart.c` (`--table`) |
+| `src/` | the DOS machine: `dos.c` (DOS, BIOS, EXEC), `images.c` (which lifted code is where), `machine.c` (PIC, PIT, keyboard, interrupts), `vga.c`, `audio.c` (SB16, DMA), `host.c` (window, input, recording: Win32, or SDL2 on Linux), `present.c` (Direct3D 11, or SDL2), `pad.c`, `watch.c` and `feedback.c` (table events), `dof_pipe.c`, `plunger.c`, `dmd.c` and `dmd_pipe.c` (the DMD), `ssf.c` (the exciters), `autostart.c` (`--table`), `nudge.c` (a shove) |
 | `docs/` | [architecture](docs/architecture.md), [remaster](docs/remaster.md), [cabinet feedback](docs/cabinet-feedback.md), [dmd](docs/dmd.md), [ssf](docs/ssf.md), [table](docs/table.md), [lifting](docs/lifting.md), [conformance](docs/conformance.md) |
 
 A trace build (`cmake -B build-dbg -DEPIC_TRACE=ON`, then

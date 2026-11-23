@@ -48,10 +48,13 @@
  *                     directoutputconfig/ in the save folder; no limits, they
  *                     are the controller's. Build it with dof/build.sh
  *                     (Linux; docs/cabinet-feedback.md first)
- *   --joysticks       list joysticks and their axes as they move, to set up
- *                     [plunger] in controller.ini (Linux)
+ *   --joysticks       list joysticks, their axes as they move and buttons as
+ *                     they are pressed, to set up [plunger] and [nudge] in
+ *                     controller.ini (Linux)
  *   --plunger-trace LIST  a scripted plunger sensor: "ms:percent,..." pulled,
  *                     straight lines between, "-" for unplugged
+ *   --nudge-trace LIST  a scripted accelerometer: "ms:x,y,...", each held to
+ *                     the next (-32768..32767; the cabinet shoved left is x < 0)
  *   --trace           log DOS calls to stderr
  *   --shot FILE.bmp   write the last frame at exit
  *   --shot-at LIST    frames at emulated times: "ms:file.bmp,..."
@@ -66,6 +69,7 @@
 #include "dmd_pipe.h"
 #include "ssf.h"
 #include "autostart.h"
+#include "nudge.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #ifdef _WIN32
@@ -167,6 +171,7 @@ int main(int argc, char **argv)
         }
         else if (!strcmp(a, "--joysticks")) list_joysticks = 1;
         else if (!strcmp(a, "--plunger-trace") && v) { g_opt.plunger_trace = v; i++; }
+        else if (!strcmp(a, "--nudge-trace") && v) { g_opt.nudge_trace = v; i++; }
         else if (!strcmp(a, "--window") && v) { g_opt.window = atoi(v); i++; }
         else if (!strcmp(a, "--scale") && v) { g_opt.scale = v; i++; }
         else if (!strcmp(a, "--look") && v) { g_opt.look = v; i++; }
@@ -193,6 +198,8 @@ int main(int argc, char **argv)
     const char *wrong = cabinet_check();
     if (!wrong && g_opt.plunger_trace && !plunger_trace(g_opt.plunger_trace))
         wrong = "--plunger-trace takes ms:percent,... in order of time, e.g. 20000:0,20500:100,20540:0";
+    if (!wrong && g_opt.nudge_trace && !nudge_trace(g_opt.nudge_trace))
+        wrong = "--nudge-trace takes ms:x,y,... in order of time, x and y -32768 to 32767, e.g. 30000:-20000,0,30100:0,0";
 #ifdef _WIN32
     if (!wrong && g_opt.ssf) wrong = "--ssf is not supported on Windows yet (Linux only for now)";
 #endif
@@ -211,7 +218,7 @@ int main(int argc, char **argv)
         if (!dof_open(DOF_HELPER, g_opt.savedir)) return 2;
         watch_wanted();
     }
-    if (g_opt.plunger_trace) watch_wanted();
+    if (g_opt.plunger_trace || g_opt.nudge_trace) watch_wanted();
     if (g_opt.dmd || g_opt.dmd_device || g_opt.cabinet) dmd_wanted();   /* a cabinet hides keyboard messages */
     if (g_opt.ssf) { ssf_wanted(); watch_wanted(); }              /* SSF places sounds by what watch.c follows */
     if (g_opt.table) { autostart_wanted(g_opt.table); watch_wanted(); }   /* the watcher says when its game runs */

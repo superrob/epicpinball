@@ -65,6 +65,15 @@ All notable changes to this project are documented here. The format follows
   screens before a game, PRESS SPACE TO BEGIN, PRESS ENTER) are left out;
   `[cabinet] hide_messages` changes the list. Tested on a real cabinet on
   table 1; tables 2-13 only headless.
+- **Nudging from a cabinet** (Linux): `[nudge]` in `controller.ini`. An
+  accelerometer's shove (a Pinscape's X and Y axes) pushes every ball by how
+  hard, against the cabinet's movement, at the start of each physics step and
+  only where the game's own nudge would push; it fills the tilt meter by as
+  much, so hard shaking tilts by the game's rule. Nudge buttons reported as
+  joystick buttons press the game's own nudge keys (Z, /, Space).
+  `--joysticks` shows buttons; `--nudge-trace` scripts an accelerometer. The
+  feedback map is version 5 (the nudge's gate). Tested on a real cabinet's
+  accelerometer.
 - **`--table N`**: straight to table N with a one-player game, for a
   frontend. PINBALL's own menus are driven to it unseen and unheard, a key at
   a time from where PINBALL is (its code and memory, never a clock), in
