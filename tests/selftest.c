@@ -15,6 +15,7 @@
 #include "plunger.h"
 #include "dof_pipe.h"
 #include "dmd.h"
+#include "ssf.h"
 #include <assert.h>
 #ifndef _WIN32
 #include <time.h>
@@ -43,6 +44,7 @@ void host_audio(const int16_t *s, int frames)
 {
     for (int i = 0; i < frames && nheard < 4096; i++, nheard++) { heard[nheard * 2] = s[i * 2]; heard[nheard * 2 + 1] = s[i * 2 + 1]; }
 }
+void host_audio_ssf(const int16_t *front, const int16_t *exciters, int frames) { (void)front; (void)exciters; (void)frames; }
 void host_frame(void) {}
 void host_backtrace(void) {}
 static uint64_t pit_at;                                   /* moved by the feedback tests */
@@ -315,7 +317,7 @@ static void test_images(void)
 /* ---- cabinet feedback and the plunger ---- */
 
 static const char k_map[] =
-    "epicpinball-feedback 3\nimage ep1 16 69691905\n"
+    "epicpinball-feedback 4\nimage ep1 16 69691905\n"
     "ds 10\ncs 2000\nactive 100\nx 110\ny 120\nvx 130\nvy 140\nslots 5\n"
     "flip_l 150\nflip_r 152\nup_l 154\nup_r 155\ntilt 160\nmeter 161\ncooldown 162\ndemo 163\n"
     "extra 164\nover 165\ncount 166\ndrain_y 18F\nkick 167\nweak_y 180\nsling_line C7\nmap 170\n"
@@ -365,7 +367,7 @@ static void test_feedback_map(void)
         assert(!watch_map_parse(cut, &m, &why));
     }
     memcpy(cut, k_map, sizeof k_map);
-    strstr(cut, "feedback 3")[9] = '2';                   /* another version */
+    strstr(cut, "feedback 4")[9] = '3';                   /* another version */
     assert(!watch_map_parse(cut, &m, &why));
     memcpy(cut, k_map, sizeof k_map);
     strstr(cut, "bumper 200")[7] = '0';                   /* not left to right */
@@ -893,6 +895,123 @@ static void test_dmd(void)
     pit_at = 0;
 }
 
+/* --ssf: where a board effect is heard (vpinball's linear placing), its
+ * voice in the game's driver set silent while it plays here, stopped when
+ * the driver's is, and a rumble for a rolling ball (src/ssf.c) */
+static double ch_energy(const int16_t *o, int frames, int c)
+{
+    double e = 0;
+    for (int i = 0; i < frames; i++) e += (double)o[i * 4 + c] * o[i * 4 + c];
+    return e;
+}
+
+static void test_ssf(void)
+{
+    float g[4];
+    ssf_gains(0, 0, g);                                  /* top left: the side left exciter */
+    assert(g[2] == 1 && g[0] == 0 && g[1] == 0 && g[3] == 0);
+    ssf_gains(320, 400, g);                              /* bottom right: the rear right */
+    assert(g[1] == 1 && g[0] == 0 && g[2] == 0 && g[3] == 0);
+    ssf_gains(160, 200, g);                              /* the middle: a quarter each */
+    for (int i = 0; i < 4; i++) assert(g[i] == 0.25f);
+
+    static char text[sizeof k_map + 256];
+    snprintf(text, sizeof text, "%.*s%s", (int)(sizeof k_map - 5), k_map,
+             "effect_fn ep1_fx\nsfx_setup_fn sb_setup\nsfx_volume_fn sb_vol\nsfx_stop_fn sb_stop\n"
+             "sfx_stop_class_fn sb_class\nboard 0 4 11\nend\n");
+    static const FbSink sink = { seen_table, seen_event, seen_off };
+    const char *why = "";
+    WatchMap m;
+    assert(watch_map_parse(text, &m, &why));
+    assert(!strcmp(m.effect_fn, "ep1_fx") && !strcmp(m.sfx_stop_class_fn, "sb_class"));
+    assert(m.board == (1u << 0 | 1u << 4 | 1u << 0x11));
+    feedback_sink(&sink);
+    g_cpu.ss = 0x9000; g_cpu.sp = 0x0100;
+    assert(watch_map_use(&m, 0x1000));
+    uint8_t *ds = g_cpu.mem + g_watch_ds;
+    for (int i = 0; i < 5; i++) put(ds, (uint16_t)(m.active + 2 * i), 0);   /* no ball yet */
+    ssf_wanted();
+    ssf_table_begin();
+    assert(g_ssf_on);
+
+    /* a sample: 100 ms of a square wave, at 44.1 kHz, volume 100; the
+     * driver's master volume for effects at full */
+    const uint32_t H = 0x60000, D = 0x61000;
+    memset(g_cpu.mem + H, 0, 0x60);
+    g_cpu.mem[H + 0x2D] = (uint8_t)D; g_cpu.mem[H + 0x2E] = (uint8_t)(D >> 8); g_cpu.mem[H + 0x2F] = (uint8_t)(D >> 16);
+    put(g_cpu.mem + H, 0x36, 4410);
+    put(g_cpu.mem + H, 0x45, 44100 & 0xFFFF); g_cpu.mem[H + 0x47] = 0;
+    g_cpu.mem[H + 0x44] = 100;
+    for (int i = 0; i < 4410; i++) g_cpu.mem[D + i] = (uint8_t)(i / 20 % 2 ? 0x80 + 100 : 0x80 - 100);
+    g_cpu.mem[0x70000 + 0x2C4] = 0xFF;
+
+    /* the left flipper: a fixed pan at the left, at the bottom */
+    CPU c = g_cpu;
+    c.al = 4; c.ah = 0x10; ssf_enter(&c, "ep1_fx");
+    c.dl = 1; c.ds = 0x7000; c.ecx = 0x6000u << 16; ssf_enter(&c, "sb_setup");
+    g_cpu.mem[H + 0x33] = 3;                             /* the driver gave it voice 3 */
+    c.al = 3; c.cl = 100; ssf_enter(&c, "sb_vol");
+    assert(c.cl == 0);                                   /* silent in the game's mix */
+    static int16_t o[441 * 4];
+    ssf_render(o, 441);
+    const double bl = ch_energy(o, 441, 0), br = ch_energy(o, 441, 1), sl = ch_energy(o, 441, 2), sr = ch_energy(o, 441, 3);
+    assert(bl > 0 && bl > 100 * sr && bl > 10 * br && bl > 10 * sl);
+    /* the driver stops its voice: ours stops */
+    c.al = 3; ssf_enter(&c, "sb_stop");
+    ssf_render(o, 441);
+    assert(ch_energy(o, 441, 0) == 0);
+
+    /* not the board's (slot 2): left to the game, volume untouched */
+    c.al = 2; c.ah = 0; ssf_enter(&c, "ep1_fx");
+    c.dl = 1; c.ecx = 0x6000u << 16; ssf_enter(&c, "sb_setup");
+    g_cpu.mem[H + 0x33] = 5;
+    c.al = 5; c.cl = 100; ssf_enter(&c, "sb_vol");
+    assert(c.cl == 100);
+    ssf_render(o, 441);
+    assert(ch_energy(o, 441, 0) == 0 && ch_energy(o, 441, 3) == 0);
+    /* music (class 2) never is, even straight after a board effect's call */
+    c.al = 0; ssf_enter(&c, "ep1_fx");
+    c.dl = 2; c.ecx = 0x6000u << 16; ssf_enter(&c, "sb_setup");
+    g_cpu.mem[H + 0x33] = 6;
+    c.al = 6; c.cl = 100; ssf_enter(&c, "sb_vol");
+    assert(c.cl == 100);
+
+    /* a board effect, then every effect stopped at once (class 1) */
+    c.al = 0; c.ah = 0; ssf_enter(&c, "ep1_fx");
+    c.dl = 1; c.ecx = 0x6000u << 16; ssf_enter(&c, "sb_setup");    /* CL is ECX's low byte */
+    g_cpu.mem[H + 0x33] = 7;
+    c.al = 7; c.cl = 100; ssf_enter(&c, "sb_vol");
+    assert(c.cl == 0);
+    c.ah = 1; ssf_enter(&c, "sb_class");
+    ssf_render(o, 441);
+    for (int k = 0; k < 4; k++) assert(ch_energy(o, 441, k) == 0);
+
+    /* a rolling ball at the top right, the physics stepping: a rumble there;
+     * still, none; and none while the game waits (a prompt: no steps) */
+    put(ds, m.active, 1); put(ds, m.x, 300); put(ds, m.y, 10); put(ds, m.vx, 300); put(ds, m.vy, 0);
+    watch_enter(&g_cpu, "ep1_step");
+    ssf_render(o, 441);
+    assert(ch_energy(o, 441, 3) > 0 && ch_energy(o, 441, 3) > 20 * ch_energy(o, 441, 0));
+    put(ds, m.vx, 0);
+    for (int i = 0; i < 40; i++) ssf_render(o, 441);
+    assert(ch_energy(o, 441, 3) == 0);
+    put(ds, m.vx, 300);
+    pit_at += (uint64_t)(0.2 * PIT_HZ);                  /* 200 ms without a step */
+    for (int i = 0; i < 40; i++) ssf_render(o, 441);
+    assert(ch_energy(o, 441, 3) == 0);
+    watch_enter(&g_cpu, "ep1_step");
+    put(ds, m.vx, 0);
+    ssf_volumes(1, 0);                                   /* rolling off */
+    put(ds, m.vx, 300);
+    ssf_render(o, 441);
+    assert(ch_energy(o, 441, 3) == 0);
+    ssf_volumes(1, 1);
+    put(ds, m.active, 0);
+    ssf_table_end();
+    assert(!g_ssf_on);
+    watch_table_end();
+}
+
 static void pump(int ms)
 {
     for (uint64_t end = host_us() + (uint64_t)ms * 1000u; host_us() < end; ) { dof_tick(); usleep(1000); }
@@ -984,6 +1103,7 @@ int main(void)
     test_watch();
     test_plunger();
     test_dmd();
+    test_ssf();
 #ifndef _WIN32
     test_dof_pipe();
 #endif

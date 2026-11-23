@@ -47,6 +47,7 @@ conformance harness passes 154/154 on Linux.**
 | A full game, start to final ball, played by hand | ✅ |
 | Cabinet mode, `--cabinet` (Linux only) | ✅ on a real cabinet (table 1) and on virtual displays |
 | Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick) |
+| SSF: the board's sounds on a cabinet's exciters, 7.1 (`--ssf`, Linux) | ✅ headless on all 13 tables (eight channels measured), and on a cabinet's exciters |
 | A 128x32 DMD (`--dmd` in a window, `--dmd-device` on a real DMD through libdmdutil; Linux) | ✅ on a real cabinet with a ZeDMD, on table 1; all 13 tables headless |
 | **Conformance** ([docs](docs/conformance.md)) | **154/154** on Linux (Windows skips the 11 cabinet checks, and has not run the 10 feedback ones) |
 
@@ -73,6 +74,11 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   a window of its own. Messages about keys a cabinet has not got (the help
   screens, PRESS SPACE TO BEGIN) are left out.
   [How to set one up](docs/remaster.md#cabinet-mode).
+- **SSF** (`--ssf`, Linux): 7.1 for a cabinet with exciters. The backbox
+  speakers keep the music and the callouts; bumpers, slingshots, flippers,
+  drop targets and the plunger play on the exciters, top or bottom, left or
+  right, where on the table they happen, and a rolling sound follows the
+  ball. [How](docs/ssf.md).
 - **A DMD** (`--dmd`, `--dmd-device`, Linux): a 128x32 dot-matrix picture of
   every table, in a window of its own or on a real DMD (any libdmdutil
   drives; tested with a ZeDMD), taking the scoreboard window's place in a cabinet. The
@@ -211,6 +217,7 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 | `--stretch` | with `--cabinet`: the playfield stretched to fill its display, this run |
 | `--playfield-display N` | with `--cabinet`: the display the playfield fills; they are listed at start |
 | `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard (or with `--dmd`, the DMD) window goes, this run |
+| `--ssf` | 7.1 for a cabinet with exciters: the board's sounds on the side (top) and rear (bottom) pairs; `[ssf]` in `epicpinball.ini` sets their volumes (Linux) ([docs](docs/ssf.md)) |
 | `--dmd` | a 128x32 DMD in a window of its own; in a cabinet, in place of the scoreboard window (Linux) ([docs](docs/dmd.md)) |
 | `--dmd-device` | the DMD on a real one, any libdmdutil drives (ZeDMD, Pixelcade, PinDMD3, ...; tested with a ZeDMD; PIN2DMD is left out of this build): build `dmd/build.sh` first; settings in `saves/dmd/DMDUtil.ini` (Linux) |
 | `--dof` | DOF events through libdof (Linux): build `dof/build.sh` first; rows in VPinball's DOF files or `saves/directoutputconfig/`; no output limits ([docs](docs/cabinet-feedback.md)) |
@@ -253,9 +260,9 @@ it reaches is lifted. What else is here:
 | `dof/` | the optional output helper: its own program, GPLv3, built by `dof/build.sh` |
 | `dmd/` | the optional DMD helper for a real DMD: its own program, GPLv3, built by `dmd/build.sh` |
 | `setup.sh`, `build-linux.sh` | the Linux quick start and rebuild |
-| `tests/selftest.c` | the split screen, SB16 stereo, the image registry, the feedback watcher, the plunger, the helper's pipe and the DMD's layout, with no game data — what CI runs (`cmake --build build --target selftest`) |
-| `src/` | the DOS machine: `dos.c` (DOS, BIOS, EXEC), `images.c` (which lifted code is where), `machine.c` (PIC, PIT, keyboard, interrupts), `vga.c`, `audio.c` (SB16, DMA), `host.c` (window, input, recording: Win32, or SDL2 on Linux), `present.c` (Direct3D 11, or SDL2), `pad.c`, `watch.c` and `feedback.c` (table events), `dof_pipe.c`, `plunger.c`, `dmd.c` and `dmd_pipe.c` (the DMD) |
-| `docs/` | [architecture](docs/architecture.md), [remaster](docs/remaster.md), [cabinet feedback](docs/cabinet-feedback.md), [dmd](docs/dmd.md), [lifting](docs/lifting.md), [conformance](docs/conformance.md) |
+| `tests/selftest.c` | the split screen, SB16 stereo, the image registry, the feedback watcher, the plunger, the helper's pipe, the DMD's layout and SSF's placing, with no game data — what CI runs (`cmake --build build --target selftest`) |
+| `src/` | the DOS machine: `dos.c` (DOS, BIOS, EXEC), `images.c` (which lifted code is where), `machine.c` (PIC, PIT, keyboard, interrupts), `vga.c`, `audio.c` (SB16, DMA), `host.c` (window, input, recording: Win32, or SDL2 on Linux), `present.c` (Direct3D 11, or SDL2), `pad.c`, `watch.c` and `feedback.c` (table events), `dof_pipe.c`, `plunger.c`, `dmd.c` and `dmd_pipe.c` (the DMD), `ssf.c` (the exciters) |
+| `docs/` | [architecture](docs/architecture.md), [remaster](docs/remaster.md), [cabinet feedback](docs/cabinet-feedback.md), [dmd](docs/dmd.md), [ssf](docs/ssf.md), [lifting](docs/lifting.md), [conformance](docs/conformance.md) |
 
 A trace build (`cmake -B build-dbg -DEPIC_TRACE=ON`, then
 `cmake --build build-dbg --config RelWithDebInfo`) keeps a ring of the lifted

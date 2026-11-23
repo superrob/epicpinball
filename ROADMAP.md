@@ -47,6 +47,8 @@
   on a cabinet and looked at message by message (several players' scores on 9-13, tables 5 and 6,
   whose line appenders are another shape); screens no scripted game reached
   (jackpots, modes, high score entry); Windows.
+- **SSF** (`ssf` branch): on a cabinet's exciters; each table's own board
+  effects beyond slots 0-6 (table 1's are listed); Windows.
 - **African Safari's overrun**: a ball reaching x = -1 overruns a sprite
   buffer into the timer chain. Feedback stops for that table when it happens;
   whether the DOS original does the same is not known.

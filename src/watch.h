@@ -30,6 +30,11 @@ typedef struct {
     uint16_t lane_off, lane_x, lane_y, over_pull;
     uint16_t scan_x, scan_y;         /* the ball the switch handler is looking at */
     char step_fn[24], kicker_fn[24], switch_fn[24], msg_fn[24];
+    /* SSF (ssf.c): the table's effect function, the sound driver's voice
+     * setup, volume, stop and stop of a class, and the board's effects */
+    char effect_fn[24], sfx_setup_fn[24], sfx_volume_fn[24], sfx_stop_fn[24], sfx_stop_class_fn[24];
+    uint32_t board;                  /* a bit for each effect slot that is the board's */
+    uint16_t sfx_on;                 /* the game's effects switch (SOUND FX OFF: 0); 0: not known */
     int nbumpers;
     struct { int x, y, slot; } bumper[WATCH_BUMPERS];        /* left to right; slot: its side, 0-2 */
     char layout[WATCH_BUMPERS + 1];                         /* the sides, "LCR" */
@@ -60,6 +65,9 @@ void watch_released(void);           /* the host let everything go (a dialog): s
 int  watch_running(void);            /* the table's physics is stepping */
 void watch_write_byte(uint32_t a, uint8_t v);                /* vga.c's write hook */
 const WatchMap *watch_table(uint32_t *ds, uint32_t *cs);     /* the live table, or NULL */
+/* Where the last kicker hit (kicker 1) or switch (0) was, if that recent; or
+ * the more recent of the two (-1) */
+int  watch_place(int kicker, double within_ms, int *x, int *y);
 
 extern uint32_t g_watch_ds;          /* linear */
 extern uint8_t g_watched[0x10000];   /* which bytes of that segment */

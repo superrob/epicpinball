@@ -65,6 +65,17 @@ All notable changes to this project are documented here. The format follows
   screens before a game, PRESS SPACE TO BEGIN, PRESS ENTER) are left out;
   `[cabinet] hide_messages` changes the list. Tested on a real cabinet on
   table 1; tables 2-13 only headless.
+- **SSF** (`--ssf`, Linux; on the `ssf` branch): 7.1 for a cabinet with
+  exciters, wired as vpinball wires one. The front pair keeps the game's mix;
+  the board's sounds (bumpers, slingshots, flippers, drop targets, plunger,
+  holes) leave it and play on the exciters, the side pair at the top of the
+  table and the rear pair at the bottom, placed where they happen, with
+  vpinball's gains. A rolling sound follows each ball, louder and
+  brighter with its speed. Each effect is caught as the table starts it, played from the
+  game's own sample, and its voice in the sound driver set silent.
+  `[ssf]` in `epicpinball.ini` sets the exciters' volumes and a table's
+  board effects; `--wav` writes all eight channels. Tested on a cabinet's
+  exciters.
 - **An analog plunger** (Linux): `[plunger]` in `controller.ini` names a
   joystick axis; the drawn plunger follows it and a release launches at the
   strength pulled to. `--joysticks` lists devices and axes. It is the first

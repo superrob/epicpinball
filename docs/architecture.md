@@ -171,11 +171,14 @@ translates: the table's name becomes DOF's ROM name, an event its E number.
 Neither side times or limits an output; that is for the DOF files and the
 controller.
 
-`src/plunger.c` is the one thing that writes into a table. It sets the pull
+`src/plunger.c` is the one thing that writes into a table's state. It sets the pull
 and the Ctrl-held flag together from inside `host_frame`, which follows
 interrupt delivery in `recomp_tick`, so the game's main loop never sees one
 without the other. A release is the one pull without the flag, and is then
 left alone until the game has zeroed it ([cabinet feedback](cabinet-feedback.md)).
+`src/ssf.c` changes one register of the sound driver's: with `--ssf`, the volume
+the driver gives a board effect's voice becomes 0 as it is set, and the effect
+plays on the exciters instead ([ssf](ssf.md)).
 
 ## Host
 

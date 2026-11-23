@@ -28,6 +28,7 @@
 #include "watch.h"
 #include "dmd.h"
 #include "dmd_pipe.h"
+#include "ssf.h"
 #include <ctype.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -159,16 +160,27 @@ static FILE *rec_video, *rec_audio;
 static uint64_t rec_frames, rec_samples;
 static char rec_vpath[512], rec_apath[512];
 
-static void wav_header(FILE *f, uint32_t frames)
+/* 16-bit PCM: stereo, or with --ssf 7.1 (WAVE_FORMAT_EXTENSIBLE, the channels
+ * FL FR FC LFE BL BR SL SR) */
+static void wav_header(FILE *f, uint32_t frames, int channels)
 {
-    uint32_t data = frames * 4, riff = 36 + data, rate = AUDIO_RATE, br = AUDIO_RATE * 4, fmt = 16;
-    uint16_t pcm = 1, ch = 2, ba = 4, bits = 16;
+    const int ext = channels > 2;
+    uint16_t ch = (uint16_t)channels, ba = (uint16_t)(channels * 2), bits = 16, pcm = ext ? 0xFFFE : 1;
+    uint32_t data = frames * ba, fmt = ext ? 40 : 16, riff = 20 + fmt + data, rate = AUDIO_RATE, br = AUDIO_RATE * ba;
     fseek(f, 0, SEEK_SET);
     fwrite("RIFF", 1, 4, f); fwrite(&riff, 4, 1, f); fwrite("WAVEfmt ", 1, 8, f);
     fwrite(&fmt, 4, 1, f); fwrite(&pcm, 2, 1, f); fwrite(&ch, 2, 1, f); fwrite(&rate, 4, 1, f);
     fwrite(&br, 4, 1, f); fwrite(&ba, 2, 1, f); fwrite(&bits, 2, 1, f);
+    if (ext) {
+        static const uint8_t pcm_guid[16] = { 1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71 };
+        uint16_t cb = 22, valid = 16;
+        uint32_t mask = 0x63F;                     /* FL FR FC LFE BL BR SL SR */
+        fwrite(&cb, 2, 1, f); fwrite(&valid, 2, 1, f); fwrite(&mask, 4, 1, f); fwrite(pcm_guid, 1, 16, f);
+    }
     fwrite("data", 1, 4, f); fwrite(&data, 4, 1, f);
 }
+
+static int out_channels(void) { return g_opt.ssf ? 8 : 2; }   /* --ssf: 7.1 */
 
 static int rec_w = 640, rec_h = 400;
 
@@ -189,7 +201,7 @@ static void rec_open(void)
 #endif
     if (!rec_video) fatal("cannot start ffmpeg (is it on PATH?)");
     rec_audio = fopen(rec_apath, "wb");
-    if (rec_audio) wav_header(rec_audio, 0);
+    if (rec_audio) wav_header(rec_audio, 0, 2);
 }
 
 static void rec_close(void)
@@ -197,7 +209,7 @@ static void rec_close(void)
     if (!rec_video) return;
     pclose(rec_video);
     rec_video = NULL;
-    if (rec_audio) { wav_header(rec_audio, (uint32_t)rec_samples); fclose(rec_audio); rec_audio = NULL; }
+    if (rec_audio) { wav_header(rec_audio, (uint32_t)rec_samples, 2); fclose(rec_audio); rec_audio = NULL; }
     char cmd[1600];
     snprintf(cmd, sizeof cmd, "ffmpeg -y -loglevel error -i \"%s\" -i \"%s\" -c:v copy -c:a aac -b:a 192k -shortest \"%s\"",
              rec_vpath, rec_apath, g_opt.record);
@@ -330,6 +342,9 @@ static int saved_display, cab_display;
 static RECT saved_score, cab_score;  /* empty: the default place */
 static RECT saved_dmdw;              /* the DMD window's, in a cabinet with --dmd: kept apart, another shape */
 static char saved_hide[1024];        /* [cabinet] hide_messages as written, kept when the file is written again */
+static char saved_ssf[15][128];      /* [ssf]: effects_volume, rolling_volume, board_ep1..13 as written; "" unset */
+static const char *const ssf_keys[15] = { "effects_volume", "rolling_volume", "board_ep1", "board_ep2", "board_ep3",
+    "board_ep4", "board_ep5", "board_ep6", "board_ep7", "board_ep8", "board_ep9", "board_ep10", "board_ep11", "board_ep12", "board_ep13" };
 static int saved_hide_set;
 
 /* --score-window's and the ini's X,Y,W,H */
@@ -374,6 +389,12 @@ static void settings_save(void)
                     (long)(saved_dmdw.right - saved_dmdw.left), (long)(saved_dmdw.bottom - saved_dmdw.top));
         if (saved_hide_set) fprintf(f, "hide_messages=%s\n", saved_hide);
     }
+    int any_ssf = 0;
+    for (int i = 0; i < 15; i++) any_ssf |= saved_ssf[i][0] != 0;
+    if (any_ssf) {                                 /* --ssf's: only what was written there */
+        fprintf(f, "[ssf]\n");
+        for (int i = 0; i < 15; i++) if (saved_ssf[i][0]) fprintf(f, "%s=%s\n", ssf_keys[i], saved_ssf[i]);
+    }
     fclose(f);
 }
 
@@ -394,6 +415,17 @@ static void settings_load(void)
         const char *h = ini_get(ini, "cabinet", "hide_messages", "\x01", saved_hide, sizeof saved_hide);
         saved_hide_set = h[0] != 1;
         if (saved_hide_set) { if (h != saved_hide) snprintf(saved_hide, sizeof saved_hide, "%s", h); dmd_set_hidden(saved_hide); }
+    }
+    {                                              /* [ssf]: volumes, and tables' board effects */
+        for (int i = 0; i < 15; i++) {
+            const char *x = ini_get(ini, "ssf", ssf_keys[i], "", saved_ssf[i], sizeof saved_ssf[i]);
+            if (x != saved_ssf[i]) snprintf(saved_ssf[i], sizeof saved_ssf[i], "%s", x);
+        }
+        double fx = saved_ssf[0][0] ? atof(saved_ssf[0]) : SSF_GAIN, roll = saved_ssf[1][0] ? atof(saved_ssf[1]) : SSF_GAIN;
+        ssf_volumes(fx < 0 ? 0 : fx, roll < 0 ? 0 : roll);
+        for (int i = 2; i < 15; i++)
+            if (saved_ssf[i][0] && !ssf_board(ssf_keys[i] + 6, saved_ssf[i]))
+                fprintf(stderr, "[ssf] %s=%s: not a list of effect slots (hex, comma between)\n", ssf_keys[i], saved_ssf[i]);
     }
     if (!host_parse_place(ini_get(ini, "cabinet", "score_window", "", v, sizeof v), &saved_score))
         memset(&saved_score, 0, sizeof saved_score);
@@ -1019,6 +1051,8 @@ static void desktop_open(void)
     if (g_opt.fullscreen) set_fullscreen(1);
 }
 
+static void ssf_report_device(int opened);
+
 static void window_open(void)
 {
     const uint32_t systems = SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER;
@@ -1033,10 +1067,29 @@ static void window_open(void)
     else desktop_open();
     if (!g_opt.mute && SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
         SDL_AudioSpec want = { 0 };
-        want.freq = AUDIO_RATE; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
+        want.freq = AUDIO_RATE; want.format = AUDIO_S16SYS; want.channels = (Uint8)out_channels(); want.samples = 1024;
         aud = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
         if (aud) SDL_PauseAudioDevice(aud, 0);
+        if (g_opt.ssf) ssf_report_device(aud != 0);
     }
+}
+
+/* --ssf: what the default output takes, as SDL sees it: with fewer than
+ * eight channels it folds the exciters into the front */
+static void ssf_report_device(int opened)
+{
+    if (!opened) { fprintf(stderr, "[ssf] no sound device: %s\n", SDL_GetError()); return; }
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+    char *name = NULL;
+    SDL_AudioSpec have;
+    if (SDL_GetDefaultAudioInfo(&name, &have, 0) == 0) {
+        fprintf(stderr, "[ssf] sound out: 7.1 to %s, which has %d channels%s\n", name ? name : "the default device",
+                have.channels, have.channels < 8 ? ": the exciters are folded into it. Set its profile to 7.1." : "");
+        SDL_free(name);
+        return;
+    }
+#endif
+    fprintf(stderr, "[ssf] sound out: 7.1 to the default device\n");
 }
 
 static int window_front(void)
@@ -1080,7 +1133,8 @@ static void window_frame(void)
 /* A queue the main thread fills, as long as waveOut's ring: drop rather than block */
 static void window_audio(const int16_t *s, int frames)
 {
-    if (aud && SDL_GetQueuedAudioSize(aud) < 8 * 1024 * 4) SDL_QueueAudio(aud, s, (Uint32)frames * 4);
+    const Uint32 frame = (Uint32)out_channels() * 2;
+    if (aud && SDL_GetQueuedAudioSize(aud) < 8 * 1024 * frame) SDL_QueueAudio(aud, s, (Uint32)frames * frame);
 }
 
 static void window_close(void)
@@ -1101,6 +1155,26 @@ void host_audio(const int16_t *s, int frames)
     if (rec_audio) { fwrite(s, 4, frames, rec_audio); rec_samples += frames; }
     if (wav_out) { fwrite(s, 4, frames, wav_out); wav_samples += frames; }
     if (wnd) window_audio(s, frames);
+}
+
+/* --ssf: the front pair and the four exciters as 7.1, FL FR FC LFE BL BR SL
+ * SR; a recording keeps the front */
+void host_audio_ssf(const int16_t *front, const int16_t *exciters, int frames)
+{
+    static int16_t out[2048 * 8];
+    for (int done = 0; done < frames; ) {
+        const int n = frames - done > 2048 ? 2048 : frames - done;
+        for (int i = 0; i < n; i++) {
+            int16_t *o = out + i * 8;
+            const int16_t *f = front + (done + i) * 2, *e = exciters + (done + i) * 4;
+            o[0] = f[0]; o[1] = f[1]; o[2] = o[3] = 0;
+            o[4] = e[0]; o[5] = e[1]; o[6] = e[2]; o[7] = e[3];
+        }
+        if (rec_audio) { fwrite(front + done * 2, 4, n, rec_audio); rec_samples += n; }
+        if (wav_out) { fwrite(out, 16, n, wav_out); wav_samples += n; }
+        if (wnd) window_audio(out, n);
+        done += n;
+    }
 }
 
 /* ---- the analog plunger (plunger.c) ---------------------------------------- */
@@ -1163,7 +1237,7 @@ void host_init(void)
 {
     keys_parse();
     if (g_opt.record) rec_open();
-    if (g_opt.wav && (wav_out = fopen(g_opt.wav, "wb")) != NULL) wav_header(wav_out, 0);
+    if (g_opt.wav && (wav_out = fopen(g_opt.wav, "wb")) != NULL) wav_header(wav_out, 0, out_channels());
     if (g_opt.headless) { settings_args(); return; }
     settings_load();
     settings_args();
@@ -1257,6 +1331,6 @@ void host_shutdown(void)
     dof_close();
     dmd_pipe_close();
     rec_close();
-    if (wav_out) { wav_header(wav_out, (uint32_t)wav_samples); fclose(wav_out); wav_out = NULL; }
+    if (wav_out) { wav_header(wav_out, (uint32_t)wav_samples, out_channels()); fclose(wav_out); wav_out = NULL; }
     window_close();
 }

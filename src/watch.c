@@ -50,6 +50,7 @@ static int wanted;
 static WatchMap M;
 static uint32_t DS, CS;              /* linear */
 static int kicking, kick_x, kick_y, kick_di;
+static double kick_t = -1e18, sw_t = -1e18;     /* when each was last seen: SSF places effects by them */
 static int pull_old, launched;
 static int release, started, fresh;  /* fresh: the next release begins a game */
 static int flipper[2], known, idle;
@@ -173,11 +174,30 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
                 *why = "a bad message"; return 0;
             }
             m->msg[m->nmsgs++] = (WatchMsg){ (uint16_t)a, e };
+        } else if (!strncmp(line, "board ", 6)) {          /* SSF: the board's effect slots, hex */
+            for (const char *p = line + 6; *p; ) {
+                char *e;
+                unsigned long v = strtoul(p, &e, 16);
+                if (e == p || v > 31 || (*e && *e != ' ')) { *why = "a bad board list"; return 0; }
+                m->board |= 1u << v;
+                p = *e ? e + 1 : e;
+            }
         } else if (sscanf(line, "%23s %23s", key, val) != 2) { *why = "a line it cannot read"; return 0; }
         else if (!strcmp(key, "step_fn")) snprintf(m->step_fn, sizeof m->step_fn, "%s", val);
         else if (!strcmp(key, "kicker_fn")) snprintf(m->kicker_fn, sizeof m->kicker_fn, "%s", val);
         else if (!strcmp(key, "switch_fn")) snprintf(m->switch_fn, sizeof m->switch_fn, "%s", val);
         else if (!strcmp(key, "msg_fn")) snprintf(m->msg_fn, sizeof m->msg_fn, "%s", val);
+        else if (!strcmp(key, "effect_fn")) snprintf(m->effect_fn, sizeof m->effect_fn, "%s", val);
+        else if (!strcmp(key, "sfx_on")) {
+            char *e;
+            unsigned long v = strtoul(val, &e, 16);
+            if (*e || !v || v > 0xFFFF) { *why = "a bad effects switch"; return 0; }
+            m->sfx_on = (uint16_t)v;
+        }
+        else if (!strcmp(key, "sfx_setup_fn")) snprintf(m->sfx_setup_fn, sizeof m->sfx_setup_fn, "%s", val);
+        else if (!strcmp(key, "sfx_volume_fn")) snprintf(m->sfx_volume_fn, sizeof m->sfx_volume_fn, "%s", val);
+        else if (!strcmp(key, "sfx_stop_fn")) snprintf(m->sfx_stop_fn, sizeof m->sfx_stop_fn, "%s", val);
+        else if (!strcmp(key, "sfx_stop_class_fn")) snprintf(m->sfx_stop_class_fn, sizeof m->sfx_stop_class_fn, "%s", val);
         else {
             int i = 0;
             char *e;
@@ -216,7 +236,7 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         if ((int)strlen(side) != m->ntargets) { *why = "a target's number missing"; return 0; }
         snprintf(m->sides + at, sizeof m->sides - at, "%starget:%s", at ? " " : "", side);
     }
-    if (version != 3) *why = "another version's map";
+    if (version != 4) *why = "another version's map";
     else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || got != (1ull << NFIELDS) - 1)
         *why = "incomplete";
     else if (m->nmsgs && !*m->msg_fn) *why = "messages, but no message function";
@@ -304,6 +324,7 @@ int watch_map_use(const WatchMap *m, uint16_t load_seg)
     if (M.lanes) watch(M.lanes, W_LANES);
     if (M.ramps) watch(M.ramps, W_RAMPS);
     kicking = launched = release = started = known = idle = ready = multi = held = sw_on = 0;
+    kick_t = sw_t = -1e18;
     for (int i = 0; i < WATCH_ZONES; i++) sw_last[i] = -1e18;
     for (int i = 0; i < WATCH_TIMERS; i++) { caught[i] = 0; counted[i] = -1e18; }
     for (int i = 0; i < 8; i++) { ball[i].x = ball[i].y = 0; ball[i].moved = -1e18; }
@@ -336,6 +357,16 @@ const WatchMap *watch_table(uint32_t *ds, uint32_t *cs)
     if (!g_watch_on) return NULL;
     *ds = DS; *cs = CS;
     return &M;
+}
+
+int watch_place(int kicker, double within_ms, int *x, int *y)
+{
+    const double t = now_ms(), k = t - kick_t, s = t - sw_t;
+    const int use_kick = kicker == 1 ? k <= within_ms : kicker == 0 ? 0 : k <= within_ms && k <= s;
+    if (use_kick) { *x = kick_x; *y = kick_y; return 1; }
+    if (kicker == 1 || s > within_ms) return 0;
+    *x = sw_x; *y = sw_y;
+    return 1;
 }
 
 int watch_running(void)
@@ -473,6 +504,7 @@ void watch_enter(CPU *cpu, const char *fn)
         kick_x = (int)(o % 320);
         kick_y = (int)(o / 320);
         kick_di = cpu->di;
+        if (kicking) kick_t = now_ms();
     } else if (!strcmp(fn, M.switch_fn)) {
         if (!sound()) return;
         sw_on = 0;
@@ -481,6 +513,7 @@ void watch_enter(CPU *cpu, const char *fn)
         sw_colour = cpu->al;
         sw_x = rd16(DS + M.scan_x);
         sw_y = rd16(DS + M.scan_y);
+        sw_t = now_ms();
         const double t = now_ms();
         for (int i = 0; i < M.nzones; i++) {
             const WatchZone *z = &M.zone[i];

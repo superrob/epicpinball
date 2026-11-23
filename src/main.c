@@ -36,6 +36,9 @@
  *                     scoreboard's window, else a window of its own; the
  *                     messages of tables 1-8 leave the playfield for it
  *                     (docs/dmd.md)
+ *   --ssf             7.1 for a cabinet with exciters: front left and right
+ *                     the game's sound, the side and rear pairs the board's
+ *                     sounds where on the table they happen (docs/ssf.md)
  *   --dmd-device      the DMD on a real one (a ZeDMD) through libdmdutil;
  *                     build it with dmd/build.sh (Linux)
  *   --dof             table events to libdof, with VPinball's DOF files or
@@ -58,6 +61,7 @@
 #include "watch.h"
 #include "dmd.h"
 #include "dmd_pipe.h"
+#include "ssf.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #ifdef _WIN32
@@ -151,6 +155,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--dof")) g_opt.dof = 1;
         else if (!strcmp(a, "--dmd")) g_opt.dmd = 1;
         else if (!strcmp(a, "--dmd-device")) g_opt.dmd_device = 1;
+        else if (!strcmp(a, "--ssf")) g_opt.ssf = 1;
         else if (!strcmp(a, "--joysticks")) list_joysticks = 1;
         else if (!strcmp(a, "--plunger-trace") && v) { g_opt.plunger_trace = v; i++; }
         else if (!strcmp(a, "--window") && v) { g_opt.window = atoi(v); i++; }
@@ -179,6 +184,9 @@ int main(int argc, char **argv)
     const char *wrong = cabinet_check();
     if (!wrong && g_opt.plunger_trace && !plunger_trace(g_opt.plunger_trace))
         wrong = "--plunger-trace takes ms:percent,... in order of time, e.g. 20000:0,20500:100,20540:0";
+#ifdef _WIN32
+    if (!wrong && g_opt.ssf) wrong = "--ssf is not supported on Windows yet (Linux only for now)";
+#endif
     if (!wrong && g_opt.dof && g_opt.headless && !g_opt.realtime)
         wrong = "--dof needs a window or --realtime: libdof times pulses by the wall clock";
     if (wrong) { fprintf(stderr, "%s\n", wrong); return 2; }
@@ -196,6 +204,7 @@ int main(int argc, char **argv)
     }
     if (g_opt.plunger_trace) watch_wanted();
     if (g_opt.dmd || g_opt.dmd_device || g_opt.cabinet) dmd_wanted();   /* a cabinet hides keyboard messages */
+    if (g_opt.ssf) { ssf_wanted(); watch_wanted(); }              /* SSF places sounds by what watch.c follows */
     if (g_opt.dmd_device && !dmd_pipe_open(DMD_HELPER, g_opt.savedir)) return 2;
     atexit(feedback_close);
     atexit(dmd_pipe_close);            /* fatal() does not come through host_shutdown */

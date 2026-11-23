@@ -15,6 +15,7 @@
 #include "machine.h"
 #include "watch.h"
 #include "dmd.h"
+#include "ssf.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #include <time.h>
@@ -523,12 +524,14 @@ static void dos_exec(CPU *c)
         void (*fn)(CPU *) = images_lookup(c->cs, c->ip);
         watch_table_begin(images_at((uint16_t)(psp + 0x10)), (uint16_t)(psp + 0x10));
         dmd_table_begin(images_at((uint16_t)(psp + 0x10)), (uint16_t)(psp + 0x10));
+        ssf_table_begin();
         if (fn) fn(c);
         else images_miss("exec", c->cs, c->ip);
         fprintf(stderr, "[dos] %s returned without exiting\n", name);
         last_exit_code = 0;
     }
     exec_jmp = prev;
+    ssf_table_end();
     watch_table_end();                 /* every way out of a table comes here */
     dmd_table_end();
     { void machine_unwound(void); machine_unwound(); }

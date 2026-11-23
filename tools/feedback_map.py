@@ -30,7 +30,7 @@ GEN = os.path.join(ROOT, 'work', 'gen')
 DATA = os.path.join(ROOT, 'original')
 OUT = os.path.join(ROOT, 'work', 'feedback')
 TABLES = 13
-VERSION = 3
+VERSION = 4
 MAX_BUMPERS = 6                 # E105-E107 and E118-E120
 RIM = 40                        # a small run this near a bumper is part of it
 
@@ -48,6 +48,42 @@ SLINGS_BELOW = 270              # on every table they sit just over the flippers
 # (inclusive). Features are numbered left to right, top first on a tie; the side
 # of a cabinet comes from where the colour is drawn. A table not listed sends
 # none of these events. See docs/cabinet-feedback.md.
+# SSF: the effects that are the board's own, by their slot in the table's
+# SFXn.PIN. Slots 0-6 are the same kind on every table (bumper, drop target,
+# slingshot, thud or kickback, flipper, the ball in the shooter lane, the
+# plunger); some tables have more. Award and jackpot calls stay on the front.
+BOARD_EFFECTS = list(range(7))
+BOARD_MORE = {'ep1': [0xB, 0x11]}          # its holes, its rubber posts
+
+
+def sound_driver(v):
+    """the Sound Blaster driver's voice setup, volume, stop and stop of a
+    class (AH: 1 effects, 2 music), the same for every table: SSF follows a
+    board effect through them"""
+    f = read_functions('sb')
+    for key, what, pattern in (('sfx_setup_fn', 'voice setup', r'cmp dword es:\[di\+0x2D\], 0xFFFFFFFF\n'),
+                               ('sfx_volume_fn', 'voice volume', r'^cmp al, 0xFF\n.*\n.*\nmov byte ds:\[bx\+0x862\], cl\n'),
+                               ('sfx_stop_fn', 'voice stop', r'\Acmp al, 0xFF\n(?:.*\n){0,3}mov byte ds:\[bx\+0x882\], 0x0\n'),
+                               ('sfx_stop_class_fn', 'stop of a class', r'cmp byte ds:\[bx\+0x882\], ah\n')):
+        hits = [n for n, (t, entered) in f.items() if re.search(pattern, t, re.M) and entered]
+        if len(hits) != 1:
+            raise Missing(f'sound driver {what}: found {len(hits)} times, not once')
+        v[key] = hits[0]
+
+
+def effects(f, v):
+    """the table's one way to play an effect: AL the effect, AH a pan nibble"""
+    hits = [n for n, (t, entered) in f.items()
+            if 'mov cx, 0x60\n' in t and 'mul cx\n' in t and 'shl cx, 0x4\n' in t and 'sub cx, 0x80\n' in t and entered]
+    if len(hits) != 1:
+        raise Missing(f'effect function: found {len(hits)} times, not once')
+    v['effect_fn'] = hits[0]
+    m = re.search(rf'mov ds, cx\ncmp byte ds:\[{N}\], 0x0\nje ', f[hits[0]][0])
+    if not m:
+        raise Missing('the effects switch the effect function asks first')
+    v['sfx_on'] = num(m.group(1))        # 0: SOUND FX OFF
+
+
 FEATURES = {
     'ep1': dict(                                       # Super Android
         zones=[
@@ -520,6 +556,8 @@ def scan(img):
     balls_lost(f, v)
     art_seg = collision_map(f, v)
     switches(f, v)
+    effects(f, v)
+    sound_driver(v)
 
     m = re.match(rf'push ds\n(?:.*\n){{0,3}}?mov ax, {N}\nmov ds, ax\n', f[v['main_fn']][0])
     if not m:
@@ -558,6 +596,7 @@ def text_of(img, r):
             continue
         out.append(f'{k} {x}' if k.endswith('_fn') else f'{k} {x:X}')
     out += [f'bumper {x} {y} {slot}' for x, y, slot in r['bumpers']]       # left to right: E105 on
+    out.append('board ' + ' '.join(f'{e:X}' for e in BOARD_EFFECTS + BOARD_MORE.get(img, [])))
     own = r['own']
     if own:
         layer, on_layer, tilted = own['gate']

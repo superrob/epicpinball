@@ -13,6 +13,7 @@
  * where the guest made it.
  */
 #include "machine.h"
+#include "ssf.h"
 
 static uint64_t rendered;             /* samples so far */
 
@@ -258,7 +259,12 @@ void audio_advance(uint64_t pit_ticks)
             if (r > 32767) r = 32767; if (r < -32768) r = -32768;
             buf[i * 2] = (int16_t)l; buf[i * 2 + 1] = (int16_t)r;
         }
-        host_audio(buf, n);
+        if (g_opt.ssf) {
+            static int16_t ex[2048 * 4];
+            ssf_render(ex, n);
+            if (g_opt.mute) memset(ex, 0, sizeof ex);
+            host_audio_ssf(buf, ex, n);
+        } else host_audio(buf, n);
         rendered += n;
     }
 }

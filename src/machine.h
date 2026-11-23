@@ -50,6 +50,7 @@ typedef struct {
     int stretch;              /* --stretch: with --cabinet, the playfield fills its display */
     int dmd;                  /* --dmd: a 128x32 DMD of the table in a window, its messages off the playfield */
     int dmd_device;           /* --dmd-device: the same on a real DMD, through dmd/'s helper */
+    int ssf;                  /* --ssf: 7.1, the board's sounds on the cabinet's exciters */
 } Options;
 extern Options g_opt;
 
@@ -127,5 +128,6 @@ void audio_shutdown(void);
 void host_init(void);
 void host_frame(void);                /* present + pump, at most once per refresh */
 void host_audio(const int16_t *stereo, int frames);
+void host_audio_ssf(const int16_t *front, const int16_t *exciters, int frames);   /* --ssf: + 4 exciters a frame */
 void host_shutdown(void);
 #define AUDIO_RATE 44100

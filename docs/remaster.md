@@ -79,6 +79,9 @@ game goes on drawing them when Enter hides its scoreboard, so this window
 stays live. It is black when no table is up. Drag it to move it, drag an edge
 to resize it; right-click is still the settings.
 
+For exciters, `--ssf` puts the board's sounds on them, placed on the table
+([ssf](ssf.md)).
+
 With a DMD (`--dmd` or `--dmd-device`, [dmd](dmd.md)) there is no scoreboard
 window: the DMD shows it, `--dmd` in a window of its own placed the same way
 (`dmd_window` in `[cabinet]`).
