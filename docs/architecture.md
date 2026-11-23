@@ -153,12 +153,14 @@ keyed by the EXE's size and FNV; no address is committed. `src/watch.c` reads
 a running table through three seams, none needing a re-lift:
 
 - `RECOMP_ENTER`, at the top of each lifted function (`src/lifted.h`): the
-  physics step, and the kicker with the touched pixel still in ES:BX. One
-  flag test when off. A generator that emits no `RECOMP_ENTER` makes the map
-  tool fail;
+  physics step; the kicker with the touched pixel still in ES:BX; the switch
+  handler with the switch's colour in AL; the message function with its text
+  in BX. One flag test when off. A generator that emits no `RECOMP_ENTER`
+  makes the map tool fail;
 - the memory write hook (`src/vga.c`): the stores that mean one thing. A hit
   is the kicker storing its strength, since it also turns back (tilt, a weak
   zone); a launch is the game zeroing the pull and then changing the velocity;
+  a hole kicks out when its hold timer reaches 0;
 - a sample in each `host_frame`, for the flippers.
 
 `src/feedback.h` is the interface: no CPU and no SDL, so another version of

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // epicpinball-dof - tells libdof which table is up and what happened on it.
 //
-//   epicpinball-dof --table epN [--bumpers LCR] [--save saves]
+//   epicpinball-dof --table epN [--bumpers LCR] [--sides "hole:LLCRR ..."] [--save saves]
 //   epicpinball-dof --table epN --test EVENT      that one event, for trying a row
 //
 // --bumpers is the table's bumpers from the left, the side of each: L, C or R.
-// The game passes it; it says which bumper events a made row puts where.
+// --sides is the same for the table's own holes, ramps, kickback and drop
+// targets. The game passes both; they say what a made row puts where.
 //   epicpinball-dof --all-off                     connect, switch everything off, leave
 //
 // The DOF files say what an event does (locate.h finds them), and the
@@ -63,6 +64,7 @@ bool g_all_off;
 volatile sig_atomic_t g_quit;
 std::atomic<bool> g_pico_found{false};
 std::string g_bumpers = "LCR";        // the table's bumpers' sides, from the left
+autorow::Sides g_sides;               // its own features', by their numbers
 std::atomic<int> g_unread{0};          // settings libdof could not read, and skips
 int g_unread_once;                      // in one reading of the files
 std::atomic<bool> g_show_unread{true};  // the game's own files: shown, not counted
@@ -165,7 +167,8 @@ private:
 
 int usage()
 {
-    say("usage: epicpinball-dof (--table epN [--bumpers LCR] [--test EVENT] | --all-off) [--save DIR]");
+    say("usage: epicpinball-dof (--table epN [--bumpers LCR] [--sides \"hole:LLCRR ramp:LR kickback:L target:LLL\"]"
+        " [--test EVENT] | --all-off) [--save DIR]");
     std::string names;
     for (auto *e : kEvent) names += std::string(" ") + e;
     say("events:" + names);
@@ -200,13 +203,18 @@ fs::path construct(const locate::Files &at, const fs::path &work, const std::str
     std::vector<fs::path> dirs{ at.rows };
     if (!at.table.empty()) dirs.push_back(at.base / locate::kDir);
     headers = false;
+    // libdof draws shapes from the DirectOutputShapes.xml beside its GlobalConfig, which is in at.rows,
+    // and the .png of the same name beside that: without either, a shape draws nothing
+    const bool shapes = fs::exists(at.rows / "DirectOutputShapes.xml", e) && fs::exists(at.rows / "DirectOutputShapes.png", e);
     for (auto &dir : dirs) {
         bool made = false, fires[kEvents] = {};
         for (auto &[number, path] : locate::ini_files(dir)) {
             const auto names = autorow::header_of(path.string());
             if (!names) continue;
             headers = true;
-            const autorow::Row row = autorow::build(*names, g_bumpers);
+            const autorow::Row row = autorow::build(*names, g_bumpers, g_sides, shapes);
+            if (!shapes && autorow::detail::named(*names, "back mx"))
+                say("no DirectOutputShapes.xml and .png in " + at.rows.string() + ": plain bands on the Back MX");
             for (auto &s : row.said) say(path.filename().string() + ": " + s);
             if (row.empty()) continue;
             for (int i = 0; i < kEvents; i++) fires[i] |= row.fires[i];
@@ -222,13 +230,10 @@ fs::path construct(const locate::Files &at, const fs::path &work, const std::str
             made = true;
         }
         if (made) {
-            std::string none;                            // over all the files: a strip's alone has no solenoids
-            for (int i = 0; i < kEvents; i++) {
-                bool table_has = true;                   // a bumper this table does not have is no loss
-                for (int b = (int)g_bumpers.size(); b < kBumpers; b++) table_has &= i != bumper_event(b);
-                if (table_has && !fires[i]) none += std::string(none.empty() ? "" : ", ") + kEvent[i];
-            }
-            if (!none.empty()) say("no device for " + none);
+            std::vector<int> none;                       // over all the files: a strip's alone has no solenoids
+            for (int i = 0; i < kEvents; i++)
+                if (!fires[i] && autorow::row_has(i, g_bumpers, g_sides)) none.push_back(i);
+            if (!none.empty()) say("no device for " + autorow::listed(none));
             return out / rom;
         }
         if (headers) {
@@ -319,7 +324,11 @@ int run(int argc, char **argv)
         else if (a == "--table" && v) table = argv[++i];
         else if (a == "--test" && v) test = argv[++i];
         else if (a == "--bumpers" && v) { g_bumpers = argv[++i]; layout = true; }
-        else return usage();
+        else if (a == "--sides" && v) {
+            const auto s = autorow::sides(argv[++i]);
+            if (!s) return usage();
+            g_sides = *s;
+        } else return usage();
     }
     if (g_bumpers.empty() || g_bumpers.size() > (size_t)kBumpers
         || g_bumpers.find_first_not_of("LCR") != std::string::npos) return usage();
@@ -330,6 +339,8 @@ int run(int argc, char **argv)
         if (rom.empty() || (!test.empty() && event_by_name(test) < 0)) return usage();
         if (!layout && !test.empty())
             say("bumpers LCR assumed: give the table's with --bumpers (docs/cabinet-feedback.md)");
+        if (g_sides.empty() && !test.empty() && event_by_name(test) >= kHole1)
+            say("no --sides: a made row has none of the table's own features (docs/cabinet-feedback.md)");
     }
 
     const pid_t parent = getppid();

@@ -33,6 +33,22 @@ All notable changes to this project are documented here. The format follows
   **no output limits**: they are the controller's. Tested on a real cabinet
   with a Pinscape Pico, an LED strip and a Config Tool export, on table 1
   only: `docs/cabinet-feedback.md`.
+- **Table 1's own feedback**, E121 to E145: its five holes kicking out and
+  holding a ball, the kickback, drop targets and their bank, rollovers, the
+  top lanes complete, the skill shot, three ramps, jackpots and awards. Read
+  from the switch handler every table has, what it keeps and the scoreboard's
+  messages; each counted as the game counts it. Made rows put kick-outs, the
+  kickback and the bank on the middle-row solenoids by side, jackpots on the
+  beacon, and colours on flashers. The other twelve tables can follow table by
+  table. Tested on a real cabinet.
+- **Made rows use the side MXs and DOF's shapes.** `Left MX` and `Right MX`
+  get slingshots, ramps, hole kick-outs and the kickback on their side, as
+  wipes up or down it, and the bottom of the right one breathes while a ball
+  waits, as the Config Tool's games use them; those features leave the
+  `Back MX`. With `DirectOutputShapes.xml` in the DOF folder, the `Back MX`
+  draws the Config Tool's flasher circles, a bumper's on its own spots, and
+  animated shapes for the awards, jackpots and the extra ball; without it,
+  bands as before. Tested on a real cabinet with all three MXs, on table 1.
 - **An analog plunger** (Linux): `[plunger]` in `controller.ini` names a
   joystick axis; the drawn plunger follows it and a release launches at the
   strength pulled to. `--joysticks` lists devices and axes. It is the first

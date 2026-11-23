@@ -134,6 +134,53 @@ epicpinball_ep07,E101 50,E102 50,E103 50 I32,E104 50 I32
 | E117 | `game_over` | a game ends | instant |
 | E118, E119, E120 | `bumper_4`, `bumper_5`, `bumper_6` | as `bumper_1`; only table 5 has more than three | instant |
 
+A table's own features come next, numbered left to right on the table, top first
+on a tie. **Only table 1 sends them so far** ([below](#table-1-super-android));
+on other tables they never fire.
+
+| Number | `--test` name | When | Signal |
+|---|---|---|---|
+| E121-E125 | `hole_1` … `hole_5` | that hole kicks its ball out (also when multiball takes it) | instant |
+| E126 | `ball_held` | a hole holds a ball | on while it does |
+| E127 | `kickback` | the kickback fires | instant |
+| E128-E130 | `target_1` … `target_3` | a drop target goes down | instant |
+| E131 | `targets_down` | the bank's last one goes down and the bank resets | instant |
+| E132-E137 | `rollover_1` … `rollover_6` | the ball rolls over it, every pass | instant |
+| E138 | `lanes_lit` | a set of lanes complete, lit by the ball | instant |
+| E139 | `skill_shot` | a skill shot | instant |
+| E140-E142 | `ramp_1` … `ramp_3` | a ramp made, as the game counts it | instant |
+| E143 | `jackpot` | a jackpot | instant |
+| E144 | `super_jackpot` | a bigger one: double, super | instant |
+| E145 | `award` | a mode or progress award the scoreboard announces | instant |
+
+#### Table 1 (Super Android)
+
+| Event | Is |
+|---|---|
+| `hole_1` | the test hole, top left |
+| `hole_2` | the left hole (android millions), on the left side |
+| `hole_3` | the power-up hole, centre |
+| `hole_4` | the physical-systems hole, right |
+| `hole_5` | the right hole, at the end of the centre ramp |
+| `kickback` | the left outlane |
+| `target_1` … `target_3` | the drop targets 1, 2, 3 on the left |
+| `rollover_1` | the star rollover, left of centre |
+| `rollover_2` | the left lane (its jackpot) |
+| `rollover_3` … `rollover_6` | the four top lanes, left to right; all four lit is `lanes_lit` |
+| `ramp_1`, `ramp_2`, `ramp_3` | the left, centre and right ramps. The centre one also kicks out of `hole_5` |
+| `jackpot` | JACKPOT |
+| `super_jackpot` | DOUBLE JACKPOT, SUPER JACKPOT |
+| `award` | POWER UP, FULL POWER, I.Q. UPGRADE, BUMPER VALUE, COMPUTER LINK, the physical systems, BASIC IO / AI / AI2 / DATABASE INSTALLED, ANDROID IS ACTIVATED, VIRUS FLUSHED OUT, ANDROID MILLIONS, each arm, leg, head and torso, and each LEVEL 1 test |
+
+They come from the game's own code: the switch handler it calls with the colour
+of the switch under the ball, what that code keeps (a hole's hold timer, the
+targets' flags, the lane lights, the ramp count) and the scoreboard messages.
+Holes, ramps, the left lane, the drop target bank and the lanes add up to the
+game's own counts (its bonus screen's TESTS, POWER UPS, PHYS. SYS. HOLES,
+RAMPS and LEFT LANES among them) over four hours of its demo. What the handler
+turns back is not sent either: tilted it handles only a few colours, and with
+the ball on a ramp's wire, over the top lanes, only the ramps' own.
+
 E105 to E107 meant the left, centre and right of the table until the per-bumper
 events came; on a table with three bumpers that is still what they are.
 
@@ -195,11 +242,14 @@ epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113/E117
 | `10 Bumper Middle Right`, `8 Bumper Right` | also `E108`: the launch |
 | `Launch Button` | `E114`: lit while a ball waits in the lane |
 | `Knocker` | `E113/E117`: an extra ball, and game over |
-| `Beacon` | `E113 2000` |
+| `10 Bumper Middle Left`, `Center`, `Right` | also the table's own solenoids on that side: hole kick-outs, the kickback, the drop target bank resetting. On table 1, Middle Left gets `E121/E122/E127/E131`, Center `E123`, Right `E108/E124/E125` |
+| `8 Bumper Left`, `Center`, `Right` | the same, where there is no `10 Bumper Middle` device on that side |
+| `Beacon` | `E113 2000`; on a table with features of its own, jackpots too: `E113 2000/E143 2000/E144 2000` |
 | `Shaker` | `E111 300 I32/E112 600 I32` |
 | `Start Button`, `Exit`, `Coin` | `ON` |
 | `RGB Flippers` | `ON White` |
 | `5 Flasher ...`, `3 Flasher ...`, `Back MX` | colours for events: [flashers](#flashers) |
+| `Left MX`, `Right MX` | slingshots, ramps, kick-outs and the kickback on their side; ball ready breathing at the bottom of the right one: [the side MXs](#the-side-mxs) |
 | everything else | `0` |
 
 - **`ZB Launch Ball` is always 0.** It is not a lamp: it switches a Pinscape's
@@ -207,9 +257,13 @@ epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113/E117
 - **Ball release has no device,** and drain, tilt, multiball, game start and
   game over reach a made row only through flashers (below): write a row if you
   want them on something else.
+- **Not in made rows:** single drop targets, rollovers and `ball_held`. They
+  are there for your own rows.
 - **The table's bumpers come from the game,** which tells the helper their
   sides when it starts it (`--bumpers LLCCRR` for table 5). A side the table
-  has no bumper on gets none.
+  has no bumper on gets none. So do its own features' sides, by where each is
+  drawn in thirds of the table (`--sides "hole:LLCRR ramp:LRR kickback:L
+  target:LLL"` for table 1).
 - **Only the header is read.** Intensities and times the Config Tool puts in
   other games' rows are not copied.
 - **The helper says** which file it used, how many outputs got something, and
@@ -228,12 +282,19 @@ cabinet, left to right:
 |---|---|
 | `5 Flasher Outside Left`, `Left`, `Center`, `Right`, `Outside Right` | one each |
 | `3 Flasher Left`, `Center`, `Right` | the outer two, the middle one, the outer two |
-| `Back MX` (an LED strip) | all five, each a fifth of its width |
+| `Back MX` (an LED strip) | all five: the Config Tool's flasher circles, or a fifth of its width each ([below](#shapes-on-the-back-mx)) |
 
 | Event | Spots | Effect |
 |---|---|---|
 | `multiball` E115 | all | white, blinking while it lasts |
 | a bumper | the spots on its side: left two, centre, right two | yellow, 80 ms |
+| a hole kicking out, the kickback | the spots on its side | orange, 120 ms |
+| a ramp made | the spots on its side | cyan, 150 ms |
+| `skill_shot` E139 | all | cyan, three flashes |
+| `award` E145 | all | orange, three flashes |
+| `lanes_lit` E138 | all | white, three flashes |
+| `jackpot` E143 | all | magenta, three flashes |
+| `super_jackpot` E144 | all | magenta, six flashes |
 | `knocker` E113 (extra ball) | all | white, three flashes |
 | `game_start` E116 | all | green, three flashes |
 | `game_over` E117 | all | blue, three flashes |
@@ -241,7 +302,10 @@ cabinet, left to right:
 | `tilt` E112 | all | red, 600 ms |
 
 Lower in the list draws over higher: a bumper's flash shows through the
-multiball blink, and a tilt covers everything. A flasher device's own effects
+multiball blink, and a tilt covers everything. The table's own rows are on
+table 1 only. A hole, the kickback and a ramp leave the `Back MX` when there
+is a side MX for their side ([below](#the-side-mxs)); flasher devices keep
+them. A flasher device's own effects
 in other games' rows are not used; `Strobe` stays 0. A device name with
 "flasher" in it that is none of these is left off, and the helper says so.
 
@@ -256,7 +320,54 @@ The names are the Config Tool's, as listed in the Pinscape build guide's
 in any case. The `8 Bumper` ones are taken from the guide alone. Of the
 flashers, the guide shows `5 Flasher Outside Left`; the other `5 Flasher` and
 the `3 Flasher` names follow its pattern and were not seen in an export.
-`Back MX` is from a real export.
+`Back MX`, `Left MX` and `Right MX` are from a real export.
+
+#### Shapes on the Back MX
+
+Where the DOF folder libdof reads has `DirectOutputShapes.xml` and
+`DirectOutputShapes.png` (a Config Tool export brings both), the `Back MX`
+draws its five spots as the Config Tool's own flasher circles: `SHPCircle3` at
+`AL0`, `AL20`, `AL40`, `AL60` and `AL80`, `AW19 AH100`, as its `[Variables
+DOF]` define `flshemulo` to `flshemuro`. The made file spells them out, since
+it carries no variables. The colours and times above stay; these change:
+
+| Event | On the Back MX |
+|---|---|
+| a bumper | its own circles: a side's bumpers share its spots from the left, so table 1's left bumper has the two left circles and table 5's have one each, but for the two in the centre |
+| `skill_shot` E139 | `SHPCirclePulse`, cyan, 600 ms, on all five |
+| `award` E145 | `SHPDiamondBoxPulse`, orange, 1 s, on all five |
+| `lanes_lit` E138 | `SHPFillLeftRight`, white, 600 ms, across the whole width |
+| `jackpot` E143 | `SHPRoundAndRound`, magenta, 1.2 s, on all five |
+| `super_jackpot` E144 | the same for 2.4 s, and the two strobe circles (`strblft`, `strbrgt`) flashing white six times |
+| `knocker` E113 (extra ball) | `SHPCrossPulse`, white, 900 ms, on all five |
+
+Without the shapes file and its `.png`, a shape draws nothing, so the `Back MX`
+gets the bands instead, and the helper says `no DirectOutputShapes.xml and .png
+in ...: plain bands on the Back MX`. A `ShapeDefinitionFilePattern` in your `GlobalConfig` is not
+looked at.
+
+#### The side MXs
+
+`Left MX` and `Right MX`, the LED strips down the sides, get what the Config
+Tool's own games put there, top (the back) to bottom (the player), lower in
+the list drawing over higher:
+
+| Event | MX | Effect |
+|---|---|---|
+| `ball_ready` E114 | right | the bottom 15% breathes yellow, dark to full every two seconds, while a ball waits: `AT85 AH15 F500 BLINK 2000` |
+| `sling_left` E103, `sling_right` E104 | its side | yellow, rising up the side: `M50 MAX50 ADU AS300` |
+| a hole kicking out, the kickback | its side | orange, down the side: `75 ADD AS300` |
+| a ramp made | its side | cyan, down the side: `75 ADD AS300` |
+
+A feature in the centre third of the table goes down both. On table 1 the
+left MX gets the test and left holes, the power-up hole, the kickback and the
+left ramp; the right MX the power-up hole, the physical-systems hole, the
+right hole and the centre and right ramps.
+
+The breathe is the launch-ball effect the Config Tool's games use, at the
+bottom of the right MX, slowed: measured on libdof 0.5.4, a fade takes about
+twice the time it is given, so their common `F500 BLINK 1000` only swings
+between dim and about two thirds. `RGB Undercab Complex MX` stays 0.
 
 ### 5. Try a row
 
@@ -268,7 +379,12 @@ dof/build/epicpinball-dof --table ep5 --bumpers LLCCRR --test bumper_4
 
 It sends that one event (a flipper or another level is held half a second),
 waits three seconds and switches off. `--bumpers` is the table's sides from the
-table [above](#the-bumpers); without it a made row assumes three, `LCR`.
+table [above](#the-bumpers); without it a made row assumes three, `LCR`. For
+table 1's own events, also give its features' sides:
+
+```sh
+dof/build/epicpinball-dof --table ep1 --bumpers LR --sides "hole:LLCRR ramp:LRR kickback:L target:LLL" --test hole_3
+```
 
 ### 6. Play
 
@@ -418,7 +534,9 @@ signatures are proven on GOG 1.01 only.
 
 On a real cabinet with a Pinscape Pico, on table 1: the outputs, from a
 Config Tool export with no Epic Pinball row (so from the row made from its
-header), the colours on its `Back MX` LED strip, and the analog plunger.
+header), table 1's own events, the colours and shapes on its `Back MX` LED
+strip, the effects on its `Left MX` and `Right MX` and the ball-ready breathe,
+and the analog plunger.
 
 Without hardware, in a sandbox with no devices:
 
@@ -432,6 +550,22 @@ Without hardware, in a sandbox with no devices:
   through the helper for every flasher event, and five flashers from the game
   on tables 1 and 5 (multiball and the extra ball did not come up there). On
   the real cabinet, the `Back MX` strip on table 1; no flasher devices;
+- the MXs in made rows, through the helper and libdof on ArtNet to a 40x4
+  `Back MX` and 40-LED `Left MX` and `Right MX` with the Config Tool's shapes
+  file: each wipe on its side and going its way, the ball-ready breathe from
+  dark to full on the right MX's bottom rows only, the bumpers' circles in
+  their spots, the animated shapes changing on all five, and bands without the
+  shapes file. From the game on table 1 with the real cabinet's file 30
+  header: every lit side pixel matched an event, the breathe on every ball,
+  and no hole or ramp on the `Back MX`. Then on the real cabinet;
+- table 1's own events against the game's own counts, over four hours of its
+  demo: every ramp, hole, left lane, drop target bank and set of lanes
+  matched, each switch fired where its feature is drawn. Jackpots, double and
+  super jackpots never came up, in the demo or in scripted play: they are read
+  from the same message function as the awards, which did. Every one of them,
+  through the helper to flashers, the middle-row devices and a beacon on
+  ArtNet; from the game, skill shot, lanes lit and a ramp. Then in play on
+  the real cabinet;
 - the plunger by scripted sensor (`--plunger-trace "ms:percent,..."`) on all
   13 tables, and by a virtual joystick through SDL. Its launch strengths are
   the keyboard's and so are the speeds the ball leaves with. A ball's later

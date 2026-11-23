@@ -5,6 +5,16 @@
 #include "machine.h"
 
 #define WATCH_BUMPERS 6              /* E105-E107, E118-E120 */
+#define WATCH_ZONES 24
+#define WATCH_TIMERS 8
+#define WATCH_TARGETS 3
+#define WATCH_MSGS 64
+
+/* A table's own features (FEATURES in tools/feedback_map.py) */
+enum { WZ_HOLE, WZ_KICKBACK, WZ_ROLLOVER, WZ_RAMP, WZ_KINDS };
+typedef struct { int kind, n, colour, x0, y0, x1, y1; char side; } WatchZone;  /* the scanned ball's x, y */
+typedef struct { uint16_t at; int n; char side; } WatchTarget;
+typedef struct { uint16_t at; int event; } WatchMsg;
 
 /* One table, from work/feedback/epN.map (tools/feedback_map.py). Offsets are
  * into its data segment, or its code segment for the key flags. */
@@ -18,14 +28,27 @@ typedef struct {
     uint16_t kick, weak_y, sling_line, map;
     uint16_t pull, pull_inc, pull_max, pull_shift, ctrl, space;
     uint16_t lane_off, lane_x, lane_y, over_pull;
-    char step_fn[24], kicker_fn[24];
+    uint16_t scan_x, scan_y;         /* the ball the switch handler is looking at */
+    char step_fn[24], kicker_fn[24], switch_fn[24], msg_fn[24];
     int nbumpers;
     struct { int x, y, slot; } bumper[WATCH_BUMPERS];        /* left to right; slot: its side, 0-2 */
     char layout[WATCH_BUMPERS + 1];                         /* the sides, "LCR" */
+    /* the table's own: switch colours where the ball is, and stores */
+    int nzones, ntimers, ntargets, nmsgs, nlanes;
+    WatchZone zone[WATCH_ZONES];
+    uint16_t timer[WATCH_TIMERS];                           /* holes' hold timers */
+    WatchTarget target[WATCH_TARGETS];                      /* drop target flags */
+    uint16_t lanes, ramps;                                  /* lane lights, ramp counter; 0: none */
+    uint16_t layer;                  /* 1 while the ball is on the ramps; 0: no gate known */
+    int non_layer, ntilt_pass;
+    uint8_t on_layer[8], tilt_pass[8];                      /* the colours handled there, and tilted */
+    WatchMsg msg[WATCH_MSGS];        /* texts the message function shows */
+    char sides[96];                  /* for made rows: "hole:LLCRR ramp:LRR kickback:L target:LLL" */
 } WatchMap;
 
 int  watch_map_parse(const char *text, WatchMap *m, const char **why);
 int  watch_kick_event(const WatchMap *m, int x, int y);      /* which FbEvent a contact there is */
+int  watch_zone(const WatchMap *m, int kind, int colour, int x, int y);   /* its index, or -1 */
 
 void watch_wanted(void);             /* something needs tables watched: before the game starts */
 void watch_table_begin(const LiftedImage *img, uint16_t load_seg);

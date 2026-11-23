@@ -12,6 +12,11 @@ inline constexpr const char *kEvent[] = {
     "launch", "ball_release", "drain", "nudge", "tilt", "knocker",
     "ball_ready", "multiball", "game_start", "game_over",
     "bumper_4", "bumper_5", "bumper_6",
+    "hole_1", "hole_2", "hole_3", "hole_4", "hole_5", "ball_held", "kickback",
+    "target_1", "target_2", "target_3", "targets_down",
+    "rollover_1", "rollover_2", "rollover_3", "rollover_4", "rollover_5", "rollover_6",
+    "lanes_lit", "skill_shot", "ramp_1", "ramp_2", "ramp_3",
+    "jackpot", "super_jackpot", "award",
 };
 inline constexpr int kEvents = sizeof kEvent / sizeof *kEvent;
 inline constexpr int kFirstE = 101;
@@ -19,11 +24,19 @@ enum : int {
     kFlipperLeft, kFlipperRight, kSlingLeft, kSlingRight, kBumper1, kBumper2, kBumper3,
     kLaunch, kBallRelease, kDrain, kNudge, kTilt, kKnocker,
     kBallReady, kMultiball, kGameStart, kGameOver, kBumper4, kBumper5, kBumper6,
+    kHole1, kHole2, kHole3, kHole4, kHole5, kBallHeld, kKickback,
+    kTarget1, kTarget2, kTarget3, kTargetsDown,
+    kRollover1, kRollover2, kRollover3, kRollover4, kRollover5, kRollover6,
+    kLanesLit, kSkillShot, kRamp1, kRamp2, kRamp3, kJackpot, kSuperJackpot, kAward,
 };
-inline constexpr int kBumpers = 6;
+inline constexpr int kBumpers = 6, kHoles = 5, kTargets = 3, kRollovers = 6, kRamps = 3;
+static_assert(sizeof kEvent / sizeof *kEvent == kAward + 1, "a name for every event");
 
 // Levels: on while it lasts. The rest only happen.
-inline constexpr bool is_level(int e) { return e == kFlipperLeft || e == kFlipperRight || e == kBallReady || e == kMultiball; }
+inline constexpr bool is_level(int e)
+{
+    return e == kFlipperLeft || e == kFlipperRight || e == kBallReady || e == kMultiball || e == kBallHeld;
+}
 
 // A table's n-th bumper from the left, 0 on
 inline constexpr int bumper_event(int i) { return i < 3 ? kBumper1 + i : kBumper4 + i - 3; }

@@ -38,9 +38,11 @@
   on table 1, with the scoreboard placed on the second display, and is tested
   on virtual displays. wlroots compositors and SDL2 proper (not sdl2-compat)
   are untried.
-- **More cabinet feedback**: scoops, kickbacks, targets, gates, spinners,
-  lamps and LED strips, accelerometer nudge, general joystick buttons,
-  Windows, and an entry in the DOF Config Tool's database.
+- **More cabinet feedback**: each table's own holes, kickbacks, targets,
+  lanes, ramps and awards, as table 1 has them (`FEATURES` in
+  `tools/feedback_map.py`; every table has the same switch handler), gates,
+  spinners, lamps, accelerometer nudge, general joystick buttons, Windows, and
+  an entry in the DOF Config Tool's database.
 - **African Safari's overrun**: a ball reaching x = -1 overruns a sprite
   buffer into the timer chain. Feedback stops for that table when it happens;
   whether the DOS original does the same is not known.

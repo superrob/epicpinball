@@ -125,8 +125,8 @@ void flashers()
     assert(t.cells[2] == all + "E106 Yellow 80/" + end + "E112 Red 600");
 
     // a strip: the same, as areas of it
-    const auto m = autorow::build({ "Back MX", "", "", "Left MX", "", "" }, "LCR");
-    assert(m.cells.size() == 1 && m.outputs == 3);                     // its own three; Left MX is not a flasher
+    const auto m = autorow::build({ "Back MX", "", "", "Undercab MX", "", "" }, "LCR");
+    assert(m.cells.size() == 1 && m.outputs == 3);                     // its own three; the undercab is not a flasher
     assert(m.cells[0] == "E115 White Blink 200 AL0 AT0 AW100 AH100/E105 Yellow 80 AL0 AT0 AW40 AH100/"
                          "E106 Yellow 80 AL40 AT0 AW20 AH100/E107 Yellow 80 AL60 AT0 AW40 AH100/"
                          "E113 White 450 3 AL0 AT0 AW100 AH100/E116 Lime 450 3 AL0 AT0 AW100 AH100/"
@@ -136,15 +136,129 @@ void flashers()
     const auto u = autorow::build({ "5 Flashers Center", "", "", "Flasher", "Knocker" });
     assert(u.said.size() == 2 && autorow::line("t", u) == "t,0,0,0,0,E113/E117");
     const std::string f = autorow::file("x", r, "y");
-    for (const char *c : { "White=", "Yellow=", "Red=", "Lime=", "Blue=" }) assert(f.find(c) != std::string::npos);
+    for (const char *c : { "White=", "Yellow=", "Red=", "Lime=", "Blue=", "Orange=", "Cyan=", "Magenta=" })
+        assert(f.find(c) != std::string::npos);
     assert(f.find('@') == std::string::npos && f.find("SHP") == std::string::npos);
+}
+
+void features()
+{
+    // table 1: holes, ramps, a kickback and a bank of targets, each with its side
+    const auto one = autorow::sides("hole:LLCRR ramp:LRR kickback:L target:LLL");
+    assert(one && one->hole == "LLCRR" && one->ramp == "LRR" && one->kickback == "L" && one->bank() == 'L');
+    assert(autorow::sides("") && autorow::sides("")->empty());
+    for (auto bad : { "hole:LLCRRL", "hole:X", "rubber:L", "hole:L hole:R", "hole:", "hole:L  ramp:R", "hole",
+                      "kickback:LR", "ramp:LRRL", "target:LLLL", "hole:l" })
+        assert(!autorow::sides(bad));
+    assert(autorow::sides("target:LRR")->bank() == 'R' && autorow::sides("target:LCR")->bank() == 'L');
+
+    // their solenoids: the middle row on their side, after the bumpers there and the launch
+    const auto made = [&](const Names &n, const std::string &b) { return autorow::line("t", autorow::build(n, b, *one)); };
+    const Names ten = { "10 Bumper Back Left", "10 Bumper Back Center", "10 Bumper Back Right",
+                        "10 Bumper Middle Left", "10 Bumper Middle Center", "10 Bumper Middle Right" };
+    assert(made(ten, "LR") == "t,E105,0,E106,E121/E122/E127/E131,E123,E108/E124/E125");
+    const Names eight = { "8 Bumper Left", "8 Bumper Center", "8 Bumper Right", "8 Bumper Back" };
+    assert(made(eight, "LR") == "t,E105/E121/E122/E127/E131,E123,E108/E106/E124/E125");
+    assert(made({ "10 Bumper Back Left", "10 Bumper Back Right" }, "LR") == "t,E105,E106");     // nowhere for them
+    assert(row(ten, "LR") == "t,E105,0,E106,0,0,E108");                                   // no features: as before
+    assert(made({ "Beacon" }, "LR") == "t,E113 2000/E143 2000/E144 2000" && row({ "Beacon" }) == "t,E113 2000");
+
+    // flashers: kick-outs and ramps on their side, the awards everywhere
+    const Names five = { "5 Flasher Outside Left", "", "", "5 Flasher Left", "", "", "5 Flasher Center", "", "",
+                         "5 Flasher Right", "", "", "5 Flasher Outside Right", "", "" };
+    const auto r = autorow::build(five, "LR", *one);
+    const std::string all = "E115 White Blink 200/",
+                      awards = "E139 Cyan 450 3/E145 Orange 450 3/E138 White 450 3/E143 Magenta 450 3/E144 Magenta 900 6/",
+                      end = "E113 White 450 3/E116 Lime 450 3/E117 Blue 450 3/";
+    assert(r.cells[0] == all + "E105 Yellow 80/E121 Orange 120/E122 Orange 120/E127 Orange 120/E140 Cyan 150/" + awards + end
+                         + "E112 Red 600");
+    assert(r.cells[2] == all + "E123 Orange 120/" + awards + end + "E110 Red 300/E112 Red 600");
+    assert(r.cells[4] == all + "E106 Yellow 80/E124 Orange 120/E125 Orange 120/E141 Cyan 150/E142 Cyan 150/" + awards + end
+                         + "E112 Red 600");
+    for (int e : { kHole1, kHole5, kKickback, kTargetsDown, kRamp3, kJackpot, kSuperJackpot, kAward, kSkillShot, kLanesLit })
+        assert(autorow::build(five, "LR", *one).fires[e] || e == kTargetsDown);
+    assert(autorow::build(ten, "LR", *one).fires[kTargetsDown]);
+
+    // the "no device for" line: what this table has and a made row could carry, runs as one
+    using autorow::row_has;
+    assert(row_has(kHole5, "LR", *one) && !row_has(kHole5, "LR", *autorow::sides("hole:LC")));
+    assert(!row_has(kRollover1, "LR", *one) && !row_has(kTarget1, "LR", *one) && !row_has(kBallHeld, "LR", *one));
+    assert(row_has(kJackpot, "LR", *one) && !row_has(kJackpot, "LR", {}) && !row_has(kKickback, "LR", {}));
+    assert(!row_has(kBumper3, "LR", {}) && row_has(kBallRelease, "LR", {}));
+    assert(autorow::listed({ kBallRelease, kNudge, kBallReady }) == "ball_release, nudge, ball_ready");
+    assert(autorow::listed({ kBumper1, kBumper2, kBumper3, kBumper4, kHole1, kHole2, kHole3, kHole4, kHole5, kJackpot })
+           == "bumper_1-3, bumper_4, hole_1-5, jackpot");
+    assert(autorow::listed({ kRamp1, kRamp3 }) == "ramp_1, ramp_3");
+}
+
+void mx()
+{
+    const auto one = *autorow::sides("hole:LLCRR ramp:LRR kickback:L target:LLL");
+    const Names mxs = { "Back MX", "", "", "Left MX", "", "", "Right MX", "", "", "RGB Undercab Complex MX", "", "" };
+
+    // the side MXs: ball ready breathing at the bottom of the right one, the
+    // slings rising, kick-outs and ramps down their side; centre on both
+    const auto r = autorow::build(mxs, "LR", one);
+    assert(r.cells.size() == 3 && r.outputs == 9 && r.width == 12 && r.said.empty());
+    const std::string sling = " Yellow M50 MAX50 AT0 AH100 ADU AS300", out = " Orange 75 AT0 AH100 ADD AS300",
+                      ramp = " Cyan 75 AT0 AH100 ADD AS300";
+    assert(r.cells[1] == "E103" + sling + "/E121" + out + "/E122" + out + "/E123" + out + "/E127" + out + "/E140" + ramp);
+    assert(r.cells[2] == "E114 Yellow AL0 AW100 AT85 AH15 F500 BLINK 2000/E104" + sling + "/E123" + out + "/E124" + out
+                         + "/E125" + out + "/E141" + ramp + "/E142" + ramp);
+    for (int e : { kBallReady, kSlingLeft, kSlingRight, kHole3, kKickback, kRamp2 }) assert(r.fires[e]);
+    // which leave the Back MX: all of them, so it keeps no hole, kickback or ramp
+    for (const char *gone : { "E121", "E123", "E125", "E127", "E140", "E142" })
+        assert(r.cells[0].find(gone) == std::string::npos);
+    // no table features: slings and ball ready only
+    assert(row({ "Left MX", "", "", "Right MX", "", "" }) == "t,E103" + sling + ",E114 Yellow AL0 AW100 AT85 AH15 F500 BLINK 2000/E104" + sling);
+    // with only a left MX, the right side's stay on the Back MX, the centre hole goes left
+    const auto l = autorow::build({ "Back MX", "", "", "Left MX", "", "" }, "LR", one);
+    assert(l.cells[1] == "E103" + sling + "/E121" + out + "/E122" + out + "/E123" + out + "/E127" + out + "/E140" + ramp);
+    assert(l.cells[0].find("E121") == std::string::npos && l.cells[0].find("E123") == std::string::npos
+           && l.cells[0].find("E124 Orange 120 AL60 AT0 AW40 AH100") != std::string::npos
+           && l.cells[0].find("E142 Cyan 150 AL60 AT0 AW40 AH100") != std::string::npos);
+    // a Back MX alone keeps them all, as before
+    const auto b = autorow::build({ "Back MX", "", "" }, "LR", one);
+    assert(b.cells[0].find("E121 Orange 120 AL0 AT0 AW40 AH100") != std::string::npos
+           && b.cells[0].find("E140 Cyan 150 AL0 AT0 AW40 AH100") != std::string::npos);
+
+    // shapes: the Config Tool's flasher circles, a bumper's on its own spots
+    using autorow::detail::bumper_spots;
+    assert(bumper_spots("LR", 0) == std::vector<int>({ 0, 1 }) && bumper_spots("LR", 1) == std::vector<int>({ 3, 4 }));
+    assert(bumper_spots("LLCCRR", 0) == std::vector<int>{ 0 } && bumper_spots("LLCCRR", 1) == std::vector<int>{ 1 });
+    assert(bumper_spots("LLCCRR", 2) == std::vector<int>{ 2 } && bumper_spots("LLCCRR", 3) == std::vector<int>{ 2 });
+    assert(bumper_spots("LLLR", 0) == std::vector<int>{ 0 } && bumper_spots("LLLR", 1) == std::vector<int>{ 0 }
+           && bumper_spots("LLLR", 2) == std::vector<int>{ 1 } && bumper_spots("LCR", 1) == std::vector<int>{ 2 });
+    const auto s = autorow::build(mxs, "LLCCRR", one, true);
+    const std::string &c = s.cells[0];
+    const auto has = [&](const std::string &x) { return c.find(x) != std::string::npos; };
+    assert(c.starts_with("E115 White Blink 200 AL0 AT0 AW19 AH100 SHPCircle3/E115 White Blink 200 AL20 AT0 AW19 AH100 SHPCircle3/"));
+    assert(has("/E105 Yellow 80 AL0 AT0 AW19 AH100 SHPCircle3/E106 Yellow 80 AL20 AT0 AW19 AH100 SHPCircle3/"
+               "E107 Yellow 80 AL40 AT0 AW19 AH100 SHPCircle3/E118 Yellow 80 AL40 AT0 AW19 AH100 SHPCircle3/"
+               "E119 Yellow 80 AL60 AT0 AW19 AH100 SHPCircle3/E120 Yellow 80 AL80 AT0 AW19 AH100 SHPCircle3/"));
+    assert(has("/E139 Cyan 600 AL80 AT0 AW19 AH100 SHPCirclePulse/") && has("/E145 Orange 1000 AL40 AT0 AW19 AH100 SHPDiamondBoxPulse/"));
+    assert(has("/E138 White 600 AL0 AT0 AW100 AH100 SHPFillLeftRight/") && has("/E143 Magenta 1200 AL0 AT0 AW19 AH100 SHPRoundAndRound/"));
+    assert(has("/E144 Magenta 2400 AL80 AT0 AW19 AH100 SHPRoundAndRound/E144 White 900 6 AL0 AT0 AW9 AH30 SHPCircle3/"
+               "E144 White 900 6 AL91 AT0 AW9 AH30 SHPCircle3/E113 White 900 AL0 AT0 AW19 AH100 SHPCrossPulse/"));
+    assert(has("/E110 Red 300 AL40 AT0 AW19 AH100 SHPCircle3/E112 Red 600 AL0 AT0 AW19 AH100 SHPCircle3/"));
+    assert(c.ends_with("/E112 Red 600 AL80 AT0 AW19 AH100 SHPCircle3"));
+    assert(!has("E121") && !has("E140") && !has("Blink 200 AL0 AT0 AW100"));
+    // no features: no awards, the extra ball still a shape; shapes never reach other devices
+    const auto p = autorow::build({ "Back MX", "", "", "5 Flasher Center", "", "", "Right MX", "", "" }, "LR", {}, true);
+    assert(p.cells[0].find("E139") == std::string::npos && p.cells[0].find("E113 White 900 AL40 AT0 AW19 AH100 SHPCrossPulse") != std::string::npos);
+    assert(p.cells[1].find("SHP") == std::string::npos && p.cells[2].find("SHP") == std::string::npos);
+    assert(p.cells[1] == autorow::build({ "5 Flasher Center", "", "" }, "LR").cells[0]);
+    const std::string f = autorow::file("x", s, "y");
+    for (const char *k : { "White=", "Yellow=", "Red=", "Lime=", "Blue=", "Orange=", "Cyan=", "Magenta=" })
+        assert(f.find(k) != std::string::npos);
+    assert(f.find('@') == std::string::npos);
 }
 
 void never()
 {
     // the ZB launch output turns a Pinscape plunger into a launch button
     for (auto n : { "ZB Launch Ball", "zb launch ball", "Authentic Launch Ball", "Extra Ball",
-                    "Custom Output 1", "Hellball Motor", "Left MX", "Strobe", "", "Rom" })
+                    "Custom Output 1", "Hellball Motor", "RGB Undercab Complex MX", "Strobe", "", "Rom" })
         assert(autorow::build({ n }).empty());
     assert(autorow::build({}).empty());
 }
@@ -169,6 +283,8 @@ int main()
     bumpers();
     lights();
     flashers();
+    features();
+    mx();
     never();
     file();
     std::puts("autorow_test: ok");

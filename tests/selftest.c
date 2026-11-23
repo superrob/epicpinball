@@ -44,7 +44,8 @@ void host_audio(const int16_t *s, int frames)
 }
 void host_frame(void) {}
 void host_backtrace(void) {}
-uint64_t pit_now(void) { return 0; }
+static uint64_t pit_at;                                   /* moved by the feedback tests */
+uint64_t pit_now(void) { return pit_at; }
 static uint64_t now_us;
 uint64_t emu_us(void) { return now_us; }
 void machine_port_wait(unsigned us) { (void)us; }
@@ -313,13 +314,20 @@ static void test_images(void)
 /* ---- cabinet feedback and the plunger ---- */
 
 static const char k_map[] =
-    "epicpinball-feedback 2\nimage ep1 16 69691905\n"
+    "epicpinball-feedback 3\nimage ep1 16 69691905\n"
     "ds 10\ncs 2000\nactive 100\nx 110\ny 120\nvx 130\nvy 140\nslots 5\n"
     "flip_l 150\nflip_r 152\nup_l 154\nup_r 155\ntilt 160\nmeter 161\ncooldown 162\ndemo 163\n"
     "extra 164\nover 165\ncount 166\ndrain_y 18F\nkick 167\nweak_y 180\nsling_line C7\nmap 170\n"
     "pull 180\npull_inc C\npull_max 2C4\npull_shift 5\nctrl 297\nspace 296\n"
-    "lane_off 0\nlane_x 118\nlane_y DC\nover_pull 0\n"
-    "step_fn ep1_step\nkicker_fn ep1_kick\nbumper 100 60 0\nbumper 200 60 2\nend\n";
+    "lane_off 0\nlane_x 118\nlane_y DC\nover_pull 0\nscan_x 190\nscan_y 192\n"
+    "step_fn ep1_step\nkicker_fn ep1_kick\nswitch_fn ep1_sw\nbumper 100 60 0\nbumper 200 60 2\n"
+    "msg_fn ep1_msg\nlayer 240\non_layer F9 F8 F1\ntilt_pass F0 F6\n"
+    "zone hole 1 F5 0 0 319 399 L\nzone hole 2 F6 0 0 219 399 C\nzone hole 3 F6 220 0 319 399 R\n"
+    "zone kickback 1 F8 0 321 50 399 L\n"
+    "zone rollover 1 FA 0 0 179 399 C\nzone rollover 2 FA 180 0 319 399 R\n"
+    "zone ramp 1 F9 0 0 74 399 L\nzone ramp 2 F6 220 0 319 399 R\n"
+    "timer 200\ntimer 201\ntarget 210 1 L\ntarget 211 2 L\ntarget 212 3 L\nlanes 220 4\nramps 230\n"
+    "msg 300 jackpot\nmsg 310 award\nend\n";
 
 static void test_feedback_map(void)
 {
@@ -330,6 +338,11 @@ static void test_feedback_map(void)
     assert(watch_map_parse(k_map, &m, &why));
     assert(!strcmp(m.name, "ep1") && m.size == 16 && m.fnv == 0x69691905u && m.pull_max == 708 && m.nbumpers == 2);
     assert(!strcmp(m.layout, "LR"));
+    /* a table's own features: the zone a switch is, and every side for made rows */
+    assert(!strcmp(m.sides, "hole:LCR ramp:LR kickback:L target:LLL"));
+    assert(watch_zone(&m, WZ_HOLE, 0xF6, 219, 50) == 1 && watch_zone(&m, WZ_HOLE, 0xF6, 220, 50) == 2);
+    assert(watch_zone(&m, WZ_RAMP, 0xF6, 220, 50) == 7 && watch_zone(&m, WZ_RAMP, 0xF6, 219, 50) < 0);
+    assert(watch_zone(&m, WZ_KICKBACK, 0xF8, 30, 320) < 0 && watch_zone(&m, WZ_KICKBACK, 0xF8, 30, 321) == 3);
     /* each bumper its own event, left to right; slings by side */
     assert(watch_kick_event(&m, 90, 70) == FB_BUMPER_1 && watch_kick_event(&m, 210, 70) == FB_BUMPER_2);
     assert(watch_kick_event(&m, 40, 300) == FB_SLING_LEFT && watch_kick_event(&m, 280, 300) == FB_SLING_RIGHT);
@@ -351,7 +364,7 @@ static void test_feedback_map(void)
         assert(!watch_map_parse(cut, &m, &why));
     }
     memcpy(cut, k_map, sizeof k_map);
-    strstr(cut, "feedback 2")[9] = '1';                   /* another version */
+    strstr(cut, "feedback 3")[9] = '2';                   /* another version */
     assert(!watch_map_parse(cut, &m, &why));
     memcpy(cut, k_map, sizeof k_map);
     strstr(cut, "bumper 200")[7] = '0';                   /* not left to right */
@@ -359,10 +372,25 @@ static void test_feedback_map(void)
     memcpy(cut, k_map, sizeof k_map);
     strstr(cut, "pull 180")[0] = 'q';                     /* a key it does not know */
     assert(!watch_map_parse(cut, &m, &why));
+    memcpy(cut, k_map, sizeof k_map);
+    strstr(cut, "hole 3 F6 220 0 319 399 R")[5] = '7';    /* more holes than there are events */
+    assert(!watch_map_parse(cut, &m, &why));
+    memcpy(cut, k_map, sizeof k_map);
+    strstr(cut, "ramp 2 F6 220")[5] = '3';                /* a number left out */
+    assert(!watch_map_parse(cut, &m, &why));
+    memcpy(cut, k_map, sizeof k_map);
+    strstr(cut, "msg 310 award")[8] = 'b';                /* not a message's event */
+    assert(!watch_map_parse(cut, &m, &why));
+    memcpy(cut, k_map, sizeof k_map);
+    strstr(cut, "layer 240")[0] = 'q';                    /* zones need the handler's gate */
+    assert(!watch_map_parse(cut, &m, &why));
+    memcpy(cut, k_map, sizeof k_map);
+    strstr(cut, "on_layer F9")[9] = 'X';                  /* a colour it cannot read */
+    assert(!watch_map_parse(cut, &m, &why));
 }
 
 static int seen[FB_OUTPUTS];
-static void seen_table(const char *name, const char *bumpers) { (void)name; (void)bumpers; }
+static void seen_table(const char *name, const char *bumpers, const char *sides) { (void)name; (void)bumpers; (void)sides; }
 static int level[FB_OUTPUTS];
 static void seen_event(FbEvent e, int on) { seen[e] += on; level[e] = on; }
 static void seen_off(void) { }
@@ -433,7 +461,110 @@ static void test_watch(void)
     BALL(1, 240, 200, 0); watch_enter(&g_cpu, "ep1_step");        /* one drains */
     assert(seen[FB_MULTIBALL] == 1 && !level[FB_MULTIBALL]);
     #undef BALL
+
+    /* a table's own: a switch is the colour in AL where the scanned ball is */
+    #define AT(X, Y) (ds[m.scan_x] = (uint8_t)(X), ds[m.scan_x + 1] = (uint8_t)((X) >> 8), \
+                      ds[m.scan_y] = (uint8_t)(Y), ds[m.scan_y + 1] = (uint8_t)((Y) >> 8))
+    #define SWITCH(C, X, Y) (AT(X, Y), g_cpu.al = (C), watch_enter(&g_cpu, "ep1_sw"))
+    pit_at = 0;
+    SWITCH(0xFA, 100, 30);                                /* rolled over: once per pass */
+    assert(seen[FB_ROLLOVER_1] == 1 && !seen[FB_ROLLOVER_2]);
+    pit_at += (uint64_t)(PIT_HZ / 1000 * 75);             /* the game's own latch: handled again */
+    SWITCH(0xFA, 101, 31);
+    assert(seen[FB_ROLLOVER_1] == 1);
+    pit_at += (uint64_t)(PIT_HZ / 1000 * 400);            /* left it, and back */
+    SWITCH(0xFA, 101, 31);
+    assert(seen[FB_ROLLOVER_1] == 2);
+    SWITCH(0xFA, 200, 31);
+    assert(seen[FB_ROLLOVER_2] == 1);
+    SWITCH(0xF8, 30, 300);                                /* the same colour, not the kickback's place */
+    assert(!seen[FB_KICKBACK]);
+    SWITCH(0xF8, 30, 390);
+    assert(seen[FB_KICKBACK] == 1);
+
+    /* the handler's own gate: tilted it handles only F0 and F6, and with the
+     * ball on the ramps only F9, F8 and F1. What it turns back is not felt */
+    pit_at += (uint64_t)(PIT_HZ / 1000 * 400);
+    ds[m.tilt] = 1;
+    SWITCH(0xF8, 30, 390);
+    SWITCH(0xFA, 100, 30);
+    assert(seen[FB_KICKBACK] == 1 && seen[FB_ROLLOVER_1] == 2);
+    ds[m.tilt] = 0;
+    ds[0x240] = 1;                                        /* on a ramp's wire, over a lane */
+    SWITCH(0xFA, 100, 30);
+    assert(seen[FB_ROLLOVER_1] == 2);
+    SWITCH(0xF8, 30, 390);                                /* F8 is handled there */
+    assert(seen[FB_KICKBACK] == 2);
+    ds[0x240] = 0;
+
+    /* holes: caught by the switch the ball is on; kicked out at the timer's end.
+     * Two holes share timer 200, as table 1's power-up and left holes do */
+    const uint32_t t0 = g_watch_ds + 0x200, t1 = g_watch_ds + 0x201;
+    SWITCH(0xF6, 100, 150);
+    store8(t0, 0x32);
+    watch_enter(&g_cpu, "ep1_step");
+    assert(level[FB_BALL_HELD] && seen[FB_BALL_HELD] == 1);
+    for (int v = 0x31; v > 0; v--) { SWITCH(0xF6, 100, 150); store8(t0, (uint8_t)v); }
+    assert(!seen[FB_HOLE_2]);
+    SWITCH(0xF6, 100, 150);
+    store8(t0, 0);
+    watch_enter(&g_cpu, "ep1_step");
+    assert(seen[FB_HOLE_2] == 1 && !seen[FB_HOLE_3] && !level[FB_BALL_HELD]);
+    SWITCH(0xF6, 250, 150);                               /* the other hole on that colour, which also counts a ramp */
+    store8(t1, 0x50);
+    store8(g_watch_ds + 0x230, 1);
+    assert(seen[FB_RAMP_2] == 1 && !seen[FB_RAMP_1]);
+    watch_enter(&g_cpu, "ep1_step");                      /* a new step: no switch yet */
+    store8(t1, 0);                                        /* let go elsewhere (multiball starting) */
+    assert(seen[FB_HOLE_3] == 1);
+    store8(t0, 9); store8(t0, 0);                         /* set without a hole's switch: no hole known */
+    assert(seen[FB_HOLE_1] == 0 && seen[FB_HOLE_2] == 1);
+    store8(g_watch_ds + 0x230, 2);                        /* a count with no ramp's switch */
+    SWITCH(0xF9, 40, 60);
+    store8(g_watch_ds + 0x230, 0);                        /* reset at a new ball */
+    store8(g_watch_ds + 0x230, 1);
+    assert(seen[FB_RAMP_1] == 1 && seen[FB_RAMP_2] == 1);
+
+    /* drop targets: each down, then the bank resetting; lanes: all lit, then out */
+    const uint32_t tg = g_watch_ds + 0x210, ln = g_watch_ds + 0x220;
+    SWITCH(0xF2, 49, 220);
+    store8(tg + 1, 1);
+    store8(tg + 1, 1);                                    /* already down */
+    store8(tg, 1);
+    assert(seen[FB_TARGET_2] == 1 && seen[FB_TARGET_1] == 1 && !seen[FB_TARGETS_DOWN]);
+    store8(tg + 2, 1);
+    store8(tg, 0); store8(tg + 1, 0); store8(tg + 2, 0);
+    assert(seen[FB_TARGET_3] == 1 && seen[FB_TARGETS_DOWN] == 1);
+    for (int i = 0; i < 4; i++) ds[0x220 + i] = 2;
+    store8(ln + 1, 1); store8(ln + 2, 1); store8(ln + 3, 1);
+    store8(ln, 2); store8(ln, 1);                         /* the lanes changed by a flipper */
+    assert(!seen[FB_LANES_LIT]);
+    store8(ln + 1, 1);                                    /* the last one... */
+    store8(ln, 2); store8(ln + 1, 2); store8(ln + 2, 2); store8(ln + 3, 2);     /* ...and all out */
+    assert(seen[FB_LANES_LIT] == 1);
+
+    /* awards: the message function, with the text in BX */
+    g_cpu.bx = 0x300; watch_enter(&g_cpu, "ep1_msg");
+    g_cpu.bx = 0x301; watch_enter(&g_cpu, "ep1_msg");
+    g_cpu.bx = 0x310; watch_enter(&g_cpu, "ep1_msg");
+    assert(seen[FB_JACKPOT] == 1 && seen[FB_AWARD] == 1 && !seen[FB_SUPER_JACKPOT]);
+
+    SWITCH(0xF5, 10, 17);                                 /* held, then a tilt stops its count: let go */
+    store8(t0, 0x46);
+    watch_enter(&g_cpu, "ep1_step");
+    assert(level[FB_BALL_HELD]);
+    pit_at += (uint64_t)(PIT_HZ / 1000 * 400);
+    watch_enter(&g_cpu, "ep1_step");
+    assert(!level[FB_BALL_HELD] && seen[FB_BALL_HELD] == 2);
+    SWITCH(0xF5, 10, 17);                                 /* back in it: counted again */
+    store8(t0, 0x45);
+    watch_enter(&g_cpu, "ep1_step");
+    assert(level[FB_BALL_HELD]);                          /* held at the table's end: let go */
+    #undef SWITCH
+    #undef AT
     watch_table_end();
+    assert(!level[FB_BALL_HELD]);
+    pit_at = 0;
     feedback_sink(NULL);
 }
 
@@ -575,7 +706,7 @@ static void test_dof_pipe(void)
 
     real_clock = 1;
     assert(dof_open(path, dir));
-    feedback_table(0, "ep1", "LCR");
+    feedback_table(0, "ep1", "LR", "hole:LLCRR kickback:L");
     pump(300);
     feedback_event(1, FB_FLIPPER_LEFT, 1, (FbDetail){ 0 });
     pump(1200);                                           /* held, and nothing said: no fault, and no off */
@@ -583,19 +714,19 @@ static void test_dof_pipe(void)
     feedback_mute(1);                                     /* the demo: never sent */
     feedback_event(2, FB_KNOCKER, 1, (FbDetail){ 0 });
     feedback_mute(0);
-    feedback_table(3, NULL, NULL);                              /* the table's end: q */
+    feedback_table(3, NULL, NULL, NULL);                              /* the table's end: q */
     pump(300);
-    feedback_table(4, "ep2", "LCR");
+    feedback_table(4, "ep2", "LCR", "");
     pump(300);
     feedback_event(5, FB_TILT, 1, (FbDetail){ 0 });       /* it dies: all off, and none till the next table */
     pump(500);
-    feedback_table(6, "ep3", "LCR");                             /* no row for this table: only this one goes without */
+    feedback_table(6, "ep3", "LCR", "");                             /* no row for this table: only this one goes without */
     pump(300);
-    feedback_table(7, "ep4", "LCR");
+    feedback_table(7, "ep4", "LCR", "");
     pump(300);
-    feedback_table(8, "ep5", "LCR");                             /* no row at all: none for the rest of the run */
+    feedback_table(8, "ep5", "LCR", "");                             /* no row at all: none for the rest of the run */
     pump(300);
-    feedback_table(9, "ep6", "LCR");
+    feedback_table(9, "ep6", "LCR", "");
     pump(300);
     dof_close();
     real_clock = 0;
@@ -607,7 +738,8 @@ static void test_dof_pipe(void)
     size_t n = fread(got, 1, sizeof got - 1, f);
     fclose(f);
     got[n] = 0;
-    assert(strstr(got, "--table ep1 --bumpers LCR") && strstr(got, "--save") && !strstr(got, "knocker"));
+    assert(strstr(got, "--table ep1 --bumpers LR --sides hole:LLCRR kickback:L") && strstr(got, "--save") && !strstr(got, "knocker"));
+    assert(strstr(got, "--table ep2 --bumpers LCR\n"));           /* no features: no --sides */
     const char *up = strstr(got, "e flipper_left 1"), *drain = strstr(got, "e drain 1");
     assert(up && drain && up < drain);
     const char *off = strstr(drain, "o  \n");             /* the mute's, after the drain */

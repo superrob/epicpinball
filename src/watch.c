@@ -4,8 +4,10 @@
  * Three seams, none of which needs a re-lift:
  *
  *   - RECOMP_ENTER, at the top of every lifted function (src/lifted.h): each
- *     physics step, and the moment the kicker is entered, when ES:BX still
- *     points at the pixel of the collision map the ball touched;
+ *     physics step; the moment the kicker is entered, when ES:BX still points
+ *     at the pixel of the collision map the ball touched; the switch handler,
+ *     with the colour of the switch the ball is on in AL; and the message
+ *     function, with the text it shows in BX;
  *   - the memory write hook (vga.c): the instructions that can only mean one
  *     thing. A hit is the kicker storing its strength, not being entered (it
  *     turns back on tilt and the like); a launch is the release block zeroing
@@ -34,7 +36,15 @@ uint8_t g_watched[0x10000];
 #define STAMPED_LEFT  150
 #define STAMPED_RIGHT 180
 
-enum { W_NONE, W_KICK, W_PULL, W_PULL_HI, W_VY, W_ACTIVE, W_COUNT, W_EXTRA, W_METER, W_TILT, W_OVER };
+/* A switch closes when the ball reaches it; the game then leaves it alone a
+ * few steps. Not called this long, the ball has left it. A hole's timer
+ * counts only while its switch is handled, and a tilt stops that: not
+ * counted this long, the ball has left it. */
+#define SWITCH_GAP_MS 150.0
+#define HOLD_GAP_MS 150.0
+
+enum { W_NONE, W_KICK, W_PULL, W_PULL_HI, W_VY, W_ACTIVE, W_COUNT, W_EXTRA, W_METER, W_TILT, W_OVER,
+       W_TIMER, W_TARGET, W_LANES, W_RAMPS };
 
 static int wanted;
 static WatchMap M;
@@ -43,7 +53,11 @@ static int kicking, kick_x, kick_y, kick_di;
 static int pull_old, launched;
 static int release, started, fresh;  /* fresh: the next release begins a game */
 static int flipper[2], known, idle;
-static int ready, multi;             /* the levels sent: ball_ready, multiball */
+static int ready, multi, held;       /* the levels sent: ball_ready, multiball, ball_held */
+static int sw_on, sw_colour, sw_x, sw_y;                    /* the switch being handled this step */
+static double sw_last[WATCH_ZONES];  /* when each zone's switch was last handled */
+static int caught[WATCH_TIMERS];     /* the hole each timer holds a ball in, 1 on; 0: none known */
+static double counted[WATCH_TIMERS]; /* when each timer last counted */
 static struct { uint16_t x, y; double moved; } ball[8];      /* when each ball last moved */
 static double last_step;
 static uint16_t ss0, sp0;            /* the table's stack */
@@ -67,9 +81,10 @@ static int sound(void)
         if (flipper[i]) feedback_event(now_ms(), (FbEvent)(FB_FLIPPER_LEFT + i), 0, (FbDetail){ 0 });
     if (ready) feedback_event(now_ms(), FB_BALL_READY, 0, (FbDetail){ 0 });
     if (multi) feedback_event(now_ms(), FB_MULTIBALL, 0, (FbDetail){ 0 });
-    ready = multi = 0;
+    if (held) feedback_event(now_ms(), FB_BALL_HELD, 0, (FbDetail){ 0 });
+    ready = multi = held = 0;
     feedback_event(now_ms(), FB_TABLE_LOST, 1, (FbDetail){ g_cpu.sp, sp0, 0, 0 });
-    feedback_table(now_ms(), NULL, NULL);
+    feedback_table(now_ms(), NULL, NULL, NULL);
     return 0;
 }
 
@@ -88,7 +103,7 @@ static const struct { const char *key; size_t at; } fields[] = {
     FIELD(tilt), FIELD(meter), FIELD(cooldown), FIELD(demo), FIELD(extra), FIELD(over), FIELD(count),
     FIELD(drain_y), FIELD(kick), FIELD(weak_y), FIELD(sling_line), FIELD(map),
     FIELD(pull), FIELD(pull_inc), FIELD(pull_max), FIELD(pull_shift), FIELD(ctrl), FIELD(space),
-    FIELD(lane_off), FIELD(lane_x), FIELD(lane_y), FIELD(over_pull),
+    FIELD(lane_off), FIELD(lane_x), FIELD(lane_y), FIELD(over_pull), FIELD(scan_x), FIELD(scan_y),
 };
 #undef FIELD
 #define NFIELDS (int)(sizeof fields / sizeof fields[0])
@@ -105,7 +120,8 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         memcpy(line, p, n); line[n] = 0;
         p += n;
         if (*p) p++;
-        unsigned a, b, x, y, slot;
+        unsigned a, b, x, y, slot, c, x1, y1;
+        char kind[16], s;
         if (!strcmp(line, "end")) ended = 1;
         else if (sscanf(line, "epicpinball-feedback %u", &a) == 1) version = (int)a;
         else if (sscanf(line, "image %7s %u %x", m->name, &a, &b) == 3) { m->size = a; m->fnv = b; image = 1; }
@@ -114,9 +130,54 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
             m->bumper[m->nbumpers].x = (int)x;
             m->bumper[m->nbumpers].y = (int)y;
             m->bumper[m->nbumpers++].slot = (int)slot;
+        } else if (sscanf(line, "zone %15s %u %x %u %u %u %u %c", kind, &a, &c, &x, &y, &x1, &y1, &s) == 8) {
+            static const char *const kinds[WZ_KINDS] = { "hole", "kickback", "rollover", "ramp" };
+            static const int most[WZ_KINDS] = { FB_HOLES, 1, FB_ROLLOVERS, FB_RAMPS };
+            int k = 0;
+            while (k < WZ_KINDS && strcmp(kinds[k], kind)) k++;
+            if (m->nzones == WATCH_ZONES || k == WZ_KINDS || a < 1 || (int)a > most[k] || c < 0xAA || c > 0xFF
+                || x > x1 || y > y1 || x1 >= 320 || y1 >= 400 || !strchr("LCR", s)) { *why = "a bad zone"; return 0; }
+            m->zone[m->nzones++] = (WatchZone){ k, (int)a, (int)c, (int)x, (int)y, (int)x1, (int)y1, s };
+        } else if (sscanf(line, "timer %x", &a) == 1 && !strncmp(line, "timer ", 6)) {
+            if (m->ntimers == WATCH_TIMERS || a > 0xFFFF) { *why = "a bad timer"; return 0; }
+            m->timer[m->ntimers++] = (uint16_t)a;
+        } else if (sscanf(line, "target %x %u %c", &a, &b, &s) == 3) {
+            if (m->ntargets == WATCH_TARGETS || a > 0xFFFF || b < 1 || b > WATCH_TARGETS || !strchr("LCR", s)) {
+                *why = "a bad target"; return 0;
+            }
+            m->target[m->ntargets++] = (WatchTarget){ (uint16_t)a, (int)b, s };
+        } else if (sscanf(line, "lanes %x %u", &a, &b) == 2) {
+            if (!a || a > 0xFFF0 || b < 2 || b > 8) { *why = "bad lanes"; return 0; }
+            m->lanes = (uint16_t)a; m->nlanes = (int)b;
+        } else if (sscanf(line, "ramps %x", &a) == 1 && !strncmp(line, "ramps ", 6)) {
+            if (!a || a > 0xFFFF) { *why = "a bad ramp counter"; return 0; }
+            m->ramps = (uint16_t)a;
+        } else if (!strncmp(line, "layer ", 6) && sscanf(line, "layer %x", &a) == 1) {
+            if (!a || a > 0xFFFF) { *why = "a bad layer flag"; return 0; }
+            m->layer = (uint16_t)a;
+        } else if (!strncmp(line, "on_layer ", 9) || !strncmp(line, "tilt_pass ", 10)) {
+            const int tilt = line[0] == 't';
+            uint8_t *to = tilt ? m->tilt_pass : m->on_layer;
+            int *n = tilt ? &m->ntilt_pass : &m->non_layer;
+            char *p = line + (tilt ? 10 : 9), *e;
+            while (*p) {
+                unsigned long v = strtoul(p, &e, 16);
+                if (e == p || v < 0xAA || v > 0xFF || *n == 8 || (*e && *e != ' ')) { *why = "a bad gate"; return 0; }
+                to[(*n)++] = (uint8_t)v;
+                p = *e ? e + 1 : e;
+            }
+        } else if (sscanf(line, "msg %x %15s", &a, kind) == 2) {
+            int e = feedback_by_name(kind);
+            if (m->nmsgs == WATCH_MSGS || a > 0xFFFF
+                || (e != FB_JACKPOT && e != FB_SUPER_JACKPOT && e != FB_SKILL_SHOT && e != FB_AWARD)) {
+                *why = "a bad message"; return 0;
+            }
+            m->msg[m->nmsgs++] = (WatchMsg){ (uint16_t)a, e };
         } else if (sscanf(line, "%23s %23s", key, val) != 2) { *why = "a line it cannot read"; return 0; }
         else if (!strcmp(key, "step_fn")) snprintf(m->step_fn, sizeof m->step_fn, "%s", val);
         else if (!strcmp(key, "kicker_fn")) snprintf(m->kicker_fn, sizeof m->kicker_fn, "%s", val);
+        else if (!strcmp(key, "switch_fn")) snprintf(m->switch_fn, sizeof m->switch_fn, "%s", val);
+        else if (!strcmp(key, "msg_fn")) snprintf(m->msg_fn, sizeof m->msg_fn, "%s", val);
         else {
             int i = 0;
             char *e;
@@ -133,11 +194,44 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
     if (!m->nbumpers) strcpy(m->layout, "LCR");    /* Enigma's three, stamped as it runs */
     for (int i = 1; i < m->nbumpers; i++)
         if (m->bumper[i].x < m->bumper[i - 1].x) { *why = "bumpers not left to right"; return 0; }
-    if (version != 2) *why = "another version's map";
-    else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || got != (1ull << NFIELDS) - 1) *why = "incomplete";
+    /* for made rows: each numbered feature's side, by its number */
+    static const char *const kinds[] = { "hole", "ramp", "kickback" };
+    static const int kind_of[] = { WZ_HOLE, WZ_RAMP, WZ_KICKBACK };
+    size_t at = 0;
+    for (int k = 0; k < 3; k++) {
+        char side[8] = { 0 };
+        int top = 0;
+        for (int i = 0; i < m->nzones; i++)
+            if (m->zone[i].kind == kind_of[k]) {
+                if (side[m->zone[i].n - 1] && side[m->zone[i].n - 1] != m->zone[i].side) { *why = "a feature on two sides"; return 0; }
+                side[m->zone[i].n - 1] = m->zone[i].side;
+                if (m->zone[i].n > top) top = m->zone[i].n;
+            }
+        for (int i = 0; i < top; i++) if (!side[i]) { *why = "a feature's number missing"; return 0; }
+        if (top) at += (size_t)snprintf(m->sides + at, sizeof m->sides - at, "%s%s:%s", at ? " " : "", kinds[k], side);
+    }
+    if (m->ntargets) {
+        char side[WATCH_TARGETS + 1] = { 0 };
+        for (int i = 0; i < m->ntargets; i++) side[m->target[i].n - 1] = m->target[i].side;
+        if ((int)strlen(side) != m->ntargets) { *why = "a target's number missing"; return 0; }
+        snprintf(m->sides + at, sizeof m->sides - at, "%starget:%s", at ? " " : "", side);
+    }
+    if (version != 3) *why = "another version's map";
+    else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || got != (1ull << NFIELDS) - 1)
+        *why = "incomplete";
+    else if (m->nmsgs && !*m->msg_fn) *why = "messages, but no message function";
+    else if (m->nzones && (!m->layer || !m->non_layer || !m->ntilt_pass)) *why = "zones, but no gate";
     else if (m->slots < 1 || m->slots > 8) *why = "a bad ball count";
     else return 1;
     return 0;
+}
+
+int watch_zone(const WatchMap *m, int kind, int colour, int x, int y)
+{
+    for (int i = 0; i < m->nzones; i++)
+        if (m->zone[i].kind == kind && m->zone[i].colour == colour && x >= m->zone[i].x0 && x <= m->zone[i].x1
+            && y >= m->zone[i].y0 && y <= m->zone[i].y1) return i;
+    return -1;
 }
 
 int watch_kick_event(const WatchMap *m, int x, int y)
@@ -205,14 +299,20 @@ int watch_map_use(const WatchMap *m, uint16_t load_seg)
     watch(M.meter, W_METER);
     watch(M.tilt, W_TILT);
     watch(M.over, W_OVER);
-    kicking = launched = release = started = known = idle = ready = multi = 0;
+    for (int i = 0; i < M.ntimers; i++) watch(M.timer[i], W_TIMER);
+    for (int i = 0; i < M.ntargets; i++) watch(M.target[i].at, W_TARGET);
+    if (M.lanes) watch(M.lanes, W_LANES);
+    if (M.ramps) watch(M.ramps, W_RAMPS);
+    kicking = launched = release = started = known = idle = ready = multi = held = sw_on = 0;
+    for (int i = 0; i < WATCH_ZONES; i++) sw_last[i] = -1e18;
+    for (int i = 0; i < WATCH_TIMERS; i++) { caught[i] = 0; counted[i] = -1e18; }
     for (int i = 0; i < 8; i++) { ball[i].x = ball[i].y = 0; ball[i].moved = -1e18; }
     fresh = 1;
     pull_old = 0;
     flipper[0] = flipper[1] = 0;
     last_step = now_ms();
     ss0 = g_cpu.ss; sp0 = g_cpu.sp;                /* as load_exe left them */
-    feedback_table(now_ms(), M.name, M.layout);
+    feedback_table(now_ms(), M.name, M.layout, M.sides);
     g_watch_ds = DS;
     g_watch_on = 1;
     return 1;
@@ -226,8 +326,9 @@ void watch_table_end(void)
         if (flipper[i]) feedback_event(now_ms(), (FbEvent)(FB_FLIPPER_LEFT + i), 0, (FbDetail){ 0 });
     if (ready) feedback_event(now_ms(), FB_BALL_READY, 0, (FbDetail){ 0 });
     if (multi) feedback_event(now_ms(), FB_MULTIBALL, 0, (FbDetail){ 0 });
-    ready = multi = 0;
-    feedback_table(now_ms(), NULL, NULL);
+    if (held) feedback_event(now_ms(), FB_BALL_HELD, 0, (FbDetail){ 0 });
+    ready = multi = held = 0;
+    feedback_table(now_ms(), NULL, NULL, NULL);
 }
 
 const WatchMap *watch_table(uint32_t *ds, uint32_t *cs)
@@ -295,12 +396,17 @@ static void lane_and_balls(void)
     }
     if ((n >= 2) != multi) emit(FB_MULTIBALL, n >= 2, 0, 0, n, 0);
     multi = n >= 2;
+    int h = 0;                       /* a hole holds a ball while its timer counts */
+    for (int i = 0; i < M.ntimers; i++) h |= g_cpu.mem[DS + M.timer[i]] != 0 && t - counted[i] <= HOLD_GAP_MS;
+    if (h != held) emit(FB_BALL_HELD, h, 0, 0, 0, 0);
+    held = h;
 }
 
 static void stepped(void)
 {
     last_step = now_ms();
     idle = 0;
+    sw_on = 0;                       /* the switches of this step are yet to come */
     feedback_mute(g_cpu.mem[DS + M.demo] == 1);
     if (!started) {
         started = 1;                 /* the first ball of a game */
@@ -323,7 +429,7 @@ static void stepped(void)
  * the next step sends what is still on. */
 void watch_released(void)
 {
-    flipper[0] = flipper[1] = known = ready = multi = 0;
+    flipper[0] = flipper[1] = known = ready = multi = held = 0;
 }
 
 void watch_tick(void)
@@ -334,7 +440,8 @@ void watch_tick(void)
             if (flipper[i]) emit((FbEvent)(FB_FLIPPER_LEFT + i), 0, 0, 0, -1, 0);
         if (ready) emit(FB_BALL_READY, 0, 0, 0, -1, 0);
         if (multi) emit(FB_MULTIBALL, 0, 0, 0, -1, 0);
-        flipper[0] = flipper[1] = known = ready = multi = 0;   /* sent again by the next step */
+        if (held) emit(FB_BALL_HELD, 0, 0, 0, -1, 0);
+        flipper[0] = flipper[1] = known = ready = multi = held = 0;   /* sent again by the next step */
         idle = 1;
         return;
     }
@@ -342,6 +449,18 @@ void watch_tick(void)
 }
 
 /* ---- functions entered ------------------------------------------------------ */
+
+/* Whether the switch handler gets past its own gate with this colour: on the
+ * ramps only some colours are handled, and tilted only some others */
+static int handled(int colour)
+{
+    const int on_layer = g_cpu.mem[DS + M.layer] == 1;
+    const uint8_t *c = on_layer ? M.on_layer : M.tilt_pass;
+    const int n = on_layer ? M.non_layer : M.ntilt_pass;
+    for (int i = 0; i < n; i++)
+        if (c[i] == colour) return 1;
+    return !on_layer && g_cpu.mem[DS + M.tilt] != 1;
+}
 
 void watch_enter(CPU *cpu, const char *fn)
 {
@@ -354,7 +473,36 @@ void watch_enter(CPU *cpu, const char *fn)
         kick_x = (int)(o % 320);
         kick_y = (int)(o / 320);
         kick_di = cpu->di;
+    } else if (!strcmp(fn, M.switch_fn)) {
+        if (!sound()) return;
+        sw_on = 0;
+        if (M.layer && !handled(cpu->al)) return;          /* the handler turns back: nothing happens */
+        sw_on = 1;
+        sw_colour = cpu->al;
+        sw_x = rd16(DS + M.scan_x);
+        sw_y = rd16(DS + M.scan_y);
+        const double t = now_ms();
+        for (int i = 0; i < M.nzones; i++) {
+            const WatchZone *z = &M.zone[i];
+            if (z->colour != sw_colour || sw_x < z->x0 || sw_x > z->x1 || sw_y < z->y0 || sw_y > z->y1) continue;
+            const int fresh_hit = t - sw_last[i] > SWITCH_GAP_MS;
+            sw_last[i] = t;
+            if (!fresh_hit) continue;
+            if (z->kind == WZ_ROLLOVER) emit((FbEvent)(FB_ROLLOVER_1 + z->n - 1), 1, sw_x, sw_y, sw_colour, 0);
+            else if (z->kind == WZ_KICKBACK) emit(FB_KICKBACK, 1, sw_x, sw_y, sw_colour, 0);
+        }
+    } else if (*M.msg_fn && !strcmp(fn, M.msg_fn)) {
+        if (!sound()) return;
+        for (int i = 0; i < M.nmsgs; i++)
+            if (M.msg[i].at == cpu->bx) { emit((FbEvent)M.msg[i].event, 1, 0, 0, cpu->bx, 0); break; }
     }
+}
+
+/* The feature of a kind the switch being handled is, by its number; 0: none */
+static int switch_is(int kind)
+{
+    const int z = sw_on ? watch_zone(&M, kind, sw_colour, sw_x, sw_y) : -1;
+    return z < 0 ? 0 : M.zone[z].n;
 }
 
 /* ---- instructions that mean one thing --------------------------------------- */
@@ -413,5 +561,37 @@ void watch_write_byte(uint32_t a, uint8_t v)
             fresh = 1;
         }
         break;
+    case W_TIMER: {                  /* set: a ball caught; down to 0: kicked out */
+        int i = 0;
+        while (i < M.ntimers && M.timer[i] != off) i++;
+        if (i == M.ntimers) break;
+        counted[i] = now_ms();
+        if (!old && v) caught[i] = switch_is(WZ_HOLE);
+        else if (old && !v) {
+            if (caught[i]) emit((FbEvent)(FB_HOLE_1 + caught[i] - 1), 1, sw_x, sw_y, caught[i], 0);
+            caught[i] = 0;
+        }
+        break;
+    }
+    case W_TARGET: {
+        int i = 0, all = 1;
+        while (i < M.ntargets && M.target[i].at != off) i++;
+        if (i == M.ntargets) break;
+        for (int j = 0; j < M.ntargets; j++) all &= g_cpu.mem[DS + M.target[j].at] == 1;
+        if (v == 1 && old != 1) emit((FbEvent)(FB_TARGET_1 + M.target[i].n - 1), 1, sw_x, sw_y, M.target[i].n, 0);
+        else if (!v && all) emit(FB_TARGETS_DOWN, 1, sw_x, sw_y, 0, 0);       /* the bank resets */
+        break;
+    }
+    case W_LANES: {                  /* the first light put out with all of them lit */
+        int all = 1;
+        for (int j = 0; j < M.nlanes; j++) all &= g_cpu.mem[DS + M.lanes + j] == 1;
+        if (all && v != 1) emit(FB_LANES_LIT, 1, sw_x, sw_y, v, 0);
+        break;
+    }
+    case W_RAMPS: {                  /* the count goes up: the ramp the switch is on */
+        const int n = switch_is(WZ_RAMP);
+        if (v == (uint8_t)(old + 1) && n) emit((FbEvent)(FB_RAMP_1 + n - 1), 1, sw_x, sw_y, v, 0);
+        break;
+    }
     }
 }

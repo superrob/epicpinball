@@ -18,6 +18,11 @@ static const char *const names[FB_EVENTS] = {
     "launch", "ball_release", "drain", "nudge", "tilt", "knocker",
     "ball_ready", "multiball", "game_start", "game_over",
     "bumper_4", "bumper_5", "bumper_6",
+    "hole_1", "hole_2", "hole_3", "hole_4", "hole_5", "ball_held", "kickback",
+    "target_1", "target_2", "target_3", "targets_down",
+    "rollover_1", "rollover_2", "rollover_3", "rollover_4", "rollover_5", "rollover_6",
+    "lanes_lit", "skill_shot", "ramp_1", "ramp_2", "ramp_3",
+    "jackpot", "super_jackpot", "award",
     "table_start", "table_end", "table_lost",
 };
 
@@ -42,13 +47,13 @@ int feedback_log(const char *path)
 
 void feedback_sink(const FbSink *sink) { out = sink; }
 
-void feedback_table(double ms, const char *name, const char *bumpers)
+void feedback_table(double ms, const char *name, const char *bumpers, const char *sides)
 {
     muted = 0;
     if (!name && *table) feedback_event(ms, FB_TABLE_END, 1, (FbDetail){ 0, 0, 0, 0 });
     if (out) {
         out->all_off();
-        out->table(name, name ? bumpers : NULL);
+        out->table(name, name ? bumpers : NULL, name ? sides : NULL);
     }
     snprintf(table, sizeof table, "%s", name ? name : "");
     if (name) feedback_event(ms, FB_TABLE_START, 1, (FbDetail){ 0, 0, 0, 0 });
@@ -79,7 +84,7 @@ void feedback_close(void)
 {
     if (out) {
         out->all_off();
-        out->table(NULL, NULL);
+        out->table(NULL, NULL, NULL);
         out = NULL;
     }
     if (log_file) { fclose(log_file); log_file = NULL; }

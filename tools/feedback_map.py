@@ -30,7 +30,7 @@ GEN = os.path.join(ROOT, 'work', 'gen')
 DATA = os.path.join(ROOT, 'original')
 OUT = os.path.join(ROOT, 'work', 'feedback')
 TABLES = 13
-VERSION = 2
+VERSION = 3
 MAX_BUMPERS = 6                 # E105-E107 and E118-E120
 RIM = 40                        # a small run this near a bumper is part of it
 
@@ -39,6 +39,58 @@ A = r'0x[0-9A-F]+'              # a number, not kept
 GO = r'[a-z]+ ' + A + r'\n'     # any conditional jump
 MAP_W, MAP_H = 320, 400
 SLINGS_BELOW = 270              # on every table they sit just over the flippers
+
+# ---- each table's own features ----------------------------------------------------
+# Every table has one switch handler: the ball scan hands it the collision-map
+# colour under the ball (0xAA and up), and it branches to the table's own code
+# for that colour. What each colour is was read from that code, and is game data,
+# not an address: positions are the scanned ball's, as the handler compares them
+# (inclusive). Features are numbered left to right, top first on a tie; the side
+# of a cabinet comes from where the colour is drawn. A table not listed sends
+# none of these events. See docs/cabinet-feedback.md.
+FEATURES = {
+    'ep1': dict(                                       # Super Android
+        zones=[
+            ('hole', 1, 0xF5, 0, 0, 319, 399),          # test hole, top left
+            ('hole', 2, 0xF8, 0, 0, 50, 320),           # left hole
+            ('hole', 3, 0xF6, 0, 0, 219, 399),          # power-up hole
+            ('hole', 4, 0xF8, 145, 0, 319, 399),        # physical-systems hole
+            ('hole', 5, 0xF6, 220, 0, 319, 399),        # right hole, the centre ramp's end
+            ('kickback', 1, 0xF8, 0, 321, 50, 399),     # left outlane
+            ('rollover', 1, 0xF8, 51, 0, 144, 399),     # star
+            ('rollover', 2, 0xFB, 0, 0, 319, 399),      # left lane
+            ('rollover', 3, 0xFA, 0, 0, 179, 399),      # the top four lanes
+            ('rollover', 4, 0xFA, 180, 0, 209, 399),
+            ('rollover', 5, 0xFA, 210, 0, 242, 399),
+            ('rollover', 6, 0xFA, 243, 0, 319, 399),
+            ('ramp', 1, 0xF9, 0, 0, 74, 399),           # left ramp
+            ('ramp', 2, 0xF6, 220, 0, 319, 399),        # centre ramp, counted in the right hole
+            ('ramp', 3, 0xF9, 281, 0, 319, 399),        # right ramp
+        ],
+        targets=True,                                   # drop targets: F2-F4
+        lanes=True,                                     # the top lanes' lights
+        ramps='RAMPS ',                                 # the bonus line that counts them
+        messages=[
+            ('jackpot', 'JACKPOT!!!'),
+            ('super_jackpot', 'DOUBLE JACKPOT'), ('super_jackpot', 'SUPER JACKPOT!'),
+            ('skill_shot', 'SKILL SHOT'),
+            ('award', 'POWER UP'), ('award', 'FULL POWER-10M'), ('award', 'I.Q. UPGRADE'),
+            ('award', 'BUMPER VALUE IS NOW        '), ('award', 'COMPUTER LINK ESTABLISHED'),
+            ('award', 'PHYSICAL SYS COMPUTER ONLINE'), ('award', 'PHYSICAL SYSTEMS COMPLETE'),
+            ('award', 'BASIC IO INSTALLED: 5M'), ('award', 'AI INSTALLED: 10M'),
+            ('award', 'AI2 INSTALLED: 20M'), ('award', 'DATABASE INSTALLED: 35M'),
+            ('award', 'ANDROID IS ACTIVATED'), ('award', 'VIRUS FLUSHED OUT - 15M'),
+            ('award', '  MIL - ANDROID MILLIONS'),
+            ('award', 'LEFT ARM ACTIVATED'), ('award', 'RIGHT ARM ACTIVATED'),
+            ('award', 'LEFT LEG ACTIVATED'), ('award', 'HEAD ACTIVATED'), ('award', 'TORSO ACTIVATED'),
+            ('award', 'LEVEL 1: DIAGNOSTIC'), ('award', 'LEVEL 1: LEFT ARM TEST'),
+            ('award', 'LEVEL 1: RIGHT ARM TEST'), ('award', 'LEVEL 1: LEFT LEG TEST'),
+            ('award', 'LEVEL 1: RIGHT LEG TEST'), ('award', 'LEVEL 1: HEAD TEST'),
+            ('award', 'LEVEL 1: TORSO TEST'),
+        ],
+    ),
+}
+COUNTS = dict(hole=5, rollover=6, ramp=3, kickback=1, target=3)   # E121-E145
 
 
 class Missing(Exception):
@@ -249,9 +301,128 @@ def balls_lost(f, v):
     v['over'] = num(m.group(1) or m.group(2))
 
 
+def switches(f, v):
+    """The switch handler, and where the ball scan that calls it keeps the
+    ball it is looking at. Every table has both."""
+    m, name = find(f, 'switch handler', rf'sub bx, 0xAA\nshl bx, 0x1\nmov bx, word cs:\[bx\+{A}\]\n')
+    if not f[name][1]:
+        raise Missing(f'{name} has no RECOMP_ENTER, so its calls cannot be seen')
+    v['switch_fn'] = name
+    m, _ = find(f, 'switch scan', rf'mov ax, word ds:\[{N}\]\nmov di, word ds:\[{N}\]\nmov cx, 0x14\nmul cx\n'
+                                  rf'add ax, word ds:\[0x{v["map"]:X}\]\n(?=(?:.*\n)*?call {name}\n)')
+    v['scan_y'], v['scan_x'] = num(m.group(1)), num(m.group(2))
+
+
+def strings(data, text, whole=True):
+    """Where a string (or, not whole, one that begins so) is in the data
+    segment: every place."""
+    raw = text.encode('latin-1')
+    out = [i for i in range(1, len(data) - len(raw))
+           if data.startswith(raw, i) and (not whole or data[i + len(raw)] in (0, 0x24))
+           and (data[i - 1] == 0 or any(struct.unpack_from('<H', data, i - 2 * j)[0] == i
+                                        for j in range(1, min(17, i // 2 + 1))))]  # or ends a table of them
+    if not out:
+        raise Missing(f'text {text!r} not in the data segment')
+    return out
+
+
+def side(x):
+    return 'LCR'[min(2, x * 3 // MAP_W)]
+
+
+def features(img, f, v, art, data):
+    """A table's own features (FEATURES): its zones checked against the
+    collision map, and what its switch handler keeps for them."""
+    rules = FEATURES[img]
+    sw = f[v['switch_fn']][0]
+    out = dict(zones=[], timers=[], targets=[], lanes=None, ramps=None, msg_fn=None, msgs=[])
+
+    # the handler's gate: on the ramp layer only some colours are handled, and
+    # tilted only some others
+    m = re.search(rf'\Apush es\npusha\ncmp al, 0xAA\njb {A}\ncmp byte ds:\[{N}\], 0x1\njne {A}\n'
+                  rf'((?:cmp al, {A}\nje {A}\n)+)jmp {A}\n((?:cmp al, {A}\nje {A}\n)+)'
+                  rf'cmp byte ds:\[0x{v["tilt"]:X}\], 0x1\nje {A}\n', sw)
+    if not m:
+        raise Missing('switch handler gate')
+    colours = lambda t: [num(c) for c in re.findall(r'cmp al, 0x([0-9A-F]+)', t)]
+    out['gate'] = (num(m.group(1)), colours(m.group(2)), colours(m.group(3)))
+    seen = {}
+    for kind, n, colour, x0, y0, x1, y1 in rules['zones']:
+        regions = seen.setdefault(colour, kick_regions(art, (colour, colour), 2))
+        # the scan looks at the pixels under the ball from its top left
+        inside = [r for r in regions if x0 <= r[1] - 4 <= x1 and y0 <= r[2] - 4 <= y1]
+        if not inside:
+            raise Missing(f'{kind} {n}: colour {colour:02X} is not drawn there')
+        x = sum(r[0] * r[1] for r in inside) // sum(r[0] for r in inside)
+        out['zones'].append((kind, n, colour, x0, y0, x1, y1, side(x)))
+    for colour, regions in seen.items():
+        for r in regions:
+            if not any(z[2] == colour and z[3] <= r[1] - 4 <= z[5] and z[4] <= r[2] - 4 <= z[6]
+                       for z in out['zones']):
+                raise Missing(f'colour {colour:02X} at {r[1]},{r[2]} is in no zone')
+    for kind, count in COUNTS.items():
+        got = sorted(z[1] for z in out['zones'] if z[0] == kind)
+        if len(got) != len(set(got)) or any(x > count for x in got):
+            raise Missing(f'{kind}: numbered {got}, events are made for {count}')
+
+    # the holes' hold timers: set when a ball is caught, counted down to its kick
+    for t, _ in re.findall(rf'cmp byte ds:\[{N}\], 0x0\njne {A}\n(?:.*\n){{0,16}}?mov byte ds:\[0x\1\], (0x[0-9A-F]+)\n', sw):
+        if f'dec byte ds:[0x{t}]\n' in sw and num(t) not in out['timers']:
+            out['timers'].append(num(t))
+    holes = [z for z in out['zones'] if z[0] == 'hole']
+    if holes and not out['timers']:
+        raise Missing('hole timers')
+
+    if rules.get('targets'):
+        m, _ = find(f, 'drop targets', rf'sub al, {N}\nmov ah, 0x0\nmov di, ax\ncmp byte ds:\[di\+{N}\], 0x1\nje {A}\n'
+                                       rf'(?:mov byte ds:\[di\+{A}\], 0x2\n)*mov byte ds:\[di\+0x\2\], 0x1\n'
+                                       rf'mov di, 0x0\n(?:.*\n){{0,5}}?cmp di, {N}\n', v['switch_fn'])
+        first, flags, count = num(m.group(1)), num(m.group(2)), num(m.group(3))
+        found = []
+        for i in range(count):
+            regions = kick_regions(art, (first + i, first + i), 2)
+            if not regions:
+                raise Missing(f'drop target {i + 1}: colour {first + i:02X} is not drawn')
+            r = max(regions)
+            found.append((r[1], r[2], flags + i))
+        if count > COUNTS['target']:
+            raise Missing(f'{count} drop targets: events are made for {COUNTS["target"]}')
+        for n, (x, y, a) in enumerate(sorted(found), 1):
+            out['targets'].append((a, n, side(x)))
+
+    if rules.get('lanes'):
+        m, _ = find(f, 'lane lights', rf'mov byte ds:\[bx\+{N}\], 0x1\n((?:cmp byte ds:\[{A}\], 0x2\nje {A}\n)+)',
+                    v['switch_fn'])
+        out['lanes'] = (num(m.group(1)), m.group(2).count('cmp'))
+        if f'cmp byte ds:[0x{out["lanes"][0]:X}], 0x2' not in m.group(2):
+            raise Missing('lane lights: not the first one tested')
+
+    if rules.get('ramps'):
+        line = strings(data, rules['ramps'], whole=False)
+        if len(line) != 1:
+            raise Missing(f'bonus line {rules["ramps"]!r}: {len(line)} of them')
+        m, _ = find(f, 'ramp counter', rf'mov ax, word ds:\[{N}\]\nmov cx, 0xA\n(?:.*\n){{0,12}}?'
+                                        rf'lea bx, word ds:\[0x{line[0]:X}\]\n')
+        out['ramps'] = num(m.group(1))
+
+    if rules.get('messages'):
+        called = set()
+        for kind, text in rules['messages']:
+            for at in strings(data, text):
+                out['msgs'].append((at, kind))
+                for _, (body, _) in f.items():
+                    called |= set(re.findall(rf'lea bx, word ds:\[0x{at:X}\]\n(?:mov (?:ax|di), {A}\n){{0,2}}call (ep\d+_[0-9A-F]+)\n', body))
+        if len(called) != 1:
+            raise Missing(f'message function: {sorted(called) or "none"}')
+        out['msg_fn'] = called.pop()
+        if not f[out['msg_fn']][1]:
+            raise Missing(f'{out["msg_fn"]} has no RECOMP_ENTER, so its calls cannot be seen')
+    return out
+
+
 # ---- the kickers in the collision map --------------------------------------------
 
-def kick_regions(art, band):
+def kick_regions(art, band, least=4):
     """Connected runs of kicker pixels: (pixels, mean x, mean y, top, bottom)."""
     lo, hi = band
     left = {i for i, c in enumerate(art) if lo <= c <= hi}
@@ -271,7 +442,7 @@ def kick_regions(art, band):
                     if p in left and abs(p % MAP_W - x) <= 2:
                         left.remove(p)
                         todo.append(p)
-        if n >= 4:
+        if n >= least:
             out.append((n, sx // n, sy // n, top, bottom))
     return sorted(out, key=lambda r: r[1])
 
@@ -348,6 +519,7 @@ def scan(img):
     plunger(f, v)
     balls_lost(f, v)
     art_seg = collision_map(f, v)
+    switches(f, v)
 
     m = re.match(rf'push ds\n(?:.*\n){{0,3}}?mov ax, {N}\nmov ds, ax\n', f[v['main_fn']][0])
     if not m:
@@ -361,18 +533,22 @@ def scan(img):
 
     band = kick_band(f, v)
     regions = []
+    module = exe_module(img, file, size)
+    at = ((art_seg - load) & 0xFFFF) * 16
+    art = module[at:at + MAP_W * MAP_H]
+    if (band or img in FEATURES) and len(art) != MAP_W * MAP_H:
+        raise Missing('collision map runs past the EXE')
+    own = None
+    if img in FEATURES:
+        own = features(img, f, v, art, module[v['ds'] * 16:v['ds'] * 16 + 0x10000])
     if band:
-        at = ((art_seg - load) & 0xFFFF) * 16
-        art = exe_module(img, file, size)[at:at + MAP_W * MAP_H]
-        if len(art) != MAP_W * MAP_H:
-            raise Missing('collision map runs past the EXE')
         regions = kick_regions(art, band)
         if not regions:
             raise Missing('no kicker in the collision map')
     v['sling_line'] = sling_line(regions, v['sling_y']) if band else MAP_H
     del v['sling_y']
     return dict(file=file, size=size, fnv=fnv, values=v, band=band, regions=regions,
-                bumpers=bumpers(regions, v['sling_line']))
+                bumpers=bumpers(regions, v['sling_line']), own=own)
 
 
 def text_of(img, r):
@@ -382,6 +558,22 @@ def text_of(img, r):
             continue
         out.append(f'{k} {x}' if k.endswith('_fn') else f'{k} {x:X}')
     out += [f'bumper {x} {y} {slot}' for x, y, slot in r['bumpers']]       # left to right: E105 on
+    own = r['own']
+    if own:
+        layer, on_layer, tilted = own['gate']
+        out.append(f'layer {layer:X}')
+        out.append('on_layer ' + ' '.join(f'{c:X}' for c in on_layer))
+        out.append('tilt_pass ' + ' '.join(f'{c:X}' for c in tilted))
+        if own['msg_fn']:
+            out.append(f'msg_fn {own["msg_fn"]}')
+        out += [f'zone {k} {n} {c:X} {x0} {y0} {x1} {y1} {s}' for k, n, c, x0, y0, x1, y1, s in own['zones']]
+        out += [f'timer {a:X}' for a in own['timers']]
+        out += [f'target {a:X} {n} {s}' for a, n, s in own['targets']]
+        if own['lanes']:
+            out.append('lanes %X %d' % own['lanes'])
+        if own['ramps'] is not None:
+            out.append(f'ramps {own["ramps"]:X}')
+        out += [f'msg {a:X} {k}' for a, k in own['msgs']]
     out.append('end')
     return '\n'.join(out) + '\n'
 
@@ -413,6 +605,11 @@ def main():
             band = 'at run time' if not r['band'] else '%02X-%02X' % r['band']
             print(f'  kickers {band}: ' + ', '.join(f'{x},{y} ({n}px)' for n, x, y, _, _ in r['regions']))
             print('  bumpers: ' + ', '.join(f'{x},{y}={"LCR"[s]}' for x, y, s in r['bumpers']))
+            if r['own']:
+                o = r['own']
+                print('  zones: ' + ', '.join(f'{k}_{n}={c:X}{s}' for k, n, c, *_, s in o['zones']))
+                print(f'  timers {[hex(t) for t in o["timers"]]} targets {o["targets"]} lanes {o["lanes"]} '
+                      f'ramps {o["ramps"]} messages {len(o["msgs"])} through {o["msg_fn"]}')
     print(f'feedback map: {len(found)} tables in work/feedback/')
     return 0
 
