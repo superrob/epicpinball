@@ -65,7 +65,7 @@ All notable changes to this project are documented here. The format follows
   screens before a game, PRESS SPACE TO BEGIN, PRESS ENTER) are left out;
   `[cabinet] hide_messages` changes the list. Tested on a real cabinet on
   table 1; tables 2-13 only headless.
-- **SSF** (`--ssf`, Linux; on the `ssf` branch): 7.1 for a cabinet with
+- **SSF** (`--ssf`, Linux): 7.1 for a cabinet with
   exciters, wired as vpinball wires one. The front pair keeps the game's mix;
   the board's sounds (bumpers, slingshots, flippers, drop targets, plunger,
   holes) leave it and play on the exciters, the side pair at the top of the
