@@ -230,7 +230,7 @@ at every table start; nothing is written into the DOF folder. For the header
 above:
 
 ```ini
-epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113/E117
+epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113
 ```
 
 | Device | Gets |
@@ -241,7 +241,7 @@ epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113/E117
 | `10 Bumper Middle ...`, `8 Bumper Left`, `Center`, `Right` | the same, only where there is no such back-row device |
 | `10 Bumper Middle Right`, `8 Bumper Right` | also `E108`: the launch |
 | `Launch Button` | `E114`: lit while a ball waits in the lane |
-| `Knocker` | `E113/E117`: an extra ball, and game over |
+| `Knocker` | `E113`: an extra ball (not game over) |
 | `10 Bumper Middle Left`, `Center`, `Right` | also the table's own solenoids on that side: hole kick-outs, the kickback, the drop target bank resetting. On table 1, Middle Left gets `E121/E122/E127/E131`, Center `E123`, Right `E108/E124/E125` |
 | `8 Bumper Left`, `Center`, `Right` | the same, where there is no `10 Bumper Middle` device on that side |
 | `Beacon` | `E113 2000`; on a table with features of its own, jackpots too: `E113 2000/E143 2000/E144 2000` |

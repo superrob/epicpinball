@@ -50,7 +50,7 @@ void cabinet()
                       "Slingshot Left", "Coin", "ZB Launch Ball", "5 Flasher Center", "", "",
                       "10 Bumper Back Center", "Slingshot Right", "Exit", "Gear", "Custom RGB 1", "", "",
                       "10 Bumper Middle Left", "Beacon", "Start Button", "Shaker", "Extra Ball", "Strobe", "Fan" };
-    assert(row(n) == "t,E113/E117,E102,E101,ON White,E107,0,E105,E103,ON,0,E115 White Blink 200/E106 Yellow 80/E113 White 450 3/E116 Lime 450 3/E117 Blue 450 3/E110 Red 300/E112 Red 600,E106,E104,ON,0,0,0,0,0,E113 2000,ON,"
+    assert(row(n) == "t,E113,E102,E101,ON White,E107,0,E105,E103,ON,0,E115 White Blink 200/E106 Yellow 80/E113 White 450 3/E116 Lime 450 3/E117 Blue 450 3/E110 Red 300/E112 Red 600,E106,E104,ON,0,0,0,0,0,E113 2000,ON,"
                      "E111 300 I32/E112 600 I32");
     const auto r = autorow::build(n);
     assert(r.outputs == 19 && r.width == 29 && r.said.empty());
@@ -88,7 +88,7 @@ void bumpers()
     assert(row(eight, "LR") == "t,E105,0,E108/E106");
     assert(row({ "8 Bumper Back", "10 Bumper Middle Right", "8 Bumper Right" }) == "t,0,E108/E107,E108");
     assert(row({ "Slingshot Right", "slingshot right", "FLIPPER LEFT" }) == "t,E104,E104,E101");    // every one, any case
-    assert(row({ "Launch Button", "Knocker" }) == "t,E114,E113/E117");
+    assert(row({ "Launch Button", "Knocker" }) == "t,E114,E113");
     for (int e : { kBumper1, kBumper2, kBumper3, kBumper4, kBumper5, kBumper6 })
         assert(autorow::build(ten, "LLCCRR").fires[e]);
 }
@@ -99,8 +99,8 @@ void lights()
     assert(row({ "RGB Flippers", "" }) == "t,ON White");
     assert(row({ "Exit", "RGB Flippers", "", "", "Coin" }) == "t,ON,ON White,ON");
     auto r = autorow::build({ "RGB Flippers", "Knocker", "", "Coin" });  // no room for three: off, and said
-    assert(autorow::line("t", r) == "t,0,E113/E117,0,ON" && r.said.size() == 1);
-    assert(row({ "RGB Undercab Complex MX", "", "", "Knocker" }) == "t,0,0,0,E113/E117");     // unknown RGB: a zero each
+    assert(autorow::line("t", r) == "t,0,E113,0,ON" && r.said.size() == 1);
+    assert(row({ "RGB Undercab Complex MX", "", "", "Knocker" }) == "t,0,0,0,E113");     // unknown RGB: a zero each
     assert(row({ "Shaker", "Gear", "Fan", "Strobe", "Bell" }) == "t,E111 300 I32/E112 600 I32");
 }
 
@@ -134,7 +134,7 @@ void flashers()
 
     // a name it does not know is said, and left off; no flasher has a colour it does not define
     const auto u = autorow::build({ "5 Flashers Center", "", "", "Flasher", "Knocker" });
-    assert(u.said.size() == 2 && autorow::line("t", u) == "t,0,0,0,0,E113/E117");
+    assert(u.said.size() == 2 && autorow::line("t", u) == "t,0,0,0,0,E113");
     const std::string f = autorow::file("x", r, "y");
     for (const char *c : { "White=", "Yellow=", "Red=", "Lime=", "Blue=", "Orange=", "Cyan=", "Magenta=" })
         assert(f.find(c) != std::string::npos);

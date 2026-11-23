@@ -26,8 +26,8 @@ All notable changes to this project are documented here. The format follows
   does not link it). It uses VPinball's DOF files where there are some, and
   the game's own rows in `saves/directoutputconfig/` before those. With no
   row for the game, it makes one from the device list the Config Tool writes
-  after `[Config DOF]`: flippers, slingshots, back-row bumpers, knocker,
-  beacon, shaker and steady button lamps, and colours on flashers and a
+  after `[Config DOF]`: flippers, slingshots, back-row bumpers, knocker
+  (the extra ball, never game over), beacon, shaker and steady button lamps, and colours on flashers and a
   `Back MX` strip for bumpers, extra ball, game start and over, drain, tilt
   and multiball; never `ZB Launch Ball`. It sets
   **no output limits**: they are the controller's. Tested on a real cabinet

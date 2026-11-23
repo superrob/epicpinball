@@ -357,7 +357,7 @@ inline std::map<std::string, Rule> rules(const std::vector<std::string> &names, 
         { "flipper right", { e(kFlipperRight), false, { kFlipperRight } } },
         { "slingshot left", { e(kSlingLeft), false, { kSlingLeft } } },
         { "slingshot right", { e(kSlingRight), false, { kSlingRight } } },
-        { "knocker", { e(kKnocker) + "/" + e(kGameOver), false, { kKnocker, kGameOver } } },
+        { "knocker", { e(kKnocker), false, { kKnocker } } },                      /* an extra ball only, not game over */
         { "beacon", sides.empty() ? Rule{ e(kKnocker) + " 2000", false, { kKnocker } }
                                   : Rule{ e(kKnocker) + " 2000/" + e(kJackpot) + " 2000/" + e(kSuperJackpot) + " 2000",
                                           false, { kKnocker, kJackpot, kSuperJackpot } } },
