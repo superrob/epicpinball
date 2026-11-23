@@ -14,9 +14,11 @@
 
 static const char *const names[FB_EVENTS] = {
     "flipper_left", "flipper_right", "sling_left", "sling_right",
-    "bumper_left", "bumper_center", "bumper_right",
+    "bumper_1", "bumper_2", "bumper_3",
     "launch", "ball_release", "drain", "nudge", "tilt", "knocker",
-    "game_over", "table_start", "table_end", "table_lost",
+    "ball_ready", "multiball", "game_start", "game_over",
+    "bumper_4", "bumper_5", "bumper_6",
+    "table_start", "table_end", "table_lost",
 };
 
 static FILE *log_file;
@@ -40,13 +42,13 @@ int feedback_log(const char *path)
 
 void feedback_sink(const FbSink *sink) { out = sink; }
 
-void feedback_table(double ms, const char *name)
+void feedback_table(double ms, const char *name, const char *bumpers)
 {
     muted = 0;
     if (!name && *table) feedback_event(ms, FB_TABLE_END, 1, (FbDetail){ 0, 0, 0, 0 });
     if (out) {
         out->all_off();
-        out->table(name);
+        out->table(name, name ? bumpers : NULL);
     }
     snprintf(table, sizeof table, "%s", name ? name : "");
     if (name) feedback_event(ms, FB_TABLE_START, 1, (FbDetail){ 0, 0, 0, 0 });
@@ -77,7 +79,7 @@ void feedback_close(void)
 {
     if (out) {
         out->all_off();
-        out->table(NULL);
+        out->table(NULL, NULL);
         out = NULL;
     }
     if (log_file) { fclose(log_file); log_file = NULL; }

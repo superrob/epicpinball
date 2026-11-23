@@ -4,7 +4,7 @@
 #pragma once
 #include "machine.h"
 
-#define WATCH_BUMPERS 16
+#define WATCH_BUMPERS 6              /* E105-E107, E118-E120 */
 
 /* One table, from work/feedback/epN.map (tools/feedback_map.py). Offsets are
  * into its data segment, or its code segment for the key flags. */
@@ -20,7 +20,8 @@ typedef struct {
     uint16_t lane_off, lane_x, lane_y, over_pull;
     char step_fn[24], kicker_fn[24];
     int nbumpers;
-    struct { int x, y, slot; } bumper[WATCH_BUMPERS];
+    struct { int x, y, slot; } bumper[WATCH_BUMPERS];        /* left to right; slot: its side, 0-2 */
+    char layout[WATCH_BUMPERS + 1];                         /* the sides, "LCR" */
 } WatchMap;
 
 int  watch_map_parse(const char *text, WatchMap *m, const char **why);
@@ -31,6 +32,7 @@ void watch_table_begin(const LiftedImage *img, uint16_t load_seg);
 void watch_table_end(void);
 int  watch_map_use(const WatchMap *m, uint16_t load_seg);    /* the second half of begin: tests/selftest.c */
 void watch_tick(void);               /* each host_frame */
+void watch_released(void);           /* the host let everything go (a dialog): send levels again */
 int  watch_running(void);            /* the table's physics is stepping */
 void watch_write_byte(uint32_t a, uint8_t v);                /* vga.c's write hook */
 const WatchMap *watch_table(uint32_t *ds, uint32_t *cs);     /* the live table, or NULL */

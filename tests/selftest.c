@@ -313,7 +313,7 @@ static void test_images(void)
 /* ---- cabinet feedback and the plunger ---- */
 
 static const char k_map[] =
-    "epicpinball-feedback 1\nimage ep1 16 69691905\n"
+    "epicpinball-feedback 2\nimage ep1 16 69691905\n"
     "ds 10\ncs 2000\nactive 100\nx 110\ny 120\nvx 130\nvy 140\nslots 5\n"
     "flip_l 150\nflip_r 152\nup_l 154\nup_r 155\ntilt 160\nmeter 161\ncooldown 162\ndemo 163\n"
     "extra 164\nover 165\ncount 166\ndrain_y 18F\nkick 167\nweak_y 180\nsling_line C7\nmap 170\n"
@@ -329,16 +329,32 @@ static void test_feedback_map(void)
     WatchMap m;
     assert(watch_map_parse(k_map, &m, &why));
     assert(!strcmp(m.name, "ep1") && m.size == 16 && m.fnv == 0x69691905u && m.pull_max == 708 && m.nbumpers == 2);
-    assert(watch_kick_event(&m, 90, 70) == FB_BUMPER_LEFT && watch_kick_event(&m, 210, 70) == FB_BUMPER_RIGHT);
+    assert(!strcmp(m.layout, "LR"));
+    /* each bumper its own event, left to right; slings by side */
+    assert(watch_kick_event(&m, 90, 70) == FB_BUMPER_1 && watch_kick_event(&m, 210, 70) == FB_BUMPER_2);
     assert(watch_kick_event(&m, 40, 300) == FB_SLING_LEFT && watch_kick_event(&m, 280, 300) == FB_SLING_RIGHT);
+    {
+        WatchMap six = m;                                 /* table 5's six: E105-E107, then E118-E120 */
+        const int xs[6] = { 28, 47, 100, 188, 240, 266 }, sides[6] = { 0, 0, 1, 1, 2, 2 };
+        six.nbumpers = 6;
+        for (int i = 0; i < 6; i++) { six.bumper[i].x = xs[i]; six.bumper[i].y = 150; six.bumper[i].slot = sides[i]; }
+        const FbEvent want[6] = { FB_BUMPER_1, FB_BUMPER_2, FB_BUMPER_3, FB_BUMPER_4, FB_BUMPER_5, FB_BUMPER_6 };
+        for (int i = 0; i < 6; i++) assert(watch_kick_event(&six, xs[i] + 1, 151) == (int)want[i]);
+        WatchMap none = m;                                /* Enigma: stamped as it runs, by where they stand */
+        none.nbumpers = 0;
+        assert(watch_kick_event(&none, 100, 60) == FB_BUMPER_1 && watch_kick_event(&none, 160, 60) == FB_BUMPER_2
+               && watch_kick_event(&none, 250, 60) == FB_BUMPER_3);
+    }
     for (size_t n = 0; n < sizeof k_map - 5; n++) {       /* cut short anywhere */
         memcpy(cut, k_map, n);
         cut[n] = 0;
         assert(!watch_map_parse(cut, &m, &why));
     }
     memcpy(cut, k_map, sizeof k_map);
-    *strstr(cut, " 1\n") = '\t';
-    strstr(cut, "\t1\n")[1] = '2';                        /* another version */
+    strstr(cut, "feedback 2")[9] = '1';                   /* another version */
+    assert(!watch_map_parse(cut, &m, &why));
+    memcpy(cut, k_map, sizeof k_map);
+    strstr(cut, "bumper 200")[7] = '0';                   /* not left to right */
     assert(!watch_map_parse(cut, &m, &why));
     memcpy(cut, k_map, sizeof k_map);
     strstr(cut, "pull 180")[0] = 'q';                     /* a key it does not know */
@@ -346,8 +362,9 @@ static void test_feedback_map(void)
 }
 
 static int seen[FB_OUTPUTS];
-static void seen_table(const char *name) { (void)name; }
-static void seen_event(FbEvent e, int on) { seen[e] += on; }
+static void seen_table(const char *name, const char *bumpers) { (void)name; (void)bumpers; }
+static int level[FB_OUTPUTS];
+static void seen_event(FbEvent e, int on) { seen[e] += on; level[e] = on; }
 static void seen_off(void) { }
 
 static void store8(uint32_t a, uint8_t v)
@@ -375,22 +392,22 @@ static void test_watch(void)
     ds[m.y] = 50;
 
     store8(kick, 9);                                      /* not from the kicker */
-    assert(!seen[FB_BUMPER_LEFT]);
+    assert(!seen[FB_BUMPER_1]);
     watch_enter(&g_cpu, "ep1_kick");                      /* entered, and turned back */
-    assert(!seen[FB_BUMPER_LEFT]);
+    assert(!seen[FB_BUMPER_1]);
     store8(kick, 9);
     store8(kick, 9);                                      /* one entry, one hit */
-    assert(seen[FB_BUMPER_LEFT] == 1);
+    assert(seen[FB_BUMPER_1] == 1);
     ds[m.y] = 0x80; ds[m.y + 1] = 1;                      /* at weak_y */
     watch_enter(&g_cpu, "ep1_kick");
     store8(kick, 3);
-    assert(seen[FB_BUMPER_LEFT] == 1);
+    assert(seen[FB_BUMPER_1] == 1);
 
     ds[m.demo] = 1;                                       /* the demo is never felt */
     ds[m.y] = 50; ds[m.y + 1] = 0;
     watch_enter(&g_cpu, "ep1_kick");
     store8(kick, 9);
-    assert(seen[FB_BUMPER_LEFT] == 1);
+    assert(seen[FB_BUMPER_1] == 1);
     ds[m.demo] = 0;
 
     ds[m.pull] = 0; ds[m.pull + 1] = 0;                   /* the host cancelling a pull is no launch */
@@ -400,6 +417,22 @@ static void test_watch(void)
     store8(pull, 0); store8(pull + 1, 0);
     store8(vy, 0x3C); store8(vy + 1, 0xFD);
     assert(seen[FB_LAUNCH] == 1);
+
+    /* multiball: two balls rolling. Not a ball parked or settling (table 3
+     * parks one in its kickback), and not after one is gone */
+    #define BALL(i, X, Y, ON) (ds[m.x + 2 * (i)] = (uint8_t)(X), ds[m.x + 2 * (i) + 1] = (uint8_t)((X) >> 8), \
+                               ds[m.y + 2 * (i)] = (uint8_t)(Y), ds[m.y + 2 * (i) + 1] = 0, ds[m.active + 2 * (i)] = (ON))
+    BALL(0, 100, 100, 1); BALL(1, 200, 200, 1);
+    watch_enter(&g_cpu, "ep1_step");
+    assert(!seen[FB_MULTIBALL]);
+    BALL(0, 150, 100, 1); watch_enter(&g_cpu, "ep1_step");        /* one rolls */
+    BALL(1, 202, 201, 1); watch_enter(&g_cpu, "ep1_step");        /* the other settles */
+    assert(!seen[FB_MULTIBALL]);
+    BALL(1, 240, 200, 1); watch_enter(&g_cpu, "ep1_step");        /* both roll */
+    assert(seen[FB_MULTIBALL] == 1 && level[FB_MULTIBALL]);
+    BALL(1, 240, 200, 0); watch_enter(&g_cpu, "ep1_step");        /* one drains */
+    assert(seen[FB_MULTIBALL] == 1 && !level[FB_MULTIBALL]);
+    #undef BALL
     watch_table_end();
     feedback_sink(NULL);
 }
@@ -533,7 +566,7 @@ static void test_dof_pipe(void)
     FILE *f = fopen(path, "w");
     assert(f);
     fprintf(f, "#!/bin/sh\necho \"run $*\" >> '%s/got'\n"
-               "case \"$*\" in *--all-off*) exit 0;; *ep3) exit 2;; *ep5) exit 5;; esac\necho ready\n"
+               "case \"$*\" in *--all-off*) exit 0;; *ep3[!0-9]*) exit 2;; *ep5[!0-9]*) exit 5;; esac\necho ready\n"
                "while read -r op a b; do echo \"$op $a $b\" >> '%s/got'\n"
                "case \"$op $a\" in q*) exit 0;; 'e tilt') exit 3;; esac; done\n",
             dir, dir);
@@ -542,7 +575,7 @@ static void test_dof_pipe(void)
 
     real_clock = 1;
     assert(dof_open(path, dir));
-    feedback_table(0, "ep1");
+    feedback_table(0, "ep1", "LCR");
     pump(300);
     feedback_event(1, FB_FLIPPER_LEFT, 1, (FbDetail){ 0 });
     pump(1200);                                           /* held, and nothing said: no fault, and no off */
@@ -550,19 +583,19 @@ static void test_dof_pipe(void)
     feedback_mute(1);                                     /* the demo: never sent */
     feedback_event(2, FB_KNOCKER, 1, (FbDetail){ 0 });
     feedback_mute(0);
-    feedback_table(3, NULL);                              /* the table's end: q */
+    feedback_table(3, NULL, NULL);                              /* the table's end: q */
     pump(300);
-    feedback_table(4, "ep2");
+    feedback_table(4, "ep2", "LCR");
     pump(300);
     feedback_event(5, FB_TILT, 1, (FbDetail){ 0 });       /* it dies: all off, and none till the next table */
     pump(500);
-    feedback_table(6, "ep3");                             /* no row for this table: only this one goes without */
+    feedback_table(6, "ep3", "LCR");                             /* no row for this table: only this one goes without */
     pump(300);
-    feedback_table(7, "ep4");
+    feedback_table(7, "ep4", "LCR");
     pump(300);
-    feedback_table(8, "ep5");                             /* no row at all: none for the rest of the run */
+    feedback_table(8, "ep5", "LCR");                             /* no row at all: none for the rest of the run */
     pump(300);
-    feedback_table(9, "ep6");
+    feedback_table(9, "ep6", "LCR");
     pump(300);
     dof_close();
     real_clock = 0;
@@ -574,7 +607,7 @@ static void test_dof_pipe(void)
     size_t n = fread(got, 1, sizeof got - 1, f);
     fclose(f);
     got[n] = 0;
-    assert(strstr(got, "--table ep1") && strstr(got, "--save") && !strstr(got, "knocker"));
+    assert(strstr(got, "--table ep1 --bumpers LCR") && strstr(got, "--save") && !strstr(got, "knocker"));
     const char *up = strstr(got, "e flipper_left 1"), *drain = strstr(got, "e drain 1");
     assert(up && drain && up < drain);
     const char *off = strstr(drain, "o  \n");             /* the mute's, after the drain */

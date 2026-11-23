@@ -52,6 +52,7 @@ static int was_ready;                /* this child could have switched something
 static int lost;                     /* killed by us, or exited wrongly: switch off after it */
 static int no_more;                  /* for the rest of the run */
 static char want[16];                /* the table that should have a helper */
+static char want_bumpers[8];         /* its bumpers' sides, "LCR" */
 static char in[128];
 static size_t in_len;
 static uint64_t since;
@@ -80,7 +81,8 @@ static int start(const char *arg, const char *table)
     sigaddset(&s, SIGPIPE);          /* ignored here, not to be inherited */
     posix_spawnattr_setsigdefault(&at, &s);
     posix_spawnattr_setflags(&at, POSIX_SPAWN_SETSIGDEF);
-    char *argv[] = { program, (char *)"--save", save, (char *)arg, (char *)table, NULL };
+    char *argv[] = { program, (char *)"--save", save, (char *)arg, (char *)table, NULL, NULL, NULL };
+    if (table && *want_bumpers) { argv[5] = (char *)"--bumpers"; argv[6] = want_bumpers; }
     int err = posix_spawn(&child, program, &fa, &at, argv, environ);
     posix_spawn_file_actions_destroy(&fa);
     posix_spawnattr_destroy(&at);
@@ -217,10 +219,11 @@ void dof_tick(void)
     }
 }
 
-static void on_table(const char *name)
+static void on_table(const char *name, const char *bumpers)
 {
     stop();
     snprintf(want, sizeof want, "%s", name ? name : "");
+    snprintf(want_bumpers, sizeof want_bumpers, "%s", name && bumpers ? bumpers : "");
 }
 
 static void on_event(FbEvent e, int on)

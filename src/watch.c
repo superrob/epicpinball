@@ -18,7 +18,9 @@
  */
 #include "watch.h"
 #include "feedback.h"
+#include "plunger.h"
 #include <stddef.h>
+#include <stdlib.h>
 
 int g_watch_on;
 uint32_t g_watch_ds;
@@ -39,8 +41,10 @@ static WatchMap M;
 static uint32_t DS, CS;              /* linear */
 static int kicking, kick_x, kick_y, kick_di;
 static int pull_old, launched;
-static int release, started;
+static int release, started, fresh;  /* fresh: the next release begins a game */
 static int flipper[2], known, idle;
+static int ready, multi;             /* the levels sent: ball_ready, multiball */
+static struct { uint16_t x, y; double moved; } ball[8];      /* when each ball last moved */
 static double last_step;
 static uint16_t ss0, sp0;            /* the table's stack */
 
@@ -61,8 +65,11 @@ static int sound(void)
     feedback_all_off();
     for (int i = 0; i < 2; i++)
         if (flipper[i]) feedback_event(now_ms(), (FbEvent)(FB_FLIPPER_LEFT + i), 0, (FbDetail){ 0 });
+    if (ready) feedback_event(now_ms(), FB_BALL_READY, 0, (FbDetail){ 0 });
+    if (multi) feedback_event(now_ms(), FB_MULTIBALL, 0, (FbDetail){ 0 });
+    ready = multi = 0;
     feedback_event(now_ms(), FB_TABLE_LOST, 1, (FbDetail){ g_cpu.sp, sp0, 0, 0 });
-    feedback_table(now_ms(), NULL);
+    feedback_table(now_ms(), NULL, NULL);
     return 0;
 }
 
@@ -121,7 +128,12 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
             got |= 1ull << i;
         }
     }
-    if (version != 1) *why = "another version's map";
+    for (int i = 0; i < m->nbumpers; i++) m->layout[i] = "LCR"[m->bumper[i].slot];
+    m->layout[m->nbumpers] = 0;
+    if (!m->nbumpers) strcpy(m->layout, "LCR");    /* Enigma's three, stamped as it runs */
+    for (int i = 1; i < m->nbumpers; i++)
+        if (m->bumper[i].x < m->bumper[i - 1].x) { *why = "bumpers not left to right"; return 0; }
+    if (version != 2) *why = "another version's map";
     else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || got != (1ull << NFIELDS) - 1) *why = "incomplete";
     else if (m->slots < 1 || m->slots > 8) *why = "a bad ball count";
     else return 1;
@@ -131,12 +143,14 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
 int watch_kick_event(const WatchMap *m, int x, int y)
 {
     if (y >= m->sling_line) return x < 160 ? FB_SLING_LEFT : FB_SLING_RIGHT;
-    int slot = x < STAMPED_LEFT ? 0 : x < STAMPED_RIGHT ? 1 : 2, best = 1 << 30;
+    if (!m->nbumpers)                              /* Enigma's, by where they stand */
+        return fb_bumper(x < STAMPED_LEFT ? 0 : x < STAMPED_RIGHT ? 1 : 2);
+    int event = FB_BUMPER_1, best = 1 << 30;
     for (int i = 0; i < m->nbumpers; i++) {
         int dx = x - m->bumper[i].x, dy = y - m->bumper[i].y;
-        if (dx * dx + dy * dy < best) { best = dx * dx + dy * dy; slot = m->bumper[i].slot; }
+        if (dx * dx + dy * dy < best) { best = dx * dx + dy * dy; event = fb_bumper(i); }
     }
-    return FB_BUMPER_LEFT + slot;
+    return event;
 }
 
 /* ---- a table's life ------------------------------------------------------- */
@@ -191,12 +205,14 @@ int watch_map_use(const WatchMap *m, uint16_t load_seg)
     watch(M.meter, W_METER);
     watch(M.tilt, W_TILT);
     watch(M.over, W_OVER);
-    kicking = launched = release = started = known = idle = 0;
+    kicking = launched = release = started = known = idle = ready = multi = 0;
+    for (int i = 0; i < 8; i++) { ball[i].x = ball[i].y = 0; ball[i].moved = -1e18; }
+    fresh = 1;
     pull_old = 0;
     flipper[0] = flipper[1] = 0;
     last_step = now_ms();
     ss0 = g_cpu.ss; sp0 = g_cpu.sp;                /* as load_exe left them */
-    feedback_table(now_ms(), M.name);
+    feedback_table(now_ms(), M.name, M.layout);
     g_watch_ds = DS;
     g_watch_on = 1;
     return 1;
@@ -208,7 +224,10 @@ void watch_table_end(void)
     g_watch_on = 0;
     for (int i = 0; i < 2; i++)
         if (flipper[i]) feedback_event(now_ms(), (FbEvent)(FB_FLIPPER_LEFT + i), 0, (FbDetail){ 0 });
-    feedback_table(now_ms(), NULL);
+    if (ready) feedback_event(now_ms(), FB_BALL_READY, 0, (FbDetail){ 0 });
+    if (multi) feedback_event(now_ms(), FB_MULTIBALL, 0, (FbDetail){ 0 });
+    ready = multi = 0;
+    feedback_table(now_ms(), NULL, NULL);
 }
 
 const WatchMap *watch_table(uint32_t *ds, uint32_t *cs)
@@ -242,6 +261,42 @@ static void flippers(void)
     }
 }
 
+/* A ball rolling: one that has gone this far from where it last rested, this
+ * recently. A ball in a slot is not always in play: table 3 parks one in its
+ * kickback from the start, and a ball waiting in the lane settles a pixel or
+ * two and then stands still. A ball cradled on a flipper this long during
+ * multiball stops counting until it moves again. */
+#define ROLLING_MS 5000.0
+#define ROLLING_PX 24
+
+/* A ball waiting in the shooter lane, as the plunger sees it; and how many
+ * balls are rolling. Sampled, so a ball that rolls back lights it again. */
+static void lane_and_balls(void)
+{
+    const int r = plunger_lane(&M, g_cpu.mem + DS, 1);
+    if (r != ready) emit(FB_BALL_READY, r, rd16(DS + M.x), rd16(DS + M.y), 0, 0);
+    ready = r;
+    const double t = now_ms();
+    int n = 0;
+    for (int i = 0; i < M.slots && i < 8; i++) {
+        const int x = rd16(DS + (uint16_t)(M.x + 2 * i)), y = rd16(DS + (uint16_t)(M.y + 2 * i));
+        if (rd16(DS + (uint16_t)(M.active + 2 * i)) != 1 || (!x && !y)) {
+            ball[i].x = ball[i].y = 0;                 /* gone, or not placed yet */
+            ball[i].moved = -1e18;
+            continue;
+        }
+        if (!ball[i].x && !ball[i].y) {
+            ball[i].x = (uint16_t)x; ball[i].y = (uint16_t)y;    /* where it first appears */
+        } else if (abs(x - ball[i].x) > ROLLING_PX || abs(y - ball[i].y) > ROLLING_PX) {
+            ball[i].x = (uint16_t)x; ball[i].y = (uint16_t)y;
+            ball[i].moved = t;
+        }
+        n += t - ball[i].moved <= ROLLING_MS;
+    }
+    if ((n >= 2) != multi) emit(FB_MULTIBALL, n >= 2, 0, 0, n, 0);
+    multi = n >= 2;
+}
+
 static void stepped(void)
 {
     last_step = now_ms();
@@ -253,9 +308,22 @@ static void stepped(void)
     }
     if (release) {
         release = 0;
-        if (g_cpu.mem[DS + M.over] != 1) emit(FB_BALL_RELEASE, 1, rd16(DS + M.x), rd16(DS + M.y), 0, 0);
+        if (g_cpu.mem[DS + M.over] != 1) {
+            if (fresh) emit(FB_GAME_START, 1, 0, 0, 0, 0);
+            fresh = 0;
+            emit(FB_BALL_RELEASE, 1, rd16(DS + M.x), rd16(DS + M.y), 0, 0);
+        }
     }
     flippers();
+    lane_and_balls();
+}
+
+/* The host switched every output off while the game stood still, with
+ * emulated time held, so no standstill shows here: forget what was sent, and
+ * the next step sends what is still on. */
+void watch_released(void)
+{
+    flipper[0] = flipper[1] = known = ready = multi = 0;
 }
 
 void watch_tick(void)
@@ -264,7 +332,9 @@ void watch_tick(void)
     if (now_ms() - last_step > IDLE_MS) {
         for (int i = 0; i < 2; i++)
             if (flipper[i]) emit((FbEvent)(FB_FLIPPER_LEFT + i), 0, 0, 0, -1, 0);
-        flipper[0] = flipper[1] = known = 0;
+        if (ready) emit(FB_BALL_READY, 0, 0, 0, -1, 0);
+        if (multi) emit(FB_MULTIBALL, 0, 0, 0, -1, 0);
+        flipper[0] = flipper[1] = known = ready = multi = 0;   /* sent again by the next step */
         idle = 1;
         return;
     }
@@ -313,6 +383,10 @@ void watch_write_byte(uint32_t a, uint8_t v)
         break;
     case W_VY:
         if (!launched) break;
+        if (fresh && g_cpu.mem[DS + M.over] != 1) {   /* Enigma serves its first ball unseen */
+            emit(FB_GAME_START, 1, 0, 0, 0, 0);
+            fresh = 0;
+        }
         emit(FB_LAUNCH, 1, rd16(DS + M.x), rd16(DS + M.y), launched, (int16_t)rd16(a));
         launched = 0;
         break;
@@ -334,7 +408,10 @@ void watch_write_byte(uint32_t a, uint8_t v)
         if (v == 1 && old != 1) emit(FB_TILT, 1, 0, 0, 0, 0);
         break;
     case W_OVER:
-        if (v == 1 && old != 1) emit(FB_GAME_OVER, 1, 0, 0, 0, 0);
+        if (v == 1 && old != 1) {
+            emit(FB_GAME_OVER, 1, 0, 0, 0, 0);
+            fresh = 1;
+        }
         break;
     }
 }

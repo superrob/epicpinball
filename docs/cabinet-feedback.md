@@ -122,12 +122,37 @@ epicpinball_ep07,E101 50,E102 50,E103 50 I32,E104 50 I32
 |---|---|---|---|
 | E101, E102 | `flipper_left`, `flipper_right` | the flipper starts up (not the key: never while tilted). EP4's and EP12's extra flippers share their side | on while it is up |
 | E103, E104 | `sling_left`, `sling_right` | the slingshot kicks, by where the ball touched it. EP8 has none, EP9 only a left one | instant |
-| E105, E106, E107 | `bumper_left`, `bumper_center`, `bumper_right` | a bumper kicks, by its place on the table. Tables with more than three share these; EP4 has one | instant |
+| E105, E106, E107 | `bumper_1`, `bumper_2`, `bumper_3` | that bumper kicks: a table's bumpers are numbered from the left ([below](#the-bumpers)) | instant |
 | E108 | `launch` | the game launches the ball | instant |
 | E109 | `ball_release` | a ball arrives in the shooter lane for a new game or the next ball | instant |
 | E110 | `drain` | a ball is lost | instant |
 | E111, E112 | `nudge`, `tilt` | each one | instant |
 | E113 | `knocker` | an extra ball. The game has no replay or match, and EP1 and EP5 never give one | instant |
+| E114 | `ball_ready` | a ball waits in the shooter lane, as the plunger sees it: from its release until it leaves the lane, so a plunge too weak to get out keeps it on. Enigma: while no ball is up | on while it waits |
+| E115 | `multiball` | two balls or more rolling: each gone over 24 pixels in the last 5 seconds, so a ball parked in a lock or kickback, or waiting in the lane, does not count. A ball cradled on a flipper longer than that drops out until it moves | on while it lasts |
+| E116 | `game_start` | a game begins, with its first ball's release (Enigma: its first launch) | instant |
+| E117 | `game_over` | a game ends | instant |
+| E118, E119, E120 | `bumper_4`, `bumper_5`, `bumper_6` | as `bumper_1`; only table 5 has more than three | instant |
+
+E105 to E107 meant the left, centre and right of the table until the per-bumper
+events came; on a table with three bumpers that is still what they are.
+
+#### The bumpers
+
+Numbered from the left, each on a side (L, C, R) by its rank from the left,
+which is where a made row puts it:
+
+| Table | Bumpers | Sides |
+|---|---|---|
+| 4 | 1 | C |
+| 1, 10, 12, 13 | 2 | L R |
+| 2, 3, 6, 7, 9 | 3 | L C R |
+| 11 | 3 (the first half hidden behind the left wall) | L C R |
+| 5 | 6 | L L C C R R |
+| 8 (Enigma) | 3, placed while it runs: by where they stand | L C R |
+
+Table 2's bumpers reach under its ramp; what shows of them there counts as the
+bumper. No table has a kicking rubber of its own.
 
 An instant event is a 1 and at once a 0, so the row gives it its length:
 
@@ -158,26 +183,33 @@ at every table start; nothing is written into the DOF folder. For the header
 above:
 
 ```ini
-epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113
+epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113/E117
 ```
 
 | Device | Gets |
 |---|---|
 | `Flipper Left`, `Flipper Right` | `E101`, `E102`: on while the flipper is up |
 | `Slingshot Left`, `Slingshot Right` | `E103`, `E104` |
-| `10 Bumper Back Left`, `Center`, `Right` | `E105`, `E106`, `E107` |
+| `10 Bumper Back Left`, `Center`, `Right` | every bumper of the table on that side: on table 5, `E105/E106` on the left |
 | `10 Bumper Middle ...`, `8 Bumper Left`, `Center`, `Right` | the same, only where there is no such back-row device |
-| `Knocker` | `E113` |
+| `10 Bumper Middle Right`, `8 Bumper Right` | also `E108`: the launch |
+| `Launch Button` | `E114`: lit while a ball waits in the lane |
+| `Knocker` | `E113/E117`: an extra ball, and game over |
 | `Beacon` | `E113 2000` |
 | `Shaker` | `E111 300 I32/E112 600 I32` |
 | `Start Button`, `Exit`, `Coin` | `ON` |
 | `RGB Flippers` | `ON White` |
+| `5 Flasher ...`, `3 Flasher ...`, `Back MX` | colours for events: [flashers](#flashers) |
 | everything else | `0` |
 
 - **`ZB Launch Ball` is always 0.** It is not a lamp: it switches a Pinscape's
   plunger into a launch button, which would stop the analog plunger.
-- **Launch, ball release and drain have no device** of their own, so a made
-  row never fires them. Write a row if you want them felt.
+- **Ball release has no device,** and drain, tilt, multiball, game start and
+  game over reach a made row only through flashers (below): write a row if you
+  want them on something else.
+- **The table's bumpers come from the game,** which tells the helper their
+  sides when it starts it (`--bumpers LLCCRR` for table 5). A side the table
+  has no bumper on gets none.
 - **Only the header is read.** Intensities and times the Config Tool puts in
   other games' rows are not copied.
 - **The helper says** which file it used, how many outputs got something, and
@@ -187,20 +219,56 @@ epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113
   entry). In VPinball's files the next export would erase it. A row for only
   some tables leaves the others made.
 
+#### Flashers
+
+Flashers and an LED strip get colours, as five spots across the back of the
+cabinet, left to right:
+
+| Device | Spots |
+|---|---|
+| `5 Flasher Outside Left`, `Left`, `Center`, `Right`, `Outside Right` | one each |
+| `3 Flasher Left`, `Center`, `Right` | the outer two, the middle one, the outer two |
+| `Back MX` (an LED strip) | all five, each a fifth of its width |
+
+| Event | Spots | Effect |
+|---|---|---|
+| `multiball` E115 | all | white, blinking while it lasts |
+| a bumper | the spots on its side: left two, centre, right two | yellow, 80 ms |
+| `knocker` E113 (extra ball) | all | white, three flashes |
+| `game_start` E116 | all | green, three flashes |
+| `game_over` E117 | all | blue, three flashes |
+| `drain` E110 | centre | red, 300 ms |
+| `tilt` E112 | all | red, 600 ms |
+
+Lower in the list draws over higher: a bumper's flash shows through the
+multiball blink, and a tilt covers everything. A flasher device's own effects
+in other games' rows are not used; `Strobe` stays 0. A device name with
+"flasher" in it that is none of these is left off, and the helper says so.
+
+The strip lights the way it does for the Config Tool's own games: in
+`Cabinet.xml`, the output of that file's `LedWizEquivalent` names a `LedStrip`
+toy on your LED controller, and the made row's effects go to that toy. Tested
+on a real cabinet's `Back MX` strip, on table 1. Where the output leads to no
+strip, nothing lights.
+
 The names are the Config Tool's, as listed in the Pinscape build guide's
 [device appendix](http://mjrnet.org/pinscape/BuildGuideV2/BuildGuide.php?sid=dofDeviceList),
-in any case. The `8 Bumper` ones are taken from the guide alone.
+in any case. The `8 Bumper` ones are taken from the guide alone. Of the
+flashers, the guide shows `5 Flasher Outside Left`; the other `5 Flasher` and
+the `3 Flasher` names follow its pattern and were not seen in an export.
+`Back MX` is from a real export.
 
 ### 5. Try a row
 
 With the game closed:
 
 ```sh
-dof/build/epicpinball-dof --table ep7 --test sling_left
+dof/build/epicpinball-dof --table ep5 --bumpers LLCCRR --test bumper_4
 ```
 
-It sends that one event (a flipper is held half a second), waits three
-seconds and switches off.
+It sends that one event (a flipper or another level is held half a second),
+waits three seconds and switches off. `--bumpers` is the table's sides from the
+table [above](#the-bumpers); without it a made row assumes three, `LCR`.
 
 ### 6. Play
 
@@ -350,7 +418,7 @@ signatures are proven on GOG 1.01 only.
 
 On a real cabinet with a Pinscape Pico, on table 1: the outputs, from a
 Config Tool export with no Epic Pinball row (so from the row made from its
-header), and the analog plunger.
+header), the colours on its `Back MX` LED strip, and the analog plunger.
 
 Without hardware, in a sandbox with no devices:
 
@@ -360,6 +428,10 @@ Without hardware, in a sandbox with no devices:
   kicker on EP5 and one on EP13 were never hit;
 - the helper on ArtNet over loopback and against a simulated Pico's HID
   interface: file lookup, rows, effects, holds, kills, hangs;
+- flashers in made rows: five RGB flashers and a 20-LED `Back MX` strip
+  through the helper for every flasher event, and five flashers from the game
+  on tables 1 and 5 (multiball and the extra ball did not come up there). On
+  the real cabinet, the `Back MX` strip on table 1; no flasher devices;
 - the plunger by scripted sensor (`--plunger-trace "ms:percent,..."`) on all
   13 tables, and by a virtual joystick through SDL. Its launch strengths are
   the keyboard's and so are the speeds the ball leaves with. A ball's later

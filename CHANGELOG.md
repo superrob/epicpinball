@@ -19,16 +19,20 @@ All notable changes to this project are documented here. The format follows
   run. The menus and the scoreboard keep their shape. Conformance 154.
 - **`--dof`**, cabinet feedback (Linux): flippers, slingshots, bumpers,
   launch, ball release, drain, nudge, tilt and the extra ball's knocker go to
-  libdof as events E101 to E113 of tables `epicpinball_ep01` to `ep13`,
+  libdof as events E101 to E120 of tables `epicpinball_ep01` to `ep13`:
+  each bumper its own (table 5 has six), a ball waiting in the lane,
+  multiball, game start and game over among them,
   through a helper in `dof/` (GPLv3, built only by `dof/build.sh`; the game
   does not link it). It uses VPinball's DOF files where there are some, and
   the game's own rows in `saves/directoutputconfig/` before those. With no
   row for the game, it makes one from the device list the Config Tool writes
   after `[Config DOF]`: flippers, slingshots, back-row bumpers, knocker,
-  beacon, shaker and steady button lamps; never `ZB Launch Ball`. It sets
+  beacon, shaker and steady button lamps, and colours on flashers and a
+  `Back MX` strip for bumpers, extra ball, game start and over, drain, tilt
+  and multiball; never `ZB Launch Ball`. It sets
   **no output limits**: they are the controller's. Tested on a real cabinet
-  with a Pinscape Pico and a Config Tool export, on table 1 only:
-  `docs/cabinet-feedback.md`.
+  with a Pinscape Pico, an LED strip and a Config Tool export, on table 1
+  only: `docs/cabinet-feedback.md`.
 - **An analog plunger** (Linux): `[plunger]` in `controller.ini` names a
   joystick axis; the drawn plunger follows it and a release launches at the
   strength pulled to. `--joysticks` lists devices and axes. It is the first

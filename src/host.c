@@ -476,6 +476,7 @@ static void menu(int x, int y)
     uint64_t t = host_us();
     feedback_all_off();                            /* the game stands still under it */
     plunger_let_go();
+    watch_released();
     int id = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, x, y, 0, wnd, NULL);
     machine_paused(host_us() - t);                 /* the game stood still meanwhile */
     DestroyMenu(m);                                /* and its submenus */
@@ -679,6 +680,7 @@ static void menu(void)
     board_aside(1);                                /* the dialog would open under the scoreboard */
     feedback_all_off();                            /* and the game stands still under it */
     plunger_let_go();
+    watch_released();
     SDL_ShowMessageBox(&d, &id);
     board_aside(0);
     SDL_ShowCursor(cursor);

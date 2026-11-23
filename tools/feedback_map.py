@@ -30,7 +30,9 @@ GEN = os.path.join(ROOT, 'work', 'gen')
 DATA = os.path.join(ROOT, 'original')
 OUT = os.path.join(ROOT, 'work', 'feedback')
 TABLES = 13
-VERSION = 1
+VERSION = 2
+MAX_BUMPERS = 6                 # E105-E107 and E118-E120
+RIM = 40                        # a small run this near a bumper is part of it
 
 N = r'0x([0-9A-F]+)'            # a number, kept
 A = r'0x[0-9A-F]+'              # a number, not kept
@@ -293,10 +295,12 @@ def sling_line(regions, sling_y):
 
 
 def bumpers(regions, line):
-    """The bumpers and which of a cabinet's three outputs each is: by rank from
-    the left. One bumper can be several runs of pixels (a dithered ring), so
-    the largest gathers what is within its radius. A kicking rubber too small
-    to be a bumper is on the output of the bumper nearest its side of the table."""
+    """The bumpers, left to right, each with the side of a cabinet it is on
+    (0, 1, 2: by rank from the left). One bumper can be several runs of pixels
+    (a dithered ring), so the largest gathers what is within its radius. A
+    small group near a bumper is the rest of it, where a ramp crosses it
+    (table 2); one far from any is a bumper mostly out of sight (table 11's,
+    behind the wall). None of the thirteen has a kicking rubber of its own."""
     groups = []                      # [seed x, seed y, pixels, sum x, sum y]
     for n, x, y, _, _ in sorted((r for r in regions if r[2] < line), reverse=True):
         near = [g for g in groups if (g[0] - x) ** 2 + (g[1] - y) ** 2 <= 30 ** 2]
@@ -310,8 +314,16 @@ def bumpers(regions, line):
     if not groups:
         return []
     most = max(g[2] for g in groups)
-    found = sorted((g[3] // g[2], g[4] // g[2]) for g in groups if g[2] * 5 >= most * 2)
-    small = sorted((g[3] // g[2], g[4] // g[2]) for g in groups if g[2] * 5 < most * 2)
+    big = [g for g in groups if g[2] * 5 >= most * 2]
+    for g in [g for g in groups if g[2] * 5 < most * 2]:
+        x, y = g[3] // g[2], g[4] // g[2]
+        near = min(big, key=lambda b: (b[3] // b[2] - x) ** 2 + (b[4] // b[2] - y) ** 2)
+        if (near[3] // near[2] - x) ** 2 + (near[4] // near[2] - y) ** 2 <= RIM ** 2:
+            for i in (2, 3, 4):
+                near[i] += g[i]
+        else:
+            big.append(g)
+    found = sorted((g[3] // g[2], g[4] // g[2]) for g in big)
     out = []
     for i, (x, y) in enumerate(found):
         if len(found) == 1:
@@ -321,9 +333,8 @@ def bumpers(regions, line):
         else:
             slot = i * 3 // len(found)
         out.append((x, y, slot))
-    main = list(out)
-    for x, y in small:
-        out.append((x, y, min(main, key=lambda b: abs(b[0] - x))[2]))
+    if len(out) > MAX_BUMPERS:
+        raise Missing(f'{len(out)} bumpers: events are made for {MAX_BUMPERS}')
     return out
 
 
@@ -370,7 +381,7 @@ def text_of(img, r):
         if k in ('flipper_fn', 'main_fn', 'drain_fn'):
             continue
         out.append(f'{k} {x}' if k.endswith('_fn') else f'{k} {x:X}')
-    out += [f'bumper {x} {y} {slot}' for x, y, slot in r['bumpers']]
+    out += [f'bumper {x} {y} {slot}' for x, y, slot in r['bumpers']]       # left to right: E105 on
     out.append('end')
     return '\n'.join(out) + '\n'
 

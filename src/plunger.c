@@ -128,7 +128,7 @@ static uint16_t strength(const WatchMap *m, int pos)
 }
 
 /* The states in which the game runs its plunger block, less those it must not see a pull in */
-static int in_lane(const WatchMap *m, const uint8_t *ds, int running)
+int plunger_lane(const WatchMap *m, const uint8_t *ds, int running)
 {
     if (!running || ds[m->demo] == 1 || ds[m->over] == 1 || ds[m->count]) return 0;
     if (m->lane_off && ds[m->lane_off]) return 0; /* not every table has it */
@@ -200,7 +200,7 @@ void plunger_step(Plunger *p, const WatchMap *m, uint8_t *ds, uint8_t *cs, int r
         return;
     }
     const int fixed = !m->pull_inc;
-    const int lane = in_lane(m, ds, running);
+    const int lane = plunger_lane(m, ds, running);
     const uint16_t pull = get16(ds, m->pull);
 
     if (p->state == FIRED) {

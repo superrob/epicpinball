@@ -36,6 +36,7 @@ typedef struct {
 } Plunger;
 
 void plunger_init(Plunger *p);
+int  plunger_lane(const WatchMap *m, const uint8_t *ds, int running);  /* a ball waits in the lane */
 /* Each host_frame. m NULL: no table, and nothing is written. running: its
  * physics is stepping (not paused, not at a prompt). */
 void plunger_step(Plunger *p, const WatchMap *m, uint8_t *ds, uint8_t *cs, int running,

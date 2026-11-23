@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // epicpinball-dof - tells libdof which table is up and what happened on it.
 //
-//   epicpinball-dof --table epN [--save saves]
+//   epicpinball-dof --table epN [--bumpers LCR] [--save saves]
 //   epicpinball-dof --table epN --test EVENT      that one event, for trying a row
+//
+// --bumpers is the table's bumpers from the left, the side of each: L, C or R.
+// The game passes it; it says which bumper events a made row puts where.
 //   epicpinball-dof --all-off                     connect, switch everything off, leave
 //
 // The DOF files say what an event does (locate.h finds them), and the
@@ -59,6 +62,7 @@ std::string g_save;
 bool g_all_off;
 volatile sig_atomic_t g_quit;
 std::atomic<bool> g_pico_found{false};
+std::string g_bumpers = "LCR";        // the table's bumpers' sides, from the left
 std::atomic<int> g_unread{0};          // settings libdof could not read, and skips
 int g_unread_once;                      // in one reading of the files
 std::atomic<bool> g_show_unread{true};  // the game's own files: shown, not counted
@@ -137,7 +141,7 @@ public:
 
     void event(int e, bool on)
     {
-        if (e < kFlippers) {
+        if (is_level(e)) {
             held_[e] = on;
             send(e, on);
         } else if (on) {                        // the row says how long it lasts
@@ -148,7 +152,7 @@ public:
 
     void release()
     {
-        for (int e = 0; e < kFlippers; e++)
+        for (int e = 0; e < kEvents; e++)
             if (held_[e]) event(e, false);
     }
 
@@ -156,12 +160,12 @@ private:
     void send(int e, bool on) { dof_->DataReceive('E', kFirstE + e, on ? 1 : 0); }
 
     DOF::DOF *dof_;
-    bool held_[kFlippers] = {};
+    bool held_[kEvents] = {};
 };
 
 int usage()
 {
-    say("usage: epicpinball-dof (--table epN [--test EVENT] | --all-off) [--save DIR]");
+    say("usage: epicpinball-dof (--table epN [--bumpers LCR] [--test EVENT] | --all-off) [--save DIR]");
     std::string names;
     for (auto *e : kEvent) names += std::string(" ") + e;
     say("events:" + names);
@@ -197,20 +201,17 @@ fs::path construct(const locate::Files &at, const fs::path &work, const std::str
     if (!at.table.empty()) dirs.push_back(at.base / locate::kDir);
     headers = false;
     for (auto &dir : dirs) {
-        bool made = false;
+        bool made = false, fires[kEvents] = {};
         for (auto &[number, path] : locate::ini_files(dir)) {
             const auto names = autorow::header_of(path.string());
             if (!names) continue;
             headers = true;
-            const autorow::Row row = autorow::build(*names);
+            const autorow::Row row = autorow::build(*names, g_bumpers);
             for (auto &s : row.said) say(path.filename().string() + ": " + s);
             if (row.empty()) continue;
-            std::string none;
-            for (int i = 0; i < kEvents; i++)
-                if (!row.fires[i]) none += std::string(none.empty() ? "" : ", ") + kEvent[i];
-            say("no " + rom + " or " + kRom + " row: made one from the header of " + path.string() + ", "
-                + std::to_string(row.outputs) + " of " + std::to_string(row.width) + " outputs"
-                + (none.empty() ? "" : "; no device for " + none));
+            for (int i = 0; i < kEvents; i++) fires[i] |= row.fires[i];
+            say("no " + rom + " or " + kRom + " row: made one for bumpers " + g_bumpers + " from the header of " + path.string() + ", "
+                + std::to_string(row.outputs) + " of " + std::to_string(row.width) + " outputs");
             const fs::path name = out / ("directoutputconfig" + (number == 1 ? std::string() : std::to_string(number)) + ".ini");
             std::ofstream f(name, std::ios::binary);
             f << autorow::file(rom, row, path.string());
@@ -220,7 +221,16 @@ fs::path construct(const locate::Files &at, const fs::path &work, const std::str
             }
             made = true;
         }
-        if (made) return out / rom;
+        if (made) {
+            std::string none;                            // over all the files: a strip's alone has no solenoids
+            for (int i = 0; i < kEvents; i++) {
+                bool table_has = true;                   // a bumper this table does not have is no loss
+                for (int b = (int)g_bumpers.size(); b < kBumpers; b++) table_has &= i != bumper_event(b);
+                if (table_has && !fires[i]) none += std::string(none.empty() ? "" : ", ") + kEvent[i];
+            }
+            if (!none.empty()) say("no device for " + none);
+            return out / rom;
+        }
         if (headers) {
             say("the headers in " + dir.string() + " name no device Epic Pinball has an event for");
             return {};
@@ -299,6 +309,7 @@ int serve(Sender &send, int out, pid_t parent)
 int run(int argc, char **argv)
 {
     std::string table, test, rom;
+    bool layout = false;
     g_save = "saves";
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
@@ -307,13 +318,18 @@ int run(int argc, char **argv)
         else if (a == "--save" && v) g_save = argv[++i];
         else if (a == "--table" && v) table = argv[++i];
         else if (a == "--test" && v) test = argv[++i];
+        else if (a == "--bumpers" && v) { g_bumpers = argv[++i]; layout = true; }
         else return usage();
     }
+    if (g_bumpers.empty() || g_bumpers.size() > (size_t)kBumpers
+        || g_bumpers.find_first_not_of("LCR") != std::string::npos) return usage();
     if (g_all_off) {
         if (!table.empty() || !test.empty()) return usage();
     } else {
         rom = rom_of(table);
         if (rom.empty() || (!test.empty() && event_by_name(test) < 0)) return usage();
+        if (!layout && !test.empty())
+            say("bumpers LCR assumed: give the table's with --bumpers (docs/cabinet-feedback.md)");
     }
 
     const pid_t parent = getppid();
@@ -379,7 +395,7 @@ int run(int argc, char **argv)
     } else {
         std::this_thread::sleep_for(300ms);     // libdof's controllers connect on threads of their own
         const int ev = event_by_name(test);
-        say(rom + ": " + test + " (E" + std::to_string(kFirstE + ev) + ")");
+        say(rom + ": " + test + " (E" + std::to_string(kFirstE + ev) + "), bumpers " + g_bumpers);
         send.event(ev, true);
         std::this_thread::sleep_for(500ms);     // long enough to see a flipper held
         send.release();
