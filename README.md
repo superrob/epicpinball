@@ -109,6 +109,9 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
 - **Smooth sound**: the 22 kHz Sound Blaster stream interpolated up to
   44.1 kHz instead of held in steps (Settings → Sound for the original).
 - **Xbox controller** mapped by `saves\controller.ini`.
+- **A settings tool** (Linux), `./epicpinball-config.sh`: modes, keys, a
+  cabinet's buttons, plunger and nudge calibration, SSF, DMD and DOF, and an
+  import of VPinball's settings ([docs](docs/config.md)).
 
 ## Screenshots
 
@@ -208,7 +211,8 @@ epicpinball [options] [-- arguments for PINBALL.EXE]
 | **PrtSc** | screenshot to `screenshots\` |
 
 A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
-`saves\controller.ini`.
+`saves\controller.ini`, where `[keys]` also adds keyboard keys to the game's
+actions ([docs](docs/cabinet-feedback.md#keys-and-buttons)).
 
 | Option | |
 |---|---|
@@ -224,11 +228,13 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 | `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard (or with `--dmd`, the DMD) window goes, this run |
 | `--table N` | straight to table N (1-13) and a one-player game; quitting it quits the program ([docs](docs/table.md)) |
 | `--ssf` | 7.1 for a cabinet with exciters: the board's sounds on the side (top) and rear (bottom) pairs; `[ssf]` in `epicpinball.ini` sets their volumes (Linux) ([docs](docs/ssf.md)) |
+| `--ssf-volumes FX,ROLL` | SSF's effects and rolling volumes for this run, over `[ssf]`'s (4 is the default, 0 none) |
 | `--dmd` | a 128x32 DMD in a window of its own; in a cabinet, in place of the scoreboard window (Linux) ([docs](docs/dmd.md)) |
 | `--dmd-device` | the DMD on a real one, any libdmdutil drives (ZeDMD, Pixelcade, PinDMD3, ...; tested with a ZeDMD; PIN2DMD is left out of this build): build `dmd/build.sh` (Windows: `dmd\build.ps1`) first; settings in `saves/dmd/DMDUtil.ini` |
 | `--dof` | DOF events through libdof: build `dof/build.sh` (Windows: `dof\build.ps1`) first; rows in VPinball's DOF files or `saves/directoutputconfig/`; no output limits ([docs](docs/cabinet-feedback.md)) |
-| `--joysticks` | list joysticks, their live axes and buttons pressed, to set up `[plunger]` and `[nudge]` in `saves/controller.ini`; on Windows a board may have another name, and its axes are X Y Z RX RY RZ then the sliders |
-| `--feedback-log FILE`, `--plunger-trace "ms:percent,..."`, `--nudge-trace "ms:x,y,..."` | testing: what a cabinet would feel; a scripted plunger sensor; a scripted accelerometer |
+| `--no-cabinet`, `--no-dmd`, `--no-dmd-device`, `--no-ssf`, `--no-dof` | leave a mode out this run that `[modes]` in `epicpinball.ini` turns on (the settings tool sets it; [docs](docs/config.md)) |
+| `--joysticks` | list joysticks, their live axes and buttons pressed, to set up `[plunger]`, `[nudge]` and `[buttons]` in `saves/controller.ini`; the settings tool does it with pictures. On Windows a board may have another name, and its axes are X Y Z RX RY RZ then the sliders |
+| `--feedback-log FILE`, `--plunger-trace "ms:percent,..."`, `--nudge-trace "ms:x,y,..."`, `--nudge-velocity` | testing: what a cabinet would feel; a scripted plunger sensor; a scripted accelerometer, or with `--nudge-velocity` its velocity |
 | `--mute` | |
 | `--headless` | no window, no audio device, deterministic time — works over RDP |
 | `--record out.mp4` | video and audio through ffmpeg (with `--headless`: unattended) |

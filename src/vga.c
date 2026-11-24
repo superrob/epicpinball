@@ -160,6 +160,8 @@ static int table_screen(void)
     return (vde + 1) / ((crtc[0x09] & 0x1F) + 1u) == 240;
 }
 
+int vga_table_up(void) { return table_screen(); }
+
 /* The rows under the line-compare split: a table's scoreboard, as much of it
  * as shows right now. 0 when the screen is not Mode X 240 with a split. */
 static int display_rows(void)

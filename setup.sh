@@ -46,8 +46,8 @@ for t in gcc cmake python3 pkg-config; do command -v "$t" >/dev/null || need+=("
 command -v pkg-config >/dev/null && ! pkg-config --exists sdl2 && need+=("SDL2's development files")
 if [ ${#need[@]} -gt 0 ]; then
   say "  Missing: ${need[*]}. From your package manager, for example:"
-  say "    Debian, Ubuntu: sudo apt install gcc cmake python3 git pkg-config libsdl2-dev innoextract"
-  say "    Fedora:         sudo dnf install gcc cmake python3 git pkgconf sdl2-compat-devel innoextract"
+  say "    Debian, Ubuntu: sudo apt install gcc g++ cmake python3 git pkg-config libsdl2-dev innoextract"
+  say "    Fedora:         sudo dnf install gcc gcc-c++ cmake python3 git pkgconf sdl2-compat-devel innoextract"
   say "    Arch:           sudo pacman -S gcc cmake python git pkgconf sdl2 innoextract"
   say "  (innoextract only to unpack GOG's installer; ffmpeg only for --record.)"
   fail "install them, then run ./setup.sh again."

@@ -20,17 +20,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-static NudgeSettings S = { 1500, 1.0, 1.0, 0, 0 };
+static NudgeSettings S = { 1500, 1.0, 1.0, 0, 0, 0 };
 static int on, rx, ry;
 static double carry_x, carry_y, filled;
+static double vel_x, vel_y;          /* is_velocity: the velocity the step before saw */
+static int vel_known;
 
-void nudge_settings(const NudgeSettings *s) { S = *s; }
+static int traced_velocity;
+
+void nudge_settings(const NudgeSettings *s)
+{
+    S = *s;
+    if (traced_velocity) S.is_velocity = 1;
+    vel_known = 0;
+}
+
+void nudge_trace_velocity(void) { traced_velocity = 1; S.is_velocity = 1; }
+const NudgeSettings *nudge_get_settings(void) { return &S; }
 
 void nudge_reading(int is_on, int x, int y)
 {
     on = is_on;
     rx = x; ry = y;
-    if (!on) carry_x = carry_y = 0;
+    if (!on) { carry_x = carry_y = 0; vel_known = 0; }
+}
+
+int nudge_now(int *x, int *y)
+{
+    *x = S.invert_x ? -rx : rx;
+    *y = S.invert_y ? -ry : ry;
+    return on;
 }
 
 double nudge_push(int reading, int dead, double strength)
@@ -56,9 +75,15 @@ static void add16(uint8_t *ds, uint16_t a, int d)
 void nudge_step(const WatchMap *m, uint8_t *ds)
 {
     if (!on || !m || !ds) return;
-    if (ds[m->demo] == 1 || ds[m->tilt] == 1) { carry_x = carry_y = 0; return; }
+    if (ds[m->demo] == 1 || ds[m->tilt] == 1) { carry_x = carry_y = 0; vel_known = 0; return; }
     const int x = S.invert_x ? -rx : rx, y = S.invert_y ? -ry : ry;
-    const double px = -nudge_push(x, S.dead, S.strength), py = -nudge_push(y, S.dead, S.strength);
+    double px = -nudge_push(x, S.dead, S.strength), py = -nudge_push(y, S.dead, S.strength);
+    if (S.is_velocity) {                         /* the push is the velocity's change, the whole of it now */
+        const double vx = -px * (NUDGE_GAME / NUDGE_STEP), vy = -py * (NUDGE_GAME / NUDGE_STEP);
+        px = vel_known ? -(vx - vel_x) : 0;
+        py = vel_known ? -(vy - vel_y) : 0;
+        vel_x = vx; vel_y = vy; vel_known = 1;
+    }
     if (px == 0 && py == 0) return;
 
     if (S.tilt > 0) {                            /* the meter: by how hard, whatever the gate */

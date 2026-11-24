@@ -51,7 +51,8 @@ middle of the table gives each exciter a quarter, and exciters need driving.
 Past about -3 dBFS the exciters' mix rounds off (a soft knee) rather than
 clips, so a higher volume makes the busy moments denser, not distorted. The
 card's own per-channel volumes (side and rear) count too. A table's `board_epN`
-replaces what the map lists for it (below).
+replaces what the map lists for it (below). `--ssf-volumes FX,ROLL` sets
+both for one run, over the saved ones (headless runs read only that).
 
 ## How it works
 

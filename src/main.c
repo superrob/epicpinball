@@ -30,6 +30,10 @@
  *   --present WxH     --shot-at frames through the presenter at that size
  * Settings changed in the window are kept in epicpinball.ini in the save
  * folder; the options above win over it, and headless runs read only them.
+ * Its [modes] (cabinet, dmd, dmd_device, ssf, dof = 1; the settings tool sets
+ * them) turn those on in every run with a window, as their options do:
+ *   --no-cabinet, --no-dmd, --no-dmd-device, --no-ssf, --no-dof
+ *                     not this time, whatever [modes] says
  *   --feedback-log FILE  what a cabinet would feel, as a list: flippers, slings,
  *                     bumpers, launch, drain ... (docs/cabinet-feedback.md)
  *   --dmd             a 128x32 DMD of the table: with --cabinet in the
@@ -42,6 +46,8 @@
  *   --ssf             7.1 for a cabinet with exciters: front left and right
  *                     the game's sound, the side and rear pairs the board's
  *                     sounds where on the table they happen (docs/ssf.md)
+ *   --ssf-volumes FX,ROLL  its effects and rolling volumes, over the saved
+ *                     ones (4 is the default; 0 none)
  *   --dmd-device      the DMD on a real one (a ZeDMD) through libdmdutil;
  *                     build it with dmd/build.sh (Windows: dmd\build.ps1)
  *   --dof             table events to libdof, with VPinball's DOF files or
@@ -55,6 +61,8 @@
  *                     straight lines between, "-" for unplugged
  *   --nudge-trace LIST  a scripted accelerometer: "ms:x,y,...", each held to
  *                     the next (-32768..32767; the cabinet shoved left is x < 0)
+ *   --nudge-velocity  with --nudge-trace: its values are the cabinet's velocity,
+ *                     as a board set to report velocity gives (is_velocity)
  *   --trace           log DOS calls to stderr
  *   --shot FILE.bmp   write the last frame at exit
  *   --shot-at LIST    frames at emulated times: "ms:file.bmp,..."
@@ -70,6 +78,7 @@
 #include "ssf.h"
 #include "autostart.h"
 #include "nudge.h"
+#include "ini.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #ifdef _WIN32
@@ -120,6 +129,24 @@ void fatal(const char *fmt, ...)
     exit(1);
 }
 
+/* [modes] in epicpinball.ini: what a run with a window turns on unless told not to */
+static const char *const k_modes[] = { "cabinet", "dmd", "dmd_device", "ssf", "dof" };
+#define NMODES 5
+static int *mode_flag(int i)
+{
+    int *const f[NMODES] = { &g_opt.cabinet, &g_opt.dmd, &g_opt.dmd_device, &g_opt.ssf, &g_opt.dof };
+    return f[i];
+}
+static int mode_no[NMODES], mode_ini[NMODES];
+
+/* A mode the ini asked for that cannot run is left off, saying why: the game still starts */
+static void mode_skip(int i, const char *why)
+{
+    fprintf(stderr, "[modes] %s = 1 in epicpinball.ini: not this time, %s\n", k_modes[i], why);
+    *mode_flag(i) = 0;
+    mode_ini[i] = 0;
+}
+
 static void mkdirs(const char *p)
 {
     char b[512]; snprintf(b, sizeof b, "%s", p);
@@ -160,6 +187,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--dmd")) g_opt.dmd = 1;
         else if (!strcmp(a, "--dmd-device")) g_opt.dmd_device = 1;
         else if (!strcmp(a, "--ssf")) g_opt.ssf = 1;
+        else if (!strcmp(a, "--ssf-volumes") && v) { g_opt.ssf_volumes = v; i++; }
         else if (!strcmp(a, "--table") && v) {
             char *e; long n = strtol(v, &e, 10);
             if (*e || n < 1 || n > 13) { fprintf(stderr, "--table: a table from 1 to 13, not %s\n", v); return 2; }
@@ -168,6 +196,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--joysticks")) list_joysticks = 1;
         else if (!strcmp(a, "--plunger-trace") && v) { g_opt.plunger_trace = v; i++; }
         else if (!strcmp(a, "--nudge-trace") && v) { g_opt.nudge_trace = v; i++; }
+        else if (!strcmp(a, "--nudge-velocity")) nudge_trace_velocity();
         else if (!strcmp(a, "--window") && v) { g_opt.window = atoi(v); i++; }
         else if (!strcmp(a, "--scale") && v) { g_opt.scale = v; i++; }
         else if (!strcmp(a, "--look") && v) { g_opt.look = v; i++; }
@@ -183,6 +212,17 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--fullscreen")) g_opt.fullscreen = 1;
         else if (!strcmp(a, "--realtime")) g_opt.realtime = 1;
         else if (!strcmp(a, "--shot") && v) { shot = v; i++; }
+        else if (!strncmp(a, "--no-", 5)) {
+            int m = -1;
+            for (int k = 0; k < NMODES; k++) {
+                char o[32];
+                snprintf(o, sizeof o, "%s", k_modes[k]);
+                for (char *c = o; *c; c++) if (*c == '_') *c = '-';
+                if (!strcmp(a + 5, o)) m = k;
+            }
+            if (m < 0) { fprintf(stderr, "unknown option %s (see the top of src/main.c)\n", a); return 2; }
+            mode_no[m] = 1;
+        }
         else if (!strcmp(a, "--")) {
             for (i++; i < argc; i++) {
                 if (tail[0]) strncat(tail, " ", sizeof tail - strlen(tail) - 1);
@@ -191,7 +231,17 @@ int main(int argc, char **argv)
         } else { fprintf(stderr, "unknown option %s (see the top of src/main.c)\n", a); return 2; }
     }
     if (list_joysticks) return pad_list(g_opt.seconds);
+    if (!g_opt.savedir) g_opt.savedir = "saves";
+    for (int k = 0; k < NMODES; k++) if (mode_no[k]) *mode_flag(k) = 0;
+    if (!g_opt.headless) {                          /* headless runs read no settings */
+        char ini[600], v[16];
+        snprintf(ini, sizeof ini, "%s/epicpinball.ini", g_opt.savedir);
+        for (int k = 0; k < NMODES; k++)
+            if (!*mode_flag(k) && !mode_no[k] && atoi(ini_get(ini, "modes", k_modes[k], "0", v, sizeof v)))
+                *mode_flag(k) = mode_ini[k] = 1;
+    }
     const char *wrong = cabinet_check();
+    if (wrong && mode_ini[0]) { mode_skip(0, wrong); wrong = cabinet_check(); }
     if (!wrong && g_opt.plunger_trace && !plunger_trace(g_opt.plunger_trace))
         wrong = "--plunger-trace takes ms:percent,... in order of time, e.g. 20000:0,20500:100,20540:0";
     if (!wrong && g_opt.nudge_trace && !nudge_trace(g_opt.nudge_trace))
@@ -200,22 +250,25 @@ int main(int argc, char **argv)
         wrong = "--dof needs a window or --realtime: libdof times pulses by the wall clock";
     if (wrong) { fprintf(stderr, "%s\n", wrong); return 2; }
     if (!g_opt.datadir) g_opt.datadir = "original";
-    if (!g_opt.savedir) g_opt.savedir = "saves";
     g_opt.args = tail;
     mkdirs(g_opt.savedir);
     if (g_opt.feedback_log) {
         if (!feedback_log(g_opt.feedback_log)) fatal("cannot write %s", g_opt.feedback_log);
         watch_wanted();
     }
-    if (g_opt.dof) {
-        if (!dof_open(DOF_HELPER, g_opt.savedir)) return 2;
-        watch_wanted();
+    if (g_opt.dof && !dof_open(DOF_HELPER, g_opt.savedir)) {
+        if (!mode_ini[4]) return 2;
+        mode_skip(4, "its helper did not start (above)");
     }
+    if (g_opt.dof) watch_wanted();
     if (g_opt.plunger_trace || g_opt.nudge_trace) watch_wanted();
+    if (g_opt.dmd_device && !dmd_pipe_open(DMD_HELPER, g_opt.savedir)) {
+        if (!mode_ini[2]) return 2;
+        mode_skip(2, "its helper did not start (above)");
+    }
     if (g_opt.dmd || g_opt.dmd_device || g_opt.cabinet) dmd_wanted();   /* a cabinet hides keyboard messages */
     if (g_opt.ssf) { ssf_wanted(); watch_wanted(); }              /* SSF places sounds by what watch.c follows */
     if (g_opt.table) { autostart_wanted(g_opt.table); watch_wanted(); }   /* the watcher says when its game runs */
-    if (g_opt.dmd_device && !dmd_pipe_open(DMD_HELPER, g_opt.savedir)) return 2;
     atexit(feedback_close);
     atexit(dmd_pipe_close);            /* fatal() does not come through host_shutdown */
     atexit(dof_close);
