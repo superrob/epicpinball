@@ -10,7 +10,7 @@
     4. fetch the pcrecomp toolkit next to this folder
     5. configure the build, then tools\discover.py: lift, build, play every
        table headless, lift again, until nothing new turns up
-    6. put a shortcut in this folder
+    6. put shortcuts in this folder: the game, and its settings tool
 
   Every step is skipped when its result is already there, so running it again
   after a failure carries on from where it stopped. Details go to setup.log.
@@ -175,4 +175,13 @@ $lnk.TargetPath = $exe
 $lnk.WorkingDirectory = $Root
 $lnk.Save()
 Say "Ready: Epic Pinball.lnk"
+# the settings tool (docs/config.md), built with the game unless -DEPIC_CONFIG=OFF
+$cfg = Join-Path $Root "build\Release\epicpinball-config.exe"
+if (Test-Path $cfg) {
+    $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $Root "Epic Pinball Settings.lnk"))
+    $lnk.TargetPath = $cfg
+    $lnk.WorkingDirectory = $Root
+    $lnk.Save()
+    Say "Ready: Epic Pinball Settings.lnk"
+}
 Say "Done. Double-click it to play. Shift keys flip, Space plunges, Alt+Enter toggles fullscreen."

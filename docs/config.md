@@ -9,13 +9,16 @@
 `saves/epicpinball.ini` and `saves/controller.ini`: the modes the game starts
 in, the keys, a cabinet's buttons, its plunger and nudging (with
 calibration), SSF, the DMD and DOF. It can import all of that from
-VPinball's settings. The game's Linux menu (right-click or F10) opens it with
-*Settings...*.
+VPinball's settings. The game's menu (right-click or F10) opens it with
+*Settings...*; on Windows, setup also puts an *Epic Pinball Settings* shortcut
+beside the game's.
 
-It is built with the game (`build-linux.sh`): Dear ImGui on SDL2, fetched
-pinned by CMake. `cmake -DEPIC_CONFIG=OFF` builds the game without it, with no
-network needed. Linux for now; Windows gets it with the Win32 host's
-DirectInput and Direct3D 11 work.
+It is built with the game (`build-linux.sh`, or `Setup.cmd` on Windows): Dear
+ImGui, fetched pinned by CMake, on SDL2 on Linux and on Win32 and Direct3D 11
+on Windows, where it reads a cabinet's boards through the game's own
+DirectInput code (`src/dinput_joy.c`), so the names and axis numbers it shows
+and saves are the ones the game reads. `cmake -DEPIC_CONFIG=OFF` builds the
+game without it, with no network needed.
 
 Nothing is written until **Save**, and then only the settings that changed,
 each in place: comments and anything the tool does not know stay as they
@@ -137,5 +140,10 @@ Everything here is in the two files, by hand: [remaster.md](remaster.md)
 
 On Linux, with no one there: every page drawn (`--page N --shot FILE.bmp`),
 an import of this machine's VPinball 10.8.1 settings, and the self-test's
-imports of all three formats. Not yet with a board plugged in, nor on a
-cabinet.
+imports of all three formats; then on a cabinet (a Pinscape Pico, a ZeDMD,
+exciters), with its VPinball settings imported.
+
+On Windows: built with MSVC, and run under Wine with no board: pages drawn
+(`--shot` reads Direct3D's back buffer), and the SSF page's recording made by
+the Windows game. Not yet on a cabinet's Windows: DirectInput's boards, the
+speaker test's 7.1 and the import of VPinball's settings there are untried.

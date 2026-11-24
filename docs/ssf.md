@@ -1,6 +1,6 @@
 # SSF: the board's sounds on the cabinet's exciters
 
-`--ssf` (Linux) puts the game's sound out as 7.1 for a cabinet with exciters,
+`--ssf` puts the game's sound out as 7.1 for a cabinet with exciters,
 wired as vpinball wires one:
 
 | Output | 7.1 channel | What plays |

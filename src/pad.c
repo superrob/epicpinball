@@ -21,8 +21,7 @@
 #include "keys.h"
 #ifdef _WIN32
 #include <windows.h>
-#define DIRECTINPUT_VERSION 0x0800
-#include <dinput.h>
+#include "dinput_joy.h"
 #else
 #include <SDL.h>
 #endif
@@ -147,168 +146,28 @@ static void press(uint32_t now)
 enum { JOY_ID = 40 };                /* a GUID as text */
 
 #ifdef _WIN32
-/* DirectInput 8. Its axes are numbered X Y Z RX RY RZ as on Linux, then the
- * two sliders; a board without some of them has gaps, read as 0. Background
- * and non-exclusive: read whichever window has the keys, and shared with
- * whatever else reads the board. */
-enum { JOY_MOST = 16 };
-static LPDIRECTINPUT8A di;
-static HWND di_wnd;                  /* SetCooperativeLevel wants a window: one that is never shown */
-static int di_failed;
-static struct { GUID inst, prod; char name[MAX_PATH]; } dl[JOY_MOST];
-static int dn;
-
-typedef struct Joy {
-    LPDIRECTINPUTDEVICE8A dev;
-    DIJOYSTATE2 st;
-    int axes, buttons, gone;
-    uint8_t has[8];                  /* which of the axes it has */
-    struct Joy *next;
-} Joy;
-static Joy *joys;                    /* the open ones */
-
-static const DWORD k_axis_ofs[8] = {
-    DIJOFS_X, DIJOFS_Y, DIJOFS_Z, DIJOFS_RX, DIJOFS_RY, DIJOFS_RZ, DIJOFS_SLIDER(0), DIJOFS_SLIDER(1) };
-
-static int di_init(void)
-{
-    if (di) return 1;
-    if (di_failed) return 0;
-    HRESULT hr = DirectInput8Create(GetModuleHandleA(NULL), DIRECTINPUT_VERSION, &IID_IDirectInput8A, (void **)&di, NULL);
-    if (FAILED(hr)) {
-        di = NULL;
-        di_failed = 1;
-        fprintf(stderr, "DirectInput: error %08lX, so no joysticks\n", (unsigned long)hr);
-        return 0;
-    }
-    di_wnd = CreateWindowExA(0, "STATIC", "epicpinball joysticks", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
-    return 1;
-}
-
-static BOOL CALLBACK di_device(LPCDIDEVICEINSTANCEA d, LPVOID ctx)
-{
-    (void)ctx;
-    if (dn >= JOY_MOST) return DIENUM_STOP;
-    dl[dn].inst = d->guidInstance;
-    dl[dn].prod = d->guidProduct;
-    snprintf(dl[dn].name, sizeof dl[dn].name, "%s", d->tszProductName);
-    dn++;
-    return DIENUM_CONTINUE;
-}
-
-static int joy_count(void)
-{
-    dn = 0;
-    if (di_init()) IDirectInput8_EnumDevices(di, DI8DEVCLASS_GAMECTRL, di_device, NULL, DIEDFL_ATTACHEDONLY);
-    return dn;
-}
-
-static const char *joy_name(int i) { return dl[i].name[0] ? dl[i].name : NULL; }
-
-static void guid_text(const GUID *g, char *s, int n)
-{
-    snprintf(s, n, "{%08lX-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}", (unsigned long)g->Data1, g->Data2, g->Data3,
-             g->Data4[0], g->Data4[1], g->Data4[2], g->Data4[3], g->Data4[4], g->Data4[5], g->Data4[6], g->Data4[7]);
-}
-
-static void joy_id(int i, char *id, int n) { guid_text(&dl[i].inst, id, n); }
-
-/* with or without its braces */
-static int guid_is(const char *device, const GUID *g)
-{
-    char s[JOY_ID];
-    guid_text(g, s, sizeof s);
-    return !_stricmp(device, s) || (strlen(device) == 36 && !_strnicmp(device, s + 1, 36));
-}
-
-/* by its name, its instance GUID (--joysticks), or its product GUID */
-static int joy_is(int i, const char *device)
-{
-    return (dl[i].name[0] && !_stricmp(device, dl[i].name)) || guid_is(device, &dl[i].inst) || guid_is(device, &dl[i].prod);
-}
-
-/* A USB device's product GUID is its vendor and product IDs, then "PIDVID" */
-static int joy_usb(int i, uint16_t *vid, uint16_t *pid)
-{
-    if (memcmp(&dl[i].prod.Data4[2], "PIDVID", 6)) return *vid = *pid = 0;
-    *vid = LOWORD(dl[i].prod.Data1);
-    *pid = HIWORD(dl[i].prod.Data1);
-    return 1;
-}
-
-static void joy_read(Joy *j)
-{
-    HRESULT hr = IDirectInputDevice8_Poll(j->dev);
-    if (FAILED(hr)) {                /* not acquired yet, or lost: once more */
-        IDirectInputDevice8_Acquire(j->dev);
-        hr = IDirectInputDevice8_Poll(j->dev);
-    }
-    if (SUCCEEDED(hr)) hr = IDirectInputDevice8_GetDeviceState(j->dev, sizeof j->st, &j->st);
-    if (FAILED(hr)) memset(&j->st, 0, sizeof j->st);
-    j->gone = FAILED(hr);
-}
-
-static void joy_close(Joy *j)
-{
-    for (Joy **p = &joys; *p; p = &(*p)->next)
-        if (*p == j) { *p = j->next; break; }
-    IDirectInputDevice8_Unacquire(j->dev);
-    IDirectInputDevice8_Release(j->dev);
-    free(j);
-}
-
-static Joy *joy_open(int i)
-{
-    Joy *j = calloc(1, sizeof *j);
-    if (!j || !di || FAILED(IDirectInput8_CreateDevice(di, &dl[i].inst, &j->dev, NULL))) { free(j); return NULL; }
-    j->next = joys;
-    joys = j;
-    if (FAILED(IDirectInputDevice8_SetDataFormat(j->dev, &c_dfDIJoystick2))) { joy_close(j); return NULL; }
-    if (di_wnd)                      /* without, DirectInput reads in the background anyway */
-        IDirectInputDevice8_SetCooperativeLevel(j->dev, di_wnd, DISCL_BACKGROUND | DISCL_NONEXCLUSIVE);
-    for (int a = 0; a < 8; a++) {    /* each axis it has to SDL's range; one it lacks is not found */
-        DIPROPRANGE r;
-        memset(&r, 0, sizeof r);
-        r.diph.dwSize = sizeof r;
-        r.diph.dwHeaderSize = sizeof r.diph;
-        r.diph.dwObj = k_axis_ofs[a];
-        r.diph.dwHow = DIPH_BYOFFSET;
-        r.lMin = -32768;
-        r.lMax = 32767;
-        if (SUCCEEDED(IDirectInputDevice8_SetProperty(j->dev, DIPROP_RANGE, &r.diph))) {
-            j->has[a] = 1;
-            j->axes = a + 1;
-        }
-    }
-    DIDEVCAPS caps;
-    memset(&caps, 0, sizeof caps);
-    caps.dwSize = sizeof caps;
-    if (SUCCEEDED(IDirectInputDevice8_GetCapabilities(j->dev, &caps)))
-        j->buttons = caps.dwButtons > 128 ? 128 : (int)caps.dwButtons;
-    joy_read(j);
-    if (j->gone) { joy_close(j); return NULL; }
-    return j;
-}
-
-static int joy_axes(Joy *j) { return j->axes; }
-static int joy_buttons(Joy *j) { return j->buttons; }
-static void joy_update(void) { for (Joy *j = joys; j; j = j->next) joy_read(j); }
-static int joy_attached(Joy *j) { return !j->gone; }
-
-static int joy_axis(Joy *j, int a)
-{
-    if (a < 0 || a >= 8 || !j->has[a]) return 0;
-    return (int)*(const LONG *)((const uint8_t *)&j->st + k_axis_ofs[a]);
-}
-
-static int joy_button(Joy *j, int b) { return b >= 0 && b < j->buttons && (j->st.rgbButtons[b] & 0x80); }
+/* DirectInput 8, shared with the settings tool (dinput_joy.c) */
+typedef DiJoy Joy;
+#define joy_count dij_count
+#define joy_name dij_name
+#define joy_id dij_id
+#define joy_is dij_is
+#define joy_usb dij_usb
+#define joy_open dij_open
+#define joy_close dij_close
+#define joy_axes dij_axes
+#define joy_buttons dij_buttons
+#define joy_update dij_update
+#define joy_attached dij_attached
+#define joy_axis dij_axis
+#define joy_button dij_button
 
 /* --joysticks has no window: Ctrl+C ends it */
 static const char k_no_joysticks[] = "No joysticks.";
-static int joy_list_begin(void) { return di_init() ? 0 : 1; }
+static int joy_list_begin(void) { return dij_init() ? 0 : 1; }
 static int joy_list_pump(void) { return 1; }
 static void joy_list_wait(int ms) { Sleep(ms); }
-static void joy_list_end(void) { while (joys) joy_close(joys); }
+static void joy_list_end(void) { dij_close_all(); }
 #else
 /* SDL2's joysticks, numbered as SDL numbers them */
 typedef SDL_Joystick Joy;

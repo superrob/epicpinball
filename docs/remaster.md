@@ -60,8 +60,7 @@ usual.
 ./epicpinball.sh --cabinet
 ```
 
-For a virtual pinball machine, on Linux (on Windows it says it is not
-supported yet). Two windows, neither with decorations:
+For a virtual pinball machine, on Linux or Windows. Two windows, neither with decorations:
 
 **The playfield** fills a display. It is the table's front page alone, 320×399
 (tables 9–13: 320×394) in square pixels: no scoreboard, whatever the game is
@@ -235,8 +234,8 @@ An Xbox controller (XInput) presses keys, so it does whatever the key does.
 | d-pad, left stick | arrows |
 
 Each line is `input = KEY` (`none` for nothing); `trigger` and `stick` set how
-far they go before they count. Settings menu → *Controller mapping...* opens
-the file (on Linux, *Settings...* opens the settings tool); it is read again
+far they go before they count. Settings menu → *Settings...* opens the
+settings tool ([config.md](config.md)), or the file without it; it is read again
 when the window comes back to the front. The same file's `[keys]` adds
 keyboard keys to the game's actions, and `[buttons]` a cabinet board's
 buttons ([cabinet-feedback.md](cabinet-feedback.md#keys-and-buttons)). What the

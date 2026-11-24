@@ -48,7 +48,7 @@ endif()
 
 set(GEN "${CMAKE_SOURCE_DIR}/work/gen")
 set(RUNTIME src/main.c src/machine.c src/dos.c src/images.c src/vga.c src/audio.c src/host.c src/present.c src/pad.c
-            src/watch.c src/feedback.c src/dof_pipe.c src/plunger.c src/dmd.c src/dmd_pipe.c src/ssf.c src/autostart.c src/nudge.c src/ini.c src/keys.c src/hud.c src/controller_ini.c)
+            src/watch.c src/feedback.c src/dof_pipe.c src/plunger.c src/dmd.c src/dmd_pipe.c src/ssf.c src/autostart.c src/nudge.c src/ini.c src/keys.c src/hud.c src/controller_ini.c src/dinput_joy.c)
 
 if(EXISTS "${GEN}/images_list.c")
     # Each image is its own library: its <image>.h defines SEG_ constants that
@@ -97,13 +97,11 @@ endif()
 
 # The settings tool (config/, docs/config.md): Dear ImGui, fetched when this
 # configures. -DEPIC_CONFIG=OFF builds without it (no network then).
-if(NOT WIN32)
-    option(EPIC_CONFIG "build epicpinball-config, the settings tool" ON)
-    include(CheckLanguage)
-    check_language(CXX)
-    if(EPIC_CONFIG AND CMAKE_CXX_COMPILER)
-        add_subdirectory(config)
-    elseif(EPIC_CONFIG)
-        message(STATUS "epicpinball-config: no C++ compiler (g++), so no settings tool; the game is fine")
-    endif()
+option(EPIC_CONFIG "build epicpinball-config, the settings tool" ON)
+include(CheckLanguage)
+check_language(CXX)
+if(EPIC_CONFIG AND CMAKE_CXX_COMPILER)
+    add_subdirectory(config)
+elseif(EPIC_CONFIG)
+    message(STATUS "epicpinball-config: no C++ compiler, so no settings tool; the game is fine")
 endif()

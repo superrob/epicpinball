@@ -45,12 +45,13 @@ conformance harness passes 154/154 on Linux.**
 | `SETUP.EXE` (the sound card menu) | not lifted: its start-up check is answered, and GOG's `SOUNDCRD.INF` (Sound Blaster 16) is used as shipped |
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, played by hand | ✅ |
-| Cabinet mode, `--cabinet` (Linux only) | ✅ on a real cabinet (table 1) and on virtual displays |
+| Cabinet mode, `--cabinet` (Linux and Windows) | ✅ on a real cabinet (table 1) and on virtual displays; Windows not yet on a cabinet |
 | Nudging from a cabinet: an accelerometer's shove by how hard, nudge buttons as the game's nudge (`[nudge]`, Linux and Windows) | ✅ on a real cabinet's accelerometer (a Pinscape Pico); by a scripted accelerometer on four tables and a virtual board in a window; nudge buttons not yet on a real board; Windows not yet on a cabinet |
 | Cabinet feedback through libdof (`--dof`) and an analog plunger (`[plunger]`), Linux and Windows | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick); Windows not yet on a cabinet (`--dof`'s pipe run under Wine, its helper and `dof\build.ps1` not yet built) |
-| SSF: the board's sounds on a cabinet's exciters, 7.1 (`--ssf`, Linux) | ✅ headless on all 13 tables (eight channels measured), and on a cabinet's exciters |
-| Straight to a table, `--table N` | ✅ on a real cabinet; headless on all 13 tables (quit, high score, game over, play again); not on Windows |
-| A 128x32 DMD (`--dmd` in a window, `--dmd-device` on a real DMD through libdmdutil; `--dmd-device` on Linux and Windows) | ✅ on a real cabinet with a ZeDMD, on table 1; all 13 tables headless; `--dmd-device` on Windows not yet on a cabinet (its pipe run under Wine, its helper and `dmd\build.ps1` not yet built) |
+| SSF: the board's sounds on a cabinet's exciters, 7.1 (`--ssf`, Linux and Windows) | ✅ headless on all 13 tables (eight channels measured), and on a cabinet's exciters; Windows headless under Wine, not yet on a cabinet |
+| Straight to a table, `--table N` | ✅ on a real cabinet; headless on all 13 tables (quit, high score, game over, play again); Windows headless under Wine |
+| A 128x32 DMD (`--dmd` in a window, `--dmd-device` on a real DMD through libdmdutil; Linux and Windows) | ✅ on a real cabinet with a ZeDMD, on table 1; all 13 tables headless; `--dmd-device` on Windows not yet on a cabinet (its pipe run under Wine, its helper and `dmd\build.ps1` not yet built) |
+| The settings tool, `epicpinball-config` (Linux and Windows) | ✅ on a real cabinet (Linux); on Windows built with MSVC, its pages drawn and its SSF recording made under Wine, not yet on a cabinet |
 | **Conformance** ([docs](docs/conformance.md)) | **154/154** on Linux (Windows skips the 11 cabinet checks, and has not run the 10 feedback ones) |
 
 Everything marked ✅ was seen working in scripted headless runs, which the
@@ -70,7 +71,7 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   scrolling, with the scoreboard under it. Not redrawn — the game keeps the
   entire table in video memory and only ever showed part of it; this shows
   the rest. Made for a tall window or a monitor turned on its side.
-- **Cabinet mode** (`--cabinet`, Linux): for a virtual pinball machine. The
+- **Cabinet mode** (`--cabinet`): for a virtual pinball machine. The
   whole table fills the playfield display, turned with F6 and stretched to
   every pixel of it with F5 while a table is up; the scoreboard is
   a window of its own. Messages about keys a cabinet has not got (the help
@@ -79,19 +80,19 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
 - **Straight to a table** (`--table N`): table N with a one-player game, in
   half a second, for a frontend; quitting the table quits the program, with
   PINBALL saving the high scores as it always does. [How](docs/table.md).
-- **SSF** (`--ssf`, Linux): 7.1 for a cabinet with exciters. The backbox
+- **SSF** (`--ssf`): 7.1 for a cabinet with exciters. The backbox
   speakers keep the music and the callouts; bumpers, slingshots, flippers,
   drop targets and the plunger play on the exciters, top or bottom, left or
   right, where on the table they happen, and a rolling sound follows the
   ball. [How](docs/ssf.md).
-- **A DMD** (`--dmd`, Linux; `--dmd-device`, Linux and Windows): a 128x32 dot-matrix picture of
+- **A DMD** (`--dmd`, `--dmd-device`): a 128x32 dot-matrix picture of
   every table, in a window of its own or on a real DMD (any libdmdutil
   drives; tested with a ZeDMD), taking the scoreboard window's place in a cabinet. The
   messages are the game's own, followed through the message engine all 13
   tables share and set again for 128x32 in each table's fonts and colours,
   with its explosions and waves; tables 1-8's leave the playfield for it.
   Between them, the table's score. [How it works](docs/dmd.md).
-- **Cabinet feedback** (`--dof`, Linux and Windows): flippers, slingshots, bumpers,
+- **Cabinet feedback** (`--dof`): flippers, slingshots, bumpers,
   launch, drain, nudge and the rest go to libdof as DOF events (on table 1
   also its holes, kickback, targets, lanes, ramps, jackpots and awards), with
   VPinball's DOF files if there are any (a Config Tool export works as it
@@ -109,7 +110,7 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
 - **Smooth sound**: the 22 kHz Sound Blaster stream interpolated up to
   44.1 kHz instead of held in steps (Settings → Sound for the original).
 - **Xbox controller** mapped by `saves\controller.ini`.
-- **A settings tool** (Linux), `./epicpinball-config.sh`: modes, keys, a
+- **A settings tool**, *Epic Pinball Settings* (Linux: `./epicpinball-config.sh`), or *Settings...* in the game's menu: modes, keys, a
   cabinet's buttons, plunger and nudge calibration, SSF, DMD and DOF, and an
   import of VPinball's settings ([docs](docs/config.md)).
 
@@ -221,15 +222,15 @@ actions ([docs](docs/cabinet-feedback.md#keys-and-buttons)).
 | `--window N` | window size, multiples of 320×240 (default 3, or where you left it) |
 | `--scale sharp\|smooth\|crt\|nearest\|integer`, `--look natural\|vivid`, `--bars blur\|black`, `--whole-table`, `--fullscreen` | this run's picture; wins over `epicpinball.ini` and is not saved to it |
 | `--classic` | the game's own picture: nearest, no extras |
-| `--cabinet` | a virtual pinball machine (Linux): the whole table on one display, the scoreboard in its own window, both borderless |
+| `--cabinet` | a virtual pinball machine: the whole table on one display, the scoreboard in its own window, both borderless |
 | `--rotate 0\|90\|180\|270` | with `--cabinet`: the playfield turned clockwise, this run |
 | `--stretch` | with `--cabinet`: the playfield stretched to fill its display, this run |
 | `--playfield-display N` | with `--cabinet`: the display the playfield fills; they are listed at start |
 | `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard (or with `--dmd`, the DMD) window goes, this run |
 | `--table N` | straight to table N (1-13) and a one-player game; quitting it quits the program ([docs](docs/table.md)) |
-| `--ssf` | 7.1 for a cabinet with exciters: the board's sounds on the side (top) and rear (bottom) pairs; `[ssf]` in `epicpinball.ini` sets their volumes (Linux) ([docs](docs/ssf.md)) |
+| `--ssf` | 7.1 for a cabinet with exciters: the board's sounds on the side (top) and rear (bottom) pairs; `[ssf]` in `epicpinball.ini` sets their volumes ([docs](docs/ssf.md)) |
 | `--ssf-volumes FX,ROLL` | SSF's effects and rolling volumes for this run, over `[ssf]`'s (4 is the default, 0 none) |
-| `--dmd` | a 128x32 DMD in a window of its own; in a cabinet, in place of the scoreboard window (Linux) ([docs](docs/dmd.md)) |
+| `--dmd` | a 128x32 DMD in a window of its own; in a cabinet, in place of the scoreboard window ([docs](docs/dmd.md)) |
 | `--dmd-device` | the DMD on a real one, any libdmdutil drives (ZeDMD, Pixelcade, PinDMD3, ...; tested with a ZeDMD; PIN2DMD is left out of this build): build `dmd/build.sh` (Windows: `dmd\build.ps1`) first; settings in `saves/dmd/DMDUtil.ini` |
 | `--dof` | DOF events through libdof: build `dof/build.sh` (Windows: `dof\build.ps1`) first; rows in VPinball's DOF files or `saves/directoutputconfig/`; no output limits ([docs](docs/cabinet-feedback.md)) |
 | `--no-cabinet`, `--no-dmd`, `--no-dmd-device`, `--no-ssf`, `--no-dof` | leave a mode out this run that `[modes]` in `epicpinball.ini` turns on (the settings tool sets it; [docs](docs/config.md)) |

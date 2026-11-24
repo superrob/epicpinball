@@ -489,7 +489,7 @@ static void screenshot_key(void)
 }
 
 enum { ID_MODE = 100, ID_LOOK = 120, ID_WHOLE = 130, ID_BARS_BLUR, ID_BARS_BLACK, ID_FULL,
-       ID_SOUND_SMOOTH, ID_SOUND_ORIG, ID_SHOT, ID_PAD, ID_TURN, ID_STRETCH, ID_SETTINGS };
+       ID_SOUND_SMOOTH, ID_SOUND_ORIG, ID_SHOT, ID_TURN, ID_STRETCH, ID_SETTINGS };
 static void settings_tool(void);
 
 /* A change made in the window: shown, and remembered */
@@ -505,7 +505,6 @@ static void command(int id)
     else if (id == ID_FULL) { set_fullscreen(!is_full); saved_full = is_full; }
     else if (id == ID_SOUND_SMOOTH || id == ID_SOUND_ORIG) g_audio_smooth = id == ID_SOUND_SMOOTH;
     else if (id == ID_SHOT) screenshot_key();
-    else if (id == ID_PAD) open_file(pad_ini());
     else if (id == ID_SETTINGS) settings_tool();
     else return;
     settings_save();
@@ -532,7 +531,24 @@ static struct {
 static int board_wanted(void) { return !g_opt.dmd_device || g_opt.dmd; }
 
 static void open_file(const char *path) { ShellExecuteA(wnd, "open", path, NULL, NULL, SW_SHOWNORMAL); }
-static void settings_tool(void) { open_file(pad_ini()); }     /* the tool comes to Windows with its Win32 host */
+/* The settings tool (config/, docs/config.md), beside this program; without
+ * it, controller.ini in an editor. What it saves the game reads when its
+ * window next comes to the front (and the modes at its next start). */
+static void settings_tool(void)
+{
+    char me[MAX_PATH], args[600];
+    const DWORD n = GetModuleFileNameA(NULL, me, sizeof me);
+    char *slash = n && n < sizeof me ? strrchr(me, '\\') : NULL;
+    if (slash && (size_t)(slash + 1 - me) + sizeof "epicpinball-config.exe" <= sizeof me) {
+        strcpy(slash + 1, "epicpinball-config.exe");
+        if (GetFileAttributesA(me) != INVALID_FILE_ATTRIBUTES) {
+            snprintf(args, sizeof args, "--save \"%s\"", g_opt.savedir);
+            if ((INT_PTR)ShellExecuteA(wnd, "open", me, args, NULL, SW_SHOWNORMAL) > 32) return;
+        }
+    }
+    fprintf(stderr, "[settings] no epicpinball-config.exe beside the game (cmake -DEPIC_CONFIG=ON): controller.ini instead\n");
+    open_file(pad_ini());
+}
 
 static void set_fullscreen(int on)
 {
@@ -609,7 +625,7 @@ static void menu(int x, int y)
     if (!g_opt.cabinet) AppendMenuA(m, MF_STRING | (is_full ? MF_CHECKED : 0), ID_FULL, "Fullscreen\tF11");
     AppendMenuA(m, MF_SEPARATOR, 0, NULL);
     AppendMenuA(m, MF_POPUP, (UINT_PTR)snd, "Sound");
-    AppendMenuA(m, MF_STRING, ID_PAD, "Controller mapping...");
+    AppendMenuA(m, MF_STRING, ID_SETTINGS, "Settings...");     /* the settings tool, else controller.ini */
     AppendMenuA(m, MF_STRING, ID_SHOT, "Screenshot\tPrtSc");
     uint64_t t = host_us();
     feedback_all_off();                            /* the game stands still under it */

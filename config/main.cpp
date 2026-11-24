@@ -2,7 +2,9 @@
  * epicpinball-config - the settings tool (docs/config.md): the modes a run
  * starts with, the keys and a cabinet's buttons, its plunger and nudging
  * (with calibration), SSF's volumes and a speaker test, the DMD and DOF, and
- * an import of VPinball's settings. Dear ImGui on SDL2.
+ * an import of VPinball's settings. Dear ImGui on SDL2 (Linux), or on Win32
+ * and Direct3D 11 with DirectInput's joysticks as the game reads them
+ * (Windows).
  *
  * It writes epicpinball.ini and controller.ini in the save folder through
  * src/ini.c, key by key, so comments and anything it does not know stay. A
@@ -21,14 +23,30 @@ extern const char k_controller_default[];
 }
 #include "sim.h"
 #include "imgui.h"
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <mmsystem.h>
+#include <mmreg.h>
+#include <dbt.h>
+#include <d3d11.h>
+#include "imgui_impl_win32.h"
+#include "imgui_impl_dx11.h"
+extern "C" {
+#include "dinput_joy.h"
+}
+#else
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_sdlrenderer2.h"
 #include <SDL.h>
+#endif
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -36,8 +54,6 @@ extern const char k_controller_default[];
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
-#define popen _popen
-#define pclose _pclose
 #define strcasecmp _stricmp
 #define strncasecmp _strnicmp
 static void make_dir(const char *d) { _mkdir(d); }
@@ -55,30 +71,146 @@ static bool exists(const std::string &p)
     return f != nullptr;
 }
 
+#ifdef _WIN32
+static uint32_t ticks() { return (uint32_t)GetTickCount64(); }
+#else
+static uint32_t ticks() { return SDL_GetTicks(); }
+#endif
+static bool ticks_passed(uint32_t now, uint32_t at) { return (int32_t)(at - now) <= 0; }
+
+/* A program's output and stderr, line by line, and its exit code (-1 if it did not start) */
+static int run_lines(const std::string &cmd, const std::function<void(const char *)> &line)
+{
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES sa = { sizeof sa, nullptr, TRUE };
+    HANDLE rd, wr;
+    if (!CreatePipe(&rd, &wr, &sa, 0)) return -1;
+    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+    STARTUPINFOA si = {};
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = si.hStdError = wr;
+    PROCESS_INFORMATION pi = {};
+    std::string c = cmd;
+    const BOOL ok = CreateProcessA(nullptr, &c[0], nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    CloseHandle(wr);
+    if (!ok) { CloseHandle(rd); return -1; }
+    std::string part;
+    char b[512];
+    DWORD n;
+    while (ReadFile(rd, b, sizeof b, &n, nullptr) && n) {
+        part.append(b, n);
+        for (size_t e; (e = part.find('\n')) != std::string::npos; part.erase(0, e + 1)) line(part.substr(0, e + 1).c_str());
+    }
+    if (!part.empty()) line(part.c_str());
+    CloseHandle(rd);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD rc = 1;
+    GetExitCodeProcess(pi.hProcess, &rc);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return (int)rc;
+#else
+    FILE *p = popen((cmd + " 2>&1").c_str(), "r");
+    if (!p) return -1;
+    char b[512];
+    while (fgets(b, sizeof b, p)) line(b);
+    return pclose(p);
+#endif
+}
+
+/* The game, beside this program (as the builds put it), else where a build leaves it */
+static std::string game_exe()
+{
+#ifdef _WIN32
+    char me[MAX_PATH];
+    const DWORD n = GetModuleFileNameA(nullptr, me, sizeof me);
+    char *slash = n && n < sizeof me ? strrchr(me, '\\') : nullptr;
+    if (slash) {
+        strcpy(slash + 1, "epicpinball.exe");
+        if (exists(me)) return me;
+    }
+    for (const char *c : { "build\\Release\\epicpinball.exe", "build-msvc\\epicpinball.exe" })
+        if (exists(c)) return c;
+#else
+    if (exists("build-linux/epicpinball")) return "build-linux/epicpinball";
+#endif
+    return "";
+}
+
 /* ---- joysticks ------------------------------------------------------------------ */
 
+/* As the game reads them (pad.c): SDL's on Linux, DirectInput's on Windows
+ * (dinput_joy.c, the game's own), so names, GUIDs and axis numbers match */
 struct Joy {
+#ifdef _WIN32
+    DiJoy *j;
+#else
     SDL_Joystick *j;
-    SDL_JoystickID id;
+#endif
     std::string name, guid;
     int axes, buttons;
     uint16_t vendor, product;
+    std::vector<uint8_t> was;                        /* its buttons when last looked: "+ press" takes the next one down */
 };
 static std::vector<Joy> g_joys;
 
+static void joys_close()
+{
+#ifdef _WIN32
+    dij_close_all();
+#else
+    for (auto &j : g_joys) SDL_JoystickClose(j.j);
+#endif
+    g_joys.clear();
+}
+
 static void joys_refresh()
 {
-    for (auto &j : g_joys) SDL_JoystickClose(j.j);
-    g_joys.clear();
+    joys_close();
+#ifdef _WIN32
+    for (int i = 0, count = dij_count(); i < count; i++) {
+        DiJoy *j = dij_open(i);
+        if (!j) continue;
+        char g[48];
+        dij_id(i, g, sizeof g);
+        const char *n = dij_name(i);
+        uint16_t v, p;
+        dij_usb(i, &v, &p);
+        g_joys.push_back({ j, n ? n : "?", g, dij_axes(j), dij_buttons(j), v, p, {} });
+    }
+#else
     for (int i = 0; i < SDL_NumJoysticks(); i++) {
         SDL_Joystick *j = SDL_JoystickOpen(i);
         if (!j) continue;
         char g[33];
         SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(j), g, sizeof g);
         const char *n = SDL_JoystickName(j);
-        g_joys.push_back({ j, SDL_JoystickInstanceID(j), n ? n : "?", g, SDL_JoystickNumAxes(j),
-                           SDL_JoystickNumButtons(j), SDL_JoystickGetVendor(j), SDL_JoystickGetProduct(j) });
+        g_joys.push_back({ j, n ? n : "?", g, SDL_JoystickNumAxes(j), SDL_JoystickNumButtons(j), SDL_JoystickGetVendor(j),
+                           SDL_JoystickGetProduct(j), {} });
     }
+#endif
+    for (auto &j : g_joys) j.was.assign(j.buttons, 0);
+}
+
+static void joys_update()
+{
+#ifdef _WIN32
+    dij_update();
+#else
+    SDL_JoystickUpdate();
+#endif
+}
+
+static bool button_value(Joy *j, int b)
+{
+    if (!j || b < 0 || b >= j->buttons) return false;
+#ifdef _WIN32
+    return dij_button(j->j, b) != 0;
+#else
+    return SDL_JoystickGetButton(j->j, b) != 0;
+#endif
 }
 
 /* The game's rule (pad.c's joy_find): by name or GUID, ignoring case */
@@ -90,23 +222,84 @@ static Joy *joy_of(const std::string &dev)
     return nullptr;
 }
 
-static int axis_value(Joy *j, int a) { return j && a >= 0 && a < j->axes ? SDL_JoystickGetAxis(j->j, a) : 0; }
+static int axis_value(Joy *j, int a)
+{
+    if (!j || a < 0 || a >= j->axes) return 0;
+#ifdef _WIN32
+    return dij_axis(j->j, a);
+#else
+    return SDL_JoystickGetAxis(j->j, a);
+#endif
+}
 
 /* A VPinball device (an SDL GUID, or "" when it does not say) among those plugged in */
 static Joy *joy_for_guid(const std::string &g)
 {
     if (!g.empty()) {
         for (auto &j : g_joys) if (!strcasecmp(j.guid.c_str(), g.c_str())) return &j;
-        if (g.size() == 32)                          /* the same board by vendor and product (SDL2's and SDL3's GUIDs differ) */
-            for (auto &j : g_joys)
-                if (j.guid.size() == 32 && !strncasecmp(j.guid.c_str() + 8, g.c_str() + 8, 4)
-                    && !strncasecmp(j.guid.c_str() + 16, g.c_str() + 16, 4)) return &j;
+        /* the same board by vendor and product: SDL2's and SDL3's GUIDs differ, and
+         * DirectInput's (Windows) are not SDL's. An SDL GUID has them little-endian
+         * at bytes 4 and 8. */
+        auto le16 = [&](size_t at) { return (uint16_t)strtoul((g.substr(at + 2, 2) + g.substr(at, 2)).c_str(), nullptr, 16); };
+        if (g.size() == 32 && g.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos) {
+            const uint16_t v = le16(8), p = le16(16);
+            if (v)
+                for (auto &j : g_joys)
+                    if (j.vendor == v && j.product == p) return &j;
+        }
     }
     if (g_joys.size() == 1) return &g_joys[0];
     for (auto &j : g_joys)                           /* a Pinscape */
         if (j.vendor == 0xFAFA || (j.vendor == 0x1209 && (j.product == 0xEAEA || j.product == 0xEAEB))) return &j;
     return nullptr;
 }
+
+/* ---- displays, numbered as the game numbers them ------------------------------------ */
+
+struct Disp { std::string name; int x, y, w, h; };
+
+#ifdef _WIN32
+struct DispFound { Disp d; bool primary; };
+
+static BOOL CALLBACK display_found(HMONITOR m, HDC, LPRECT, LPARAM lp)
+{
+    MONITORINFOEXA mi;
+    mi.cbSize = sizeof mi;
+    if (GetMonitorInfoA(m, (MONITORINFO *)&mi)) {
+        const RECT &r = mi.rcMonitor;
+        ((std::vector<DispFound> *)lp)->push_back({ { mi.szDevice, r.left, r.top, r.right - r.left, r.bottom - r.top },
+                                                     (mi.dwFlags & MONITORINFOF_PRIMARY) != 0 });
+    }
+    return TRUE;
+}
+
+/* host.c's displays_list: the main one first, then left to right, top to bottom */
+static std::vector<Disp> displays()
+{
+    std::vector<DispFound> f;
+    EnumDisplayMonitors(nullptr, nullptr, display_found, (LPARAM)&f);
+    if (f.size() > 16) f.resize(16);
+    std::stable_sort(f.begin(), f.end(), [](const DispFound &a, const DispFound &b) {
+        if (a.primary != b.primary) return a.primary;
+        return a.d.x != b.d.x ? a.d.x < b.d.x : a.d.y < b.d.y;
+    });
+    std::vector<Disp> ds;
+    for (auto &x : f) ds.push_back(x.d);
+    return ds;
+}
+#else
+static std::vector<Disp> displays()
+{
+    std::vector<Disp> ds;
+    for (int i = 0; i < SDL_GetNumVideoDisplays(); i++) {
+        SDL_Rect r = { 0 };
+        SDL_GetDisplayBounds(i, &r);
+        const char *n = SDL_GetDisplayName(i);
+        ds.push_back({ n ? n : "?", r.x, r.y, r.w, r.h });
+    }
+    return ds;
+}
+#endif
 
 /* ---- the settings ----------------------------------------------------------------- */
 
@@ -388,15 +581,14 @@ static void page_modes()
     if (ImGui::Checkbox("Playfield stretched to its display (F5)", &b)) g_s.stretch = b;
     ImGui::SetNextItemWidth(400);
     char cur[160];
-    SDL_Rect r = { 0 };
-    const char *dn = SDL_GetDisplayName(g_s.display);
-    SDL_GetDisplayBounds(g_s.display, &r);
-    snprintf(cur, sizeof cur, "%d: %s %dx%d", g_s.display, dn ? dn : "(not connected)", r.w, r.h);
+    const std::vector<Disp> ds = displays();
+    if (g_s.display >= 0 && g_s.display < (int)ds.size()) {
+        const Disp &d = ds[g_s.display];
+        snprintf(cur, sizeof cur, "%d: %s %dx%d", g_s.display, d.name.c_str(), d.w, d.h);
+    } else snprintf(cur, sizeof cur, "%d: (not connected)", g_s.display);
     if (ImGui::BeginCombo("Playfield display", cur)) {
-        for (int i = 0; i < SDL_GetNumVideoDisplays(); i++) {
-            SDL_GetDisplayBounds(i, &r);
-            dn = SDL_GetDisplayName(i);
-            snprintf(cur, sizeof cur, "%d: %s %dx%d at %d,%d", i, dn ? dn : "?", r.w, r.h, r.x, r.y);
+        for (int i = 0; i < (int)ds.size(); i++) {
+            snprintf(cur, sizeof cur, "%d: %s %dx%d at %d,%d", i, ds[i].name.c_str(), ds[i].w, ds[i].h, ds[i].x, ds[i].y);
             if (ImGui::Selectable(cur, g_s.display == i)) g_s.display = i;
         }
         ImGui::EndCombo();
@@ -450,7 +642,7 @@ static void page_buttons()
         ImGui::Text("Buttons now:");
         for (int b = 0; b < j->buttons && b < 64; b++) {
             if (b % 16) ImGui::SameLine();
-            const bool d = SDL_JoystickGetButton(j->j, b);
+            const bool d = button_value(j, b);
             ImGui::PushStyleColor(ImGuiCol_Button, d ? ImVec4(1, 0.75f, 0.1f, 1) : ImVec4(0.2f, 0.22f, 0.27f, 1));
             char l[8];
             snprintf(l, sizeof l, "%d", b);
@@ -510,7 +702,7 @@ static void draw_plunger(int pos)
     ImGui::Dummy(ImVec2(w, h + 30));
 }
 
-struct Learn { int phase = 0; Uint32 until = 0; int lo[16], hi[16], start[16]; };
+struct Learn { int phase = 0; uint32_t until = 0; int lo[16], hi[16], start[16]; };
 static Learn g_find;
 
 static void page_plunger()
@@ -524,12 +716,12 @@ static void page_plunger()
     ImGui::SameLine();
     if (g_find.phase == 0 && ImGui::Button("Find the axis") && j) {
         g_find.phase = 1;
-        g_find.until = SDL_GetTicks() + 5000;
+        g_find.until = ticks() + 5000;
         for (int a = 0; a < j->axes && a < 16; a++) g_find.lo[a] = g_find.hi[a] = g_find.start[a] = axis_value(j, a);
     }
     if (g_find.phase == 1 && j) {
         ImGui::TextColored({ 1, 0.85f, 0.2f, 1 }, "Pull the plunger right back and let it go... (%.0f s)",
-                           (g_find.until - SDL_GetTicks()) / 1000.0);
+                           (g_find.until - ticks()) / 1000.0);
         int best = -1, range = 0;
         for (int a = 0; a < j->axes && a < 16; a++) {
             const int v = axis_value(j, a);
@@ -537,7 +729,7 @@ static void page_plunger()
             g_find.hi[a] = std::max(g_find.hi[a], v);
             if (g_find.hi[a] - g_find.lo[a] > range) { range = g_find.hi[a] - g_find.lo[a]; best = a; }
         }
-        if (SDL_TICKS_PASSED(SDL_GetTicks(), g_find.until)) {
+        if (ticks_passed(ticks(), g_find.until)) {
             g_find.phase = 0;
             if (best >= 0 && range >= 4000) {
                 g_s.paxis = best;
@@ -603,17 +795,17 @@ static void draw_indicator(float r, double nx, double ny, double dz)
 
 struct Calib {
     int step = 0;                         /* 0 idle, 1 still, 2 front, 3 left, 4 hard */
-    Uint32 until = 0;
+    uint32_t until = 0;
     int peak[16], first[16], noise[16];
     long sum[16];
     int samples = 0;
 };
 static Calib g_cal;
 
-static void calib_start(int step, Joy *j, Uint32 ms)
+static void calib_start(int step, Joy *j, uint32_t ms)
 {
     g_cal.step = step;
-    g_cal.until = SDL_GetTicks() + ms;
+    g_cal.until = ticks() + ms;
     g_cal.samples = 0;
     for (int a = 0; a < 16; a++) g_cal.peak[a] = g_cal.first[a] = g_cal.noise[a] = 0, g_cal.sum[a] = 0;
     (void)j;
@@ -631,7 +823,7 @@ static void calib_run(Joy *j)
         if (!g_cal.first[a] && abs(v) > 6000) g_cal.first[a] = v;   /* which way it went first */
     }
     g_cal.samples++;
-    if (!SDL_TICKS_PASSED(SDL_GetTicks(), g_cal.until)) return;
+    if (!ticks_passed(ticks(), g_cal.until)) return;
 
     auto strongest = [&](int skip) {
         int best = -1;
@@ -723,7 +915,7 @@ static void page_nudge()
              "and which way), one from the left (across), and a hard one (the strength and the indicator's range).");
     } else {
         ImGui::TextColored({ 1, 0.85f, 0.2f, 1 }, "%d/4  %s  (%.0f s)", g_cal.step, say[g_cal.step],
-                           (g_cal.until - SDL_GetTicks()) / 1000.0);
+                           (g_cal.until - ticks()) / 1000.0);
         ImGui::SameLine();
         if (ImGui::Button("Stop")) g_cal.step = 0;
     }
@@ -734,9 +926,9 @@ static void page_nudge()
     if (g_s.iy) y = -y;
     const bool on = j && (g_s.nx >= 0 || g_s.ny >= 0);
     sim_nudge_settings(g_s.dead, g_s.strength, g_s.tilt, g_s.ix, g_s.iy, g_s.vel);
-    static Uint32 last;
-    const Uint32 now = SDL_GetTicks();
-    for (int n = 0; last && n < 20 && SDL_TICKS_PASSED(now, last + 5); n++, last += 5)   /* 200 physics steps a second */
+    static uint32_t last;
+    const uint32_t now = ticks();
+    for (int n = 0; last && n < 20 && ticks_passed(now, last + 5); n++, last += 5)   /* 200 physics steps a second */
         sim_nudge_step(on, axis_value(j, g_s.nx), axis_value(j, g_s.ny));
     if (!last || now - last > 100) last = now;
     ImGui::BeginGroup();
@@ -781,7 +973,14 @@ static void page_nudge()
  * and rear pairs, each cut out where it starts after quiet). Rolling is off
  * and the effects at 1, so they play at the effects volume as set here. */
 #define TEST_RATE 44100
+#ifdef _WIN32
+static HWAVEOUT g_wout;
+static WAVEHDR g_whdr;
+static std::vector<int16_t> g_wbuf;
+#else
 static SDL_AudioDeviceID g_audio;
+#endif
+static bool g_audio_ok;
 static int g_audio_channels;
 static std::mutex g_rec_lock;
 static int g_rec_state;                              /* 0 not yet, 1 recording, 2 ready, 3 failed */
@@ -875,11 +1074,15 @@ static void ssf_record()
         std::string err;
         std::vector<int16_t> music;
         std::vector<std::vector<int16_t>> clips;
-        const char *exe = exists("build-linux/epicpinball") ? "build-linux/epicpinball" : nullptr;
+        const std::string exe = game_exe();
         std::error_code ec;
-        const auto dir = std::filesystem::temp_directory_path(ec) / ("epicpinball-ssf-" + std::to_string(SDL_GetTicks()) + "-"
+        const auto dir = std::filesystem::temp_directory_path(ec) / ("epicpinball-ssf-" + std::to_string(ticks()) + "-"
                                                                      + std::to_string(rand()));
-        if (!exe) err = "the game is not built (build-linux.sh)";
+#ifdef _WIN32
+        if (exe.empty()) err = "the game is not built (Setup.cmd)";
+#else
+        if (exe.empty()) err = "the game is not built (build-linux.sh)";
+#endif
         else if (!exists("original/EP1.DAT")) err = "the game's files are not in original/";
         else if (!std::filesystem::create_directories(dir, ec)) err = "cannot make " + dir.string();
         else {
@@ -888,13 +1091,10 @@ static void ssf_record()
                 keys += (keys.empty() ? "" : ",") + std::to_string(t) + ":SPACE+1500," + std::to_string(t + 4000) + ":LSHIFT+200,"
                         + std::to_string(t + 6000) + ":RSHIFT+200";
             const std::string wav = (dir / "ssf.wav").string();
-            const std::string cmd = std::string(exe) + " --headless --ssf --ssf-volumes 1,0 --table 1 --seconds 105 --save \""
-                                    + dir.string() + "\" --wav \"" + wav + "\" --keys \"" + keys + "\" 2>&1";
+            const std::string cmd = "\"" + exe + "\" --headless --ssf --ssf-volumes 1,0 --table 1 --seconds 105 --save \""
+                                    + dir.string() + "\" --wav \"" + wav + "\" --keys \"" + keys + "\"";
             std::string out;
-            FILE *p = popen(cmd.c_str(), "r");
-            char line[512];
-            while (p && fgets(line, sizeof line, p)) out += line;
-            const int rc = p ? pclose(p) : -1;
+            const int rc = run_lines(cmd, [&](const char *l) { out += l; });
             int c = 0;
             std::vector<int16_t> pcm;
             if (rc != 0 || !wav_read(wav, c, pcm)) err = "the game did not record (" + out.substr(0, 200) + ")";
@@ -908,9 +1108,59 @@ static void ssf_record()
     }).detach();
 }
 
+#ifdef _WIN32
+/* As the game opens it (host.c's wave_try): 7.1, FL FR FC LFE BL BR SL SR */
+static bool wave_try(int ch)
+{
+    static const GUID pcm = { 0x00000001, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71 } };
+    WAVEFORMATEXTENSIBLE x = {};
+    x.Format.wFormatTag = ch > 2 ? WAVE_FORMAT_EXTENSIBLE : WAVE_FORMAT_PCM;
+    x.Format.nChannels = (WORD)ch;
+    x.Format.nSamplesPerSec = TEST_RATE;
+    x.Format.wBitsPerSample = 16;
+    x.Format.nBlockAlign = (WORD)(ch * 2);
+    x.Format.nAvgBytesPerSec = TEST_RATE * ch * 2;
+    x.Format.cbSize = ch > 2 ? (WORD)(sizeof x - sizeof x.Format) : 0;
+    x.Samples.wValidBitsPerSample = 16;
+    x.dwChannelMask = 0x63F;
+    x.SubFormat = pcm;
+    return waveOutOpen(&g_wout, WAVE_MAPPER, &x.Format, 0, 0, CALLBACK_NULL) == MMSYSERR_NOERROR;
+}
+
 static bool audio_open()
 {
-    if (g_audio) return true;
+    if (g_audio_ok) return true;
+    g_audio_channels = 8;
+    if (!wave_try(8)) {
+        g_audio_channels = 2;
+        if (!wave_try(2)) { g_wout = nullptr; g_status = "No sound device."; return false; }
+    }
+    return g_audio_ok = true;
+}
+
+/* One sound at a time: what plays stops */
+static void audio_play(std::vector<int16_t> &&buf)
+{
+    waveOutReset(g_wout);
+    if (g_whdr.dwFlags & WHDR_PREPARED) waveOutUnprepareHeader(g_wout, &g_whdr, sizeof g_whdr);
+    g_wbuf = std::move(buf);
+    g_whdr = {};
+    g_whdr.lpData = (LPSTR)g_wbuf.data();
+    g_whdr.dwBufferLength = (DWORD)(g_wbuf.size() * sizeof g_wbuf[0]);
+    if (waveOutPrepareHeader(g_wout, &g_whdr, sizeof g_whdr) == MMSYSERR_NOERROR) waveOutWrite(g_wout, &g_whdr, sizeof g_whdr);
+}
+
+static void audio_close()
+{
+    if (!g_wout) return;
+    waveOutReset(g_wout);
+    if (g_whdr.dwFlags & WHDR_PREPARED) waveOutUnprepareHeader(g_wout, &g_whdr, sizeof g_whdr);
+    waveOutClose(g_wout);
+}
+#else
+static bool audio_open()
+{
+    if (g_audio_ok) return true;
     SDL_AudioSpec want = {}, got = {};
     want.freq = TEST_RATE;
     want.format = AUDIO_S16SYS;
@@ -920,8 +1170,17 @@ static bool audio_open()
     if (!g_audio) { g_status = std::string("No sound device: ") + SDL_GetError(); return false; }
     g_audio_channels = got.channels;
     SDL_PauseAudioDevice(g_audio, 0);
-    return true;
+    return g_audio_ok = true;
 }
+
+static void audio_play(std::vector<int16_t> &&buf)
+{
+    SDL_ClearQueuedAudio(g_audio);                       /* one at a time */
+    SDL_QueueAudio(g_audio, buf.data(), (Uint32)(buf.size() * sizeof buf[0]));
+}
+
+static void audio_close() { if (g_audio) SDL_CloseAudioDevice(g_audio); }
+#endif
 
 /* On one channel: the music for the front pair, a playfield sound for the
  * others (at the effects volume); a low knock if the recording failed */
@@ -958,8 +1217,7 @@ static void speaker_test(int ch)
     const int c = g_audio_channels;
     std::vector<int16_t> buf(mono.size() * c);
     for (size_t i = 0; i < mono.size(); i++) buf[i * c + ch] = (int16_t)std::clamp((int)lround(mono[i] * gain), -32768, 32767);
-    SDL_ClearQueuedAudio(g_audio);                       /* one at a time */
-    SDL_QueueAudio(g_audio, buf.data(), (Uint32)(buf.size() * sizeof buf[0]));
+    audio_play(std::move(buf));
 }
 
 static void page_ssf()
@@ -997,7 +1255,7 @@ static void page_ssf()
         if (ImGui::Button(sp[i].n, ImVec2(220, 0))) speaker_test(sp[i].ch);
     }
     ImGui::EndDisabled();
-    if (g_audio) ImGui::TextDisabled("The default sound device, %d channels.", g_audio_channels);
+    if (g_audio_ok) ImGui::TextDisabled("The default sound device, %d channels.", g_audio_channels);
 }
 
 /* ---- DMD and DOF ---- */
@@ -1012,12 +1270,12 @@ static void dof_test(const std::string &event)
     g_dof_running = true;
     std::thread([event] {
         const std::string exe = exists("dof/build/epicpinball-dof.exe") ? "dof\\build\\epicpinball-dof.exe" : "dof/build/epicpinball-dof";
-        const std::string cmd = exe + " --table ep1 --test " + event + " --save \"" + g_save + "\" 2>&1";
-        FILE *p = popen(cmd.c_str(), "r");
-        char line[512];
+        const std::string cmd = exe + " --table ep1 --test " + event + " --save \"" + g_save + "\"";
         { std::lock_guard<std::mutex> l(g_log_lock); g_dof_log = "$ " + cmd + "\n"; }
-        while (p && fgets(line, sizeof line, p)) { std::lock_guard<std::mutex> l(g_log_lock); g_dof_log += line; }
-        if (p) pclose(p);
+        if (run_lines(cmd, [](const char *line) { std::lock_guard<std::mutex> l(g_log_lock); g_dof_log += line; }) == -1) {
+            std::lock_guard<std::mutex> l(g_log_lock);
+            g_dof_log += "(it did not start)\n";
+        }
         g_dof_running = false;
     }).detach();
 }
@@ -1192,14 +1450,54 @@ static void import_window()
 
 /* ---- the window ---------------------------------------------------------------------- */
 
-int main(int argc, char **argv)
+static const char *const k_pages[] = { "Modes and picture", "Keys", "Buttons", "Plunger", "Nudging", "SSF", "DMD and DOF" };
+static int g_page;
+static bool g_quit, g_ask_quit;
+static const char *g_shot;                           /* --shot: the picture, then out */
+
+/* A key pressed for "+ add" (a set-1 scan code, | KEY_E0) */
+static void key_captured(int sc)
 {
-    const char *shot = nullptr;
-    int page = 0;
+    if (g_capture_key < 0) return;
+    auto &k = g_s.keys[g_capture_key];
+    if (sc && sc != k_actions[g_capture_key].sc && std::find(k.begin(), k.end(), sc) == k.end()) k.push_back(sc);
+    if (!sc) g_status = "The game has no such key.";
+    g_capture_key = -1;
+}
+
+/* The boards read, and for "+ press" the next button that goes down, on any board */
+static void joys_poll()
+{
+    joys_update();
+    for (auto &j : g_joys)
+        for (int b = 0; b < j.buttons; b++) {
+            const bool d = button_value(&j, b);
+            if (d && !j.was[b] && g_capture_button >= 0) {
+                if (joy_of(g_s.bdev) != &j) {
+                    if (!g_s.bdev.empty()) for (auto &x : g_s.buttons) x.clear();    /* another board: its numbers */
+                    g_s.bdev = j.name;
+                }
+                auto &bs = g_s.buttons[g_capture_button];
+                if (std::find(bs.begin(), bs.end(), b) == bs.end()) bs.push_back(b);
+                g_capture_button = -1;
+            }
+            j.was[b] = d;
+        }
+}
+
+static void close_asked()
+{
+    if (dirty()) g_ask_quit = true;
+    else g_quit = true;
+}
+
+/* Everything but the window's own work: the settings files, ImGui, the boards */
+static int start(int argc, char **argv)
+{
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--save") && i + 1 < argc) g_save = argv[++i];
-        else if (!strcmp(argv[i], "--page") && i + 1 < argc) page = atoi(argv[++i]) % 7;
-        else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
+        else if (!strcmp(argv[i], "--page") && i + 1 < argc) g_page = atoi(argv[++i]) % 7;
+        else if (!strcmp(argv[i], "--shot") && i + 1 < argc) g_shot = argv[++i];
         else { fprintf(stderr, "usage: epicpinball-config [--save DIR] [--page N --shot FILE.bmp]\n"); return 2; }
     }
     make_dir(g_save.c_str());
@@ -1210,7 +1508,277 @@ int main(int argc, char **argv)
         FILE *f = fopen(g_ctl.c_str(), "wb");
         if (f) { fputs(k_controller_default, f); fclose(f); }
     }
+    return 0;
+}
 
+static void imgui_start(float scale)
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+    io.IniFilename = nullptr;                        /* no imgui.ini beside the game */
+    io.FontGlobalScale = 1.25f * scale;
+    ImGui::StyleColorsDark();
+    ImGui::GetStyle().FrameRounding = 4;
+    ImGui::GetStyle().ScaleAllSizes(scale);
+}
+
+static void settings_start()
+{
+    joys_refresh();
+    g_s = g_saved = load();
+    char v[16];
+    if (vpx_find(g_imp_path, sizeof g_imp_path) && !atoi(ini_get(g_ini.c_str(), "config", "asked_import", "0", v, sizeof v))
+        && !g_shot)
+        g_ask_open = true;
+}
+
+/* One frame of the pages, up to ImGui::Render */
+static void draw()
+{
+    ImGuiIO &io = ImGui::GetIO();
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::Begin("main", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::BeginChild("nav", ImVec2(220, -60), ImGuiChildFlags_Borders);
+    for (int i = 0; i < (int)(sizeof k_pages / sizeof k_pages[0]); i++)
+        if (ImGui::Selectable(k_pages[i], g_page == i)) g_page = i;
+    ImGui::Separator();
+    if (ImGui::Button("Import from VPinball", ImVec2(-1, 0))) {
+        if (!*g_imp_path) vpx_find(g_imp_path, sizeof g_imp_path);
+        if (*g_imp_path) import_read();
+        else g_status = "No VPinballX.ini where VPinball keeps it.";
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("page", ImVec2(0, -60), ImGuiChildFlags_Borders);
+    switch (g_page) {
+    case 0: page_modes(); break;
+    case 1: page_keys(); break;
+    case 2: page_buttons(); break;
+    case 3: page_plunger(); break;
+    case 4: page_nudge(); break;
+    case 5: page_ssf(); break;
+    case 6: page_dmd_dof(); break;
+    }
+    ImGui::EndChild();
+    const bool d = dirty();
+    ImGui::BeginDisabled(!d);
+    if (ImGui::Button("Save", ImVec2(120, 0))) save();
+    ImGui::SameLine();
+    if (ImGui::Button("Undo changes", ImVec2(160, 0))) g_s = g_saved;
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextWrapped("%s", d ? "Unsaved changes." : g_status.c_str());
+    import_window();
+    if (g_ask_quit) { ImGui::OpenPopup("Unsaved changes"); g_ask_quit = false; }
+    if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Save the changes first?");
+        if (ImGui::Button("Save", ImVec2(120, 0))) { save(); g_quit = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Don't save", ImVec2(120, 0))) g_quit = true;
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::End();
+    ImGui::Render();
+}
+
+/* --shot: true once the page has settled (the SSF page: recorded) */
+static bool shot_due()
+{
+    static int frames, since_recorded;               /* frames drawn since the SSF page's recording was not under way */
+    { std::lock_guard<std::mutex> l(g_rec_lock); since_recorded = g_rec_state == 1 ? 0 : since_recorded + 1; }
+    return g_shot && ++frames >= 20 && since_recorded >= 3;
+}
+
+/* 32-bit BGRA rows, top first, as a BMP */
+static void save_bmp(const char *path, const uint8_t *px, int w, int h, int pitch)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    const uint32_t size = 54 + (uint32_t)w * h * 4;
+    uint8_t hd[54] = { 'B', 'M' };
+    auto put32 = [&](int at, uint32_t v) { for (int i = 0; i < 4; i++) hd[at + i] = (uint8_t)(v >> (8 * i)); };
+    put32(2, size); put32(10, 54); put32(14, 40); put32(18, (uint32_t)w); put32(22, (uint32_t)-h);
+    hd[26] = 1; hd[28] = 32;
+    put32(34, (uint32_t)w * h * 4);
+    fwrite(hd, 1, 54, f);
+    for (int y = 0; y < h; y++) fwrite(px + (size_t)y * pitch, 4, (size_t)w, f);
+    fclose(f);
+}
+
+#ifdef _WIN32
+/* Win32 and Direct3D 11, as the game's own window on Windows */
+static ID3D11Device *g_dev;
+static ID3D11DeviceContext *g_ctx;
+static IDXGISwapChain *g_chain;
+static ID3D11RenderTargetView *g_target;
+static UINT g_resize_w, g_resize_h;
+static bool g_devices_changed;
+
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
+
+static void target_make()
+{
+    ID3D11Texture2D *back = nullptr;
+    if (SUCCEEDED(g_chain->GetBuffer(0, IID_PPV_ARGS(&back)))) {
+        g_dev->CreateRenderTargetView(back, nullptr, &g_target);
+        back->Release();
+    }
+}
+
+static void target_drop()
+{
+    if (g_target) { g_target->Release(); g_target = nullptr; }
+}
+
+static bool d3d_start(HWND w)
+{
+    DXGI_SWAP_CHAIN_DESC sd = {};
+    sd.BufferCount = 2;
+    sd.BufferDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.OutputWindow = w;
+    sd.SampleDesc.Count = 1;
+    sd.Windowed = TRUE;
+    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
+    D3D_FEATURE_LEVEL got;
+    HRESULT hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, levels, 2, D3D11_SDK_VERSION,
+                                               &sd, &g_chain, &g_dev, &got, &g_ctx);
+    if (FAILED(hr))                                  /* no GPU driver: Windows' own software one */
+        hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, levels, 2, D3D11_SDK_VERSION, &sd,
+                                           &g_chain, &g_dev, &got, &g_ctx);
+    if (FAILED(hr)) { fprintf(stderr, "Direct3D 11: error %08lX\n", (unsigned long)hr); return false; }
+    target_make();
+    return true;
+}
+
+static void d3d_stop()
+{
+    target_drop();
+    if (g_chain) g_chain->Release();
+    if (g_ctx) g_ctx->Release();
+    if (g_dev) g_dev->Release();
+}
+
+/* The back buffer, for --shot */
+static void d3d_shot(const char *path)
+{
+    ID3D11Texture2D *back = nullptr, *copy = nullptr;
+    if (FAILED(g_chain->GetBuffer(0, IID_PPV_ARGS(&back)))) return;
+    D3D11_TEXTURE2D_DESC td;
+    back->GetDesc(&td);
+    td.Usage = D3D11_USAGE_STAGING;
+    td.BindFlags = 0;
+    td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    td.MiscFlags = 0;
+    if (SUCCEEDED(g_dev->CreateTexture2D(&td, nullptr, &copy))) {
+        g_ctx->CopyResource(copy, back);
+        D3D11_MAPPED_SUBRESOURCE m;
+        if (SUCCEEDED(g_ctx->Map(copy, 0, D3D11_MAP_READ, 0, &m))) {
+            save_bmp(path, (const uint8_t *)m.pData, (int)td.Width, (int)td.Height, (int)m.RowPitch);
+            g_ctx->Unmap(copy, 0);
+        }
+        copy->Release();
+    }
+    back->Release();
+}
+
+static LRESULT WINAPI wndproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
+{
+    if (ImGui_ImplWin32_WndProcHandler(h, m, wp, lp)) return 1;
+    switch (m) {
+    case WM_SIZE:
+        if (wp != SIZE_MINIMIZED) { g_resize_w = LOWORD(lp); g_resize_h = HIWORD(lp); }
+        return 0;
+    case WM_SYSCOMMAND:
+        if ((wp & 0xFFF0) == SC_KEYMENU) return 0;   /* Alt is a key here, not the menu */
+        break;
+    case WM_KEYDOWN: case WM_SYSKEYDOWN:
+        if (!(lp & (1 << 30)))                       /* not a repeat: the key's set-1 code, as the game reads it */
+            key_captured((int)((lp >> 16) & 0xFF) | (lp & (1 << 24) ? KEY_E0 : 0));
+        break;
+    case WM_DEVICECHANGE:
+        if (wp == DBT_DEVNODES_CHANGED) g_devices_changed = true;   /* a board plugged in or out */
+        break;
+    case WM_CLOSE:
+        close_asked();
+        return 0;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcW(h, m, wp, lp);
+}
+
+int main(int argc, char **argv)
+{
+    if (const int rc = start(argc, argv)) return rc;
+    ImGui_ImplWin32_EnableDpiAwareness();
+    const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT { 0, 0 }, MONITOR_DEFAULTTOPRIMARY));
+    WNDCLASSEXW wc = { sizeof wc, CS_CLASSDC, wndproc, 0, 0, GetModuleHandleW(nullptr), LoadIconW(nullptr, (LPCWSTR)IDI_APPLICATION),
+                       LoadCursorW(nullptr, (LPCWSTR)IDC_ARROW), nullptr, nullptr, L"EpicPinballSettings", nullptr };
+    RegisterClassExW(&wc);
+    const int ww = (int)(1180 * scale), wh = (int)(820 * scale);
+    HWND w = CreateWindowW(wc.lpszClassName, L"Epic Pinball settings", WS_OVERLAPPEDWINDOW,
+                           (GetSystemMetrics(SM_CXSCREEN) - ww) / 2, (GetSystemMetrics(SM_CYSCREEN) - wh) / 2, ww, wh,
+                           nullptr, nullptr, wc.hInstance, nullptr);
+    if (!w || !d3d_start(w)) {
+        MessageBoxA(nullptr, "Direct3D 11 did not start.", "Epic Pinball settings", MB_ICONERROR);
+        return 1;
+    }
+    ShowWindow(w, SW_SHOWDEFAULT);
+    UpdateWindow(w);
+    imgui_start(scale);
+    ImGui_ImplWin32_Init(w);
+    ImGui_ImplDX11_Init(g_dev, g_ctx);
+    dij_init();
+    settings_start();
+
+    while (!g_quit) {
+        MSG msg;
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+            if (msg.message == WM_QUIT) g_quit = true;
+        }
+        if (g_quit) break;
+        if (g_devices_changed) { g_devices_changed = false; joys_refresh(); }
+        joys_poll();
+        if (g_resize_w && g_resize_h) {
+            target_drop();
+            g_chain->ResizeBuffers(0, g_resize_w, g_resize_h, DXGI_FORMAT_UNKNOWN, 0);
+            g_resize_w = g_resize_h = 0;
+            target_make();
+        }
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        draw();
+        const float bg[4] = { 20 / 255.0f, 20 / 255.0f, 24 / 255.0f, 1 };
+        g_ctx->OMSetRenderTargets(1, &g_target, nullptr);
+        g_ctx->ClearRenderTargetView(g_target, bg);
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        if (shot_due()) { d3d_shot(g_shot); g_quit = true; }
+        g_chain->Present(1, 0);
+    }
+    ImGui_ImplDX11_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+    audio_close();
+    joys_close();
+    d3d_stop();
+    DestroyWindow(w);
+    UnregisterClassW(wc.lpszClassName, wc.hInstance);
+    return 0;
+}
+#else
+int main(int argc, char **argv)
+{
+    if (const int rc = start(argc, argv)) return rc;
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_AUDIO | SDL_INIT_TIMER)) {
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
@@ -1222,132 +1790,48 @@ int main(int argc, char **argv)
     if (!ren && win) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
     if (!ren) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
-    io.IniFilename = nullptr;                        /* no imgui.ini beside the game */
-    io.FontGlobalScale = 1.25f;
-    ImGui::StyleColorsDark();
-    ImGui::GetStyle().FrameRounding = 4;
+    imgui_start(1);
     ImGui_ImplSDL2_InitForSDLRenderer(win, ren);
     /* No gamepads for ImGui: opening a cabinet board as one (SDL maps a
      * Pinscape as a pad, Z and RZ its triggers) holds those axes at -32768
      * until they move, and a plunger at rest would read so. */
     ImGui_ImplSDL2_SetGamepadMode(ImGui_ImplSDL2_GamepadMode_Manual, nullptr, 0);
     ImGui_ImplSDLRenderer2_Init(ren);
+    settings_start();
 
-    joys_refresh();
-    g_s = g_saved = load();
-    char v[16];
-    if (vpx_find(g_imp_path, sizeof g_imp_path) && !atoi(ini_get(g_ini.c_str(), "config", "asked_import", "0", v, sizeof v)) && !shot)
-        g_ask_open = true;
-
-    static const char *const pages[] = { "Modes and picture", "Keys", "Buttons", "Plunger", "Nudging", "SSF", "DMD and DOF" };
-    bool quit = false, ask_quit = false;
-    int frames = 0;
-    while (!quit) {
+    while (!g_quit) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             ImGui_ImplSDL2_ProcessEvent(&e);
-            if (e.type == SDL_QUIT || (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_CLOSE)) {
-                if (dirty()) ask_quit = true;
-                else quit = true;
-            }
+            if (e.type == SDL_QUIT || (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_CLOSE)) close_asked();
             if (e.type == SDL_JOYDEVICEADDED || e.type == SDL_JOYDEVICEREMOVED) joys_refresh();
-            if (e.type == SDL_KEYDOWN && !e.key.repeat && g_capture_key >= 0) {
-                const int sc = key_from_sdl(e.key.keysym.scancode);
-                auto &k = g_s.keys[g_capture_key];
-                if (sc && sc != k_actions[g_capture_key].sc && std::find(k.begin(), k.end(), sc) == k.end()) k.push_back(sc);
-                if (!sc) g_status = "The game has no such key.";
-                g_capture_key = -1;
-            }
-            if (e.type == SDL_JOYBUTTONDOWN && g_capture_button >= 0) {
-                for (auto &j : g_joys)
-                    if (j.id == e.jbutton.which) {
-                        if (joy_of(g_s.bdev) != &j) {
-                            if (!g_s.bdev.empty()) for (auto &b : g_s.buttons) b.clear();    /* another board: its numbers */
-                            g_s.bdev = j.name;
-                        }
-                        auto &b = g_s.buttons[g_capture_button];
-                        if (std::find(b.begin(), b.end(), e.jbutton.button) == b.end()) b.push_back(e.jbutton.button);
-                    }
-                g_capture_button = -1;
-            }
+            if (e.type == SDL_KEYDOWN && !e.key.repeat) key_captured(key_from_sdl(e.key.keysym.scancode));
         }
-        SDL_JoystickUpdate();
+        joys_poll();
 
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
-        ImGui::NewFrame();
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(io.DisplaySize);
-        ImGui::Begin("main", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus);
-        ImGui::BeginChild("nav", ImVec2(220, -60), ImGuiChildFlags_Borders);
-        for (int i = 0; i < (int)(sizeof pages / sizeof pages[0]); i++)
-            if (ImGui::Selectable(pages[i], page == i)) page = i;
-        ImGui::Separator();
-        if (ImGui::Button("Import from VPinball", ImVec2(-1, 0))) {
-            if (!*g_imp_path) vpx_find(g_imp_path, sizeof g_imp_path);
-            if (*g_imp_path) import_read();
-            else g_status = "No VPinballX.ini where VPinball keeps it.";
-        }
-        ImGui::EndChild();
-        ImGui::SameLine();
-        ImGui::BeginChild("page", ImVec2(0, -60), ImGuiChildFlags_Borders);
-        switch (page) {
-        case 0: page_modes(); break;
-        case 1: page_keys(); break;
-        case 2: page_buttons(); break;
-        case 3: page_plunger(); break;
-        case 4: page_nudge(); break;
-        case 5: page_ssf(); break;
-        case 6: page_dmd_dof(); break;
-        }
-        ImGui::EndChild();
-        const bool d = dirty();
-        ImGui::BeginDisabled(!d);
-        if (ImGui::Button("Save", ImVec2(120, 0))) save();
-        ImGui::SameLine();
-        if (ImGui::Button("Undo changes", ImVec2(160, 0))) g_s = g_saved;
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        ImGui::TextWrapped("%s", d ? "Unsaved changes." : g_status.c_str());
-        import_window();
-        if (ask_quit) { ImGui::OpenPopup("Unsaved changes"); ask_quit = false; }
-        if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Save the changes first?");
-            if (ImGui::Button("Save", ImVec2(120, 0))) { save(); quit = true; }
-            ImGui::SameLine();
-            if (ImGui::Button("Don't save", ImVec2(120, 0))) quit = true;
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-        ImGui::End();
-
-        ImGui::Render();
+        draw();
         SDL_SetRenderDrawColor(ren, 20, 20, 24, 255);
         SDL_RenderClear(ren);
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), ren);
-        static int since_recorded;                   /* frames drawn since the SSF page's recording was not under way */
-        { std::lock_guard<std::mutex> l(g_rec_lock); since_recorded = g_rec_state == 1 ? 0 : since_recorded + 1; }
-        if (shot && ++frames >= 20 && since_recorded >= 3) {   /* settled (the SSF page: recorded): the picture, then out */
+        if (shot_due()) {
             int w, h;
             SDL_GetRendererOutputSize(ren, &w, &h);
-            SDL_Surface *sf = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
-            if (sf && !SDL_RenderReadPixels(ren, nullptr, SDL_PIXELFORMAT_ARGB8888, sf->pixels, sf->pitch)) SDL_SaveBMP(sf, shot);
-            if (sf) SDL_FreeSurface(sf);
-            quit = true;
+            std::vector<uint8_t> px((size_t)w * h * 4);
+            if (!SDL_RenderReadPixels(ren, nullptr, SDL_PIXELFORMAT_ARGB8888, px.data(), w * 4)) save_bmp(g_shot, px.data(), w, h, w * 4);
+            g_quit = true;
         }
         SDL_RenderPresent(ren);
     }
     ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
-    if (g_audio) SDL_CloseAudioDevice(g_audio);
-    for (auto &j : g_joys) SDL_JoystickClose(j.j);
+    audio_close();
+    joys_close();
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);
     SDL_Quit();
     return 0;
 }
+#endif

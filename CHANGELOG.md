@@ -85,7 +85,7 @@ All notable changes to this project are documented here. The format follows
   is the reading that takes it to the ring (8000); `indicator = 0` hides it.
 - **`--ssf-volumes FX,ROLL`**: SSF's effects and rolling volumes for one run,
   over `[ssf]`'s.
-- **The settings tool**, `epicpinball-config` (Linux; [docs](docs/config.md)):
+- **The settings tool**, `epicpinball-config` (Linux and Windows; [docs](docs/config.md)):
   Dear ImGui pages for the modes, the picture, keys, a cabinet's buttons, the
   plunger (finding its axis, calibrating it, a drawn plunger that moves with
   it), nudging (a four-step calibration, and a live test with the game's own
@@ -93,7 +93,11 @@ All notable changes to this project are documented here. The format follows
   sounds (Super Android's music, its playfield sounds), the ZeDMD and a DOF
   test. It imports VPinball's keys, buttons, plunger, nudging and sound, from
   10.8.0's and 10.8.1's settings alike, asking on its first start. The game's
-  Linux menu opens it.
+  menu opens it (*Settings...*). On Windows it is drawn with Direct3D 11 and
+  reads the boards through the game's own DirectInput code
+  (`src/dinput_joy.c`); setup adds an *Epic Pinball Settings* shortcut.
+- **`[buttons]` on Windows**: a cabinet's buttons through DirectInput, as on
+  Linux.
 - **Permanent modes**: `[modes]` in `epicpinball.ini` starts every run with a
   window with `--cabinet`, `--dmd`, `--dmd-device`, `--ssf` and `--dof` as
   set; `--no-cabinet` and the others leave one out for a run, and a mode that
