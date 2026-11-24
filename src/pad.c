@@ -16,6 +16,7 @@
 #include "machine.h"
 #include "plunger.h"
 #include "nudge.h"
+#include "keys.h"
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -31,51 +32,18 @@ static const struct { const char *name; uint16_t bit; } k_buttons[] = {
 enum { IN_LT = NBUTTONS, IN_RT, IN_UP, IN_DOWN, IN_LEFT, IN_RIGHT, IN_COUNT };
 static const char *const k_extra[] = { "lt", "rt", "stick_up", "stick_down", "stick_left", "stick_right" };
 
-static const char k_default[] =
-"; Epic Pinball recompiled -- Xbox controller mapping.\r\n"
-"; Each pad input presses a key. Keys: ESC ENTER SPACE UP DOWN LEFT RIGHT\r\n"
-"; LSHIFT RSHIFT Z SLASH CTRL ALT TAB Y N F1 F2 F3 1-6, a scan code in hex,\r\n"
-"; or none. Delete this file to get the defaults back.\r\n"
-"[controller]\r\n"
-"lt = LSHIFT\r\nrt = RSHIFT\r\n"
-"lb = Z\r\nrb = SLASH\r\n"
-"a = SPACE\r\nb = N\r\nx = ENTER\r\ny = Y\r\n"
-"back = ESC\r\nstart = ESC\r\n"
-"dpad_up = UP\r\ndpad_down = DOWN\r\ndpad_left = LEFT\r\ndpad_right = RIGHT\r\n"
-"stick_up = UP\r\nstick_down = DOWN\r\nstick_left = LEFT\r\nstick_right = RIGHT\r\n"
-"left_stick = none\r\nright_stick = none\r\n"
-"; how far a trigger (0-255) and the stick (0-32767) go before they count\r\n"
-"trigger = 64\r\nstick = 12000\r\n"
-"\r\n"
-"; A cabinet's plunger sensor (Linux; docs/cabinet-feedback.md), off until an\r\n"
-"; axis is set. epicpinball --joysticks lists devices and live axis values.\r\n"
-"[plunger]\r\n"
-"device = none                ; its name or GUID\r\n"
-"axis = none                  ; a number from that list, or X Y Z RX RY RZ\r\n"
-"rest = 0                     ; the axis at rest\r\n"
-"pulled = 32767               ; and pulled right back\r\n"
-"speed_axis = none            ; for boards that report the release speed\r\n"
-"\r\n"
-"; A cabinet's nudging (Linux; docs/cabinet-feedback.md). An accelerometer's\r\n"
-"; shove pushes the ball by how hard; nudge buttons are the game's own nudge\r\n"
-"; (Z, /, Space). A board that types those keys needs nothing here.\r\n"
-"[nudge]\r\n"
-"device = none                ; its name or GUID (--joysticks)\r\n"
-"x_axis = none                ; the accelerometer across the cabinet (Pinscape: X)\r\n"
-"y_axis = none                ; and along it (Pinscape: Y)\r\n"
-"dead = 1500                  ; readings within this of 0 are the cabinet at rest\r\n"
-"strength = 1                 ; 1: a full shove pushes as the game's own nudge\r\n"
-"tilt = 1                     ; how fast shoves fill the tilt meter; 0 never\r\n"
-"invert_x = 0                 ; 1 if a shove sends the ball the wrong way\r\n"
-"invert_y = 0\r\n"
-"left_button = none           ; button numbers of the device (--joysticks)\r\n"
-"right_button = none\r\n"
-"up_button = none\r\n";
+extern const char k_controller_default[];   /* controller_ini.c */
 
 static int map[IN_COUNT];            /* scan code, | 0x100 for E0-prefixed; 0 = none */
 static int trigger = 64, stick = 12000;
 static char ini[512];
-static uint8_t held[256];            /* how many pad inputs hold each key down */
+static uint8_t held[0x200];          /* how many inputs hold each key down (E0 keys apart) */
+static int remap[0x200];             /* [keys]: a key that sends an action's key; 0 = its own */
+#define BUTTONS_PER 4
+static struct {
+    char device[128];
+    int on, button[KEY_ACTIONS][BUTTONS_PER], n[KEY_ACTIONS], most;
+} btn;                               /* [buttons] */
 static uint32_t was;
 static struct {
     char device[128];
@@ -84,21 +52,80 @@ static struct {
 static struct {
     char device[128];
     int on, x_axis, y_axis, button[3];   /* left, right, up: -1 none */
+    int indicator;                       /* the ring on the playfield (hud.c) */
+    int indicator_range;                 /* the reading at its edge */
 } ndg;
 static const int k_nudge_key[3] = { 0x2C, 0x35, 0x39 };   /* Z, /, Space: the game's own nudge */
 
 int host_key_by_name(const char *s);  /* host.c */
-const char *ini_get(const char *path, const char *sec, const char *key, const char *def, char *out, int n);
+#include "ini.h"
 
 const char *pad_ini(void) { return ini; }
 
 /* A key down or up, counted: two inputs on one key press it once */
 static void key_hold(int sc, int down)
 {
-    int k = sc & 0xFF;
+    int k = sc & 0x1FF;
+    if (!down && !held[k]) return;                 /* let go of what was never pressed */
     if (down ? held[k]++ : --held[k]) return;
     if (sc & 0x100) kbd_scancode(0xE0);
-    kbd_scancode((uint8_t)(k | (down ? 0 : 0x80)));
+    kbd_scancode((uint8_t)((k & 0xFF) | (down ? 0 : 0x80)));
+}
+
+/* A key of the keyboard, down or up: the action's key if [keys] lists it,
+ * else its own. Counted with the pad's and the buttons', so a flipper held
+ * by two of them is let go when both are. */
+void pad_key(int sc, int up)
+{
+    sc &= 0x1FF;
+    key_hold(remap[sc] ? remap[sc] : sc, !up);
+}
+
+static void keys_load(void)
+{
+    char v[256];
+    memset(remap, 0, sizeof remap);
+    for (int a = 0; a < KEY_ACTIONS; a++) {
+        int k[8], n = key_list(ini_get(ini, "keys", k_actions[a].name, "none", v, sizeof v), k, 8);
+        if (n < 0) { fprintf(stderr, "[keys] %s = %s: a key is not one I know (keys.c)\n", k_actions[a].name, v); continue; }
+        for (int i = 0; i < n; i++) remap[k[i] & 0x1FF] = k_actions[a].sc;
+    }
+}
+
+static void buttons_load(void)
+{
+    char v[64];
+    memset(&btn, 0, sizeof btn);
+    ini_get(ini, "buttons", "device", "none", btn.device, sizeof btn.device);
+    int any = 0;
+    for (int a = 0; a < KEY_ACTIONS; a++) {
+        const char *s = ini_get(ini, "buttons", k_actions[a].name, "none", v, sizeof v);
+        while (*s && btn.n[a] < BUTTONS_PER) {
+            char *e;
+            while (*s == ' ' || *s == '|' || *s == ',') s++;
+            if (!*s || !_strnicmp(s, "none", 4)) break;
+            long b = strtol(s, &e, 10);
+            if (e == s || b < 0 || b > 127) {
+                fprintf(stderr, "[buttons] %s = %s: button numbers from --joysticks\n", k_actions[a].name, v);
+                btn.n[a] = 0;
+                break;
+            }
+            btn.button[a][btn.n[a]++] = (int)b;
+            if (b + 1 > btn.most) btn.most = (int)b + 1;
+            s = e;
+        }
+        any |= btn.n[a] > 0;
+    }
+    if (!any) return;
+    if (!*btn.device || !_stricmp(btn.device, "none")) {
+        fprintf(stderr, "[buttons] %s: buttons are set, but no device. The buttons are off.\n", ini);
+        return;
+    }
+#ifdef _WIN32
+    fprintf(stderr, "[buttons] not supported on Windows yet (Linux only for now)\n");
+#else
+    btn.on = 1;
+#endif
 }
 
 /* The keys follow the inputs that are on in `now` */
@@ -116,6 +143,7 @@ static void press(uint32_t now)
 #ifndef _WIN32
 static void plunger_forget(void);
 static void nudge_forget(void);
+static void buttons_forget(void);
 #endif
 
 /* -1 none, -2 not an axis. The names are the order SDL gives a board that has all six. */
@@ -169,12 +197,16 @@ static void nudge_load(void)
         bad_button |= ndg.button[i] == -2;
         any |= ndg.button[i] != -1;
     }
-    NudgeSettings st;
+    NudgeSettings st = { 0 };
     st.dead = atoi(ini_get(ini, "nudge", "dead", "1500", v, sizeof v));
     st.strength = atof(ini_get(ini, "nudge", "strength", "1", v, sizeof v));
     st.tilt = atof(ini_get(ini, "nudge", "tilt", "1", v, sizeof v));
     st.invert_x = atoi(ini_get(ini, "nudge", "invert_x", "0", v, sizeof v)) != 0;
     st.invert_y = atoi(ini_get(ini, "nudge", "invert_y", "0", v, sizeof v)) != 0;
+    st.is_velocity = atoi(ini_get(ini, "nudge", "is_velocity", "0", v, sizeof v)) != 0;
+    ndg.indicator = atoi(ini_get(ini, "nudge", "indicator", "1", v, sizeof v)) != 0;
+    ndg.indicator_range = atoi(ini_get(ini, "nudge", "indicator_range", "8000", v, sizeof v));
+    if (ndg.indicator_range < 100 || ndg.indicator_range > 32767) ndg.indicator_range = 8000;
     nudge_settings(&st);
     if (!any) return;                /* off */
     const char *why = NULL;
@@ -191,6 +223,8 @@ static void nudge_load(void)
 }
 
 int pad_nudge_on(void) { return ndg.on; }
+int pad_nudge_indicator(void) { return ndg.indicator && (ndg.x_axis >= 0 || ndg.y_axis >= 0); }
+int pad_nudge_range(void) { return ndg.indicator_range ? ndg.indicator_range : 8000; }
 
 void pad_load(void)
 {
@@ -198,7 +232,7 @@ void pad_load(void)
     snprintf(ini, sizeof ini, "%s/controller.ini", g_opt.savedir);
     FILE *f = fopen(ini, "rb");
     if (f) fclose(f);
-    else if ((f = fopen(ini, "wb")) != NULL) { fputs(k_default, f); fclose(f); }
+    else if ((f = fopen(ini, "wb")) != NULL) { fputs(k_controller_default, f); fclose(f); }
     char v[32];
     for (int i = 0; i < IN_COUNT; i++) {
         ini_get(ini, "controller", i < NBUTTONS ? k_buttons[i].name : k_extra[i - NBUTTONS], "none", v, sizeof v);
@@ -206,12 +240,15 @@ void pad_load(void)
     }
     trigger = atoi(ini_get(ini, "controller", "trigger", "64", v, sizeof v));
     stick = atoi(ini_get(ini, "controller", "stick", "12000", v, sizeof v));
+    keys_load();
     plunger_load();
     nudge_load();
 #ifndef _WIN32
+    buttons_forget();
     plunger_forget();
     nudge_forget();
 #endif
+    buttons_load();
 }
 
 /* XINPUT_STATE's layout */
@@ -349,6 +386,43 @@ void pad_nudge(int front)
     }
 }
 
+/* ---- [buttons] ---- */
+
+static SDL_Joystick *bjoy;
+static uint8_t btn_down[KEY_ACTIONS];
+
+static void buttons_up(void)
+{
+    for (int a = 0; a < KEY_ACTIONS; a++)
+        if (btn_down[a]) { key_hold(k_actions[a].sc, 0); btn_down[a] = 0; }
+}
+
+static void buttons_forget(void)
+{
+    buttons_up();
+    if (!bjoy) return;
+    SDL_JoystickClose(bjoy);
+    bjoy = NULL;
+}
+
+/* A cabinet's buttons, each its action's key while it is down */
+static void buttons_poll(int front)
+{
+    static Looking l;
+    if (!front || !btn.on) { buttons_up(); return; }
+    SDL_JoystickUpdate();
+    if (bjoy && !SDL_JoystickGetAttached(bjoy)) {
+        fprintf(stderr, "[buttons] unplugged\n");
+        buttons_forget();
+    }
+    if (!bjoy && !(bjoy = joy_find(btn.device, 0, btn.most, "buttons", &l))) return;
+    for (int a = 0; a < KEY_ACTIONS; a++) {
+        uint8_t d = 0;
+        for (int i = 0; i < btn.n[a]; i++) d |= SDL_JoystickGetButton(bjoy, btn.button[a][i]) != 0;
+        if (d != btn_down[a]) { key_hold(k_actions[a].sc, d); btn_down[a] = d; }
+    }
+}
+
 /* Asked on every host_frame, looked at once a millisecond. Not in front, or
  * unplugged, is no sensor: SDL centres the axes then, which is a full release. */
 int pad_plunger(int front, PlungerInput *in)
@@ -367,9 +441,8 @@ int pad_plunger(int front, PlungerInput *in)
         memset(&last, 0, sizeof last);
         if (!pjoy) plunger_find();
         if (pjoy) {
-            long pos = ((long)SDL_JoystickGetAxis(pjoy, plg.axis) - plg.rest) * PLUNGER_FULL / (plg.pulled - plg.rest);
             last.have = 1;
-            last.pos = pos < 0 ? 0 : pos > PLUNGER_FULL ? PLUNGER_FULL : (int)pos;
+            last.pos = plunger_map(SDL_JoystickGetAxis(pjoy, plg.axis), plg.rest, plg.pulled);
             if (plg.speed_axis >= 0)
                 last.speed = abs(SDL_JoystickGetAxis(pjoy, plg.speed_axis)) * PLUNGER_FULL / 32768;
         }
@@ -487,6 +560,9 @@ void pad_poll(int front)
 {
     XState s;
 
+#ifndef _WIN32
+    buttons_poll(front);
+#endif
     if (!front || !get_state(&s)) {
         press(0);
         return;

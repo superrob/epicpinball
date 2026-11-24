@@ -461,6 +461,9 @@ table, so no row can fire, and finishes, which switches a Pico's ports off.
 
 ## The plunger
 
+The settings tool ([config.md](config.md)) finds the plunger's axis as you
+pull it, calibrates it, and shows a drawn plunger moving with it. By hand:
+
 ```sh
 ./epicpinball.sh --joysticks
 ```
@@ -511,8 +514,10 @@ The game's own nudge is three keys: **Z** left, **/** right, **Space** up
 VPinball's default nudge keys are the same, needs nothing set up.
 
 A cabinet's accelerometer, and nudge buttons a board reports as joystick
-buttons, are set in `saves/controller.ini`. `--joysticks` shows the axes as
-you shove the cabinet, and each button's number as you press it:
+buttons, are set in `saves/controller.ini`. The settings tool
+([config.md](config.md)) sets them and calibrates the accelerometer;
+`--joysticks` shows the axes as you shove the cabinet, and each button's
+number as you press it:
 
 ```ini
 [nudge]
@@ -524,6 +529,9 @@ strength = 1                 ; 1: a full shove pushes as the game's own nudge
 tilt = 1                     ; how fast shoves fill the tilt meter; 0 never
 invert_x = 0                 ; 1 if a shove sends the ball the wrong way
 invert_y = 0
+is_velocity = 0              ; 1 if the board reports velocity, not acceleration
+indicator = 1                ; the ring on the playfield showing the reading
+indicator_range = 8000       ; the reading that takes it to the ring
 left_button = none           ; button numbers: the game's own nudge, Z / and Space
 right_button = none
 up_button = none
@@ -543,14 +551,56 @@ up_button = none
   for 24 steps) fills the tilt meter by 23h, as one press of Z does. The
   meter drains as the game drains it, and the game tilts above 50h: hard
   shaking tilts the table, soft bumps never do. `tilt` scales this.
+- **Velocity input.** Some boards (a Pinscape can be set either way) report
+  the cabinet's velocity instead of its acceleration: set `is_velocity = 1`.
+  Each step then pushes by how much the velocity changed since the step
+  before, against it, all at once: a full-scale change (0 to 32767) is a
+  whole game nudge, 24 steps of 14h, times `strength`, and fills the tilt
+  meter by 23h. A velocity held steady pushes nothing. `--nudge-trace` with
+  `--nudge-velocity` tries it without a board.
+- **The indicator.** While an accelerometer is read and a table is up (not
+  the menus), a ring at the top right of the playfield shows the reading, as
+  VPinball does: the dot is where the cabinet is going (with velocity input,
+  how fast), a fainter ring is the dead zone, and a short trail shows a
+  quick shove. The dot reaches the ring at `indicator_range` (more stays on
+  it): lower shows small shoves bigger. It only draws; the push is
+  `strength`'s. It turns with the playfield in a cabinet. Shots and
+  recordings leave it out; `indicator = 0` hides it.
 - **Buttons** press Z, / and Space while held, the game's nudge exactly,
-  with its own tilt rules.
+  with its own tilt rules. Any of the game's actions can have buttons too:
+  `[buttons]` below.
 - Out of focus, unplugged, or while `--table` drives the menus, there is no
   shove and the buttons let go.
 
 Writes into the game: each ball's speed and the tilt meter, from the step
 seam, only with an accelerometer configured and a table whose file matches
 its map.
+
+## Keys and buttons
+
+Each of the game's actions has its own key, which always works. More keys can
+do the same, for a board that types VPinball's keys, and a board's joystick
+buttons can hold them, in `saves/controller.ini` (the settings tool sets both):
+
+```ini
+[keys]
+launch = ENTER              ; VPinball's launch key, as well as Space
+start = 1 | KP_ENTER        ; Enter's job: PLAY GAME, and the scoreboard in play
+
+[buttons]
+device = Pinscape Pico      ; the name or GUID from --joysticks
+left_flipper = 0            ; button numbers from --joysticks, | between
+right_flipper = 1
+launch = 2
+```
+
+The actions are `left_flipper`, `right_flipper`, `launch`, `nudge_left`,
+`nudge_right`, `nudge_up`, `start`, `exit`, `up`, `down`, `left`, `right`,
+`yes` and `no`; the keys are names like `LSHIFT`, `RCTRL`, `A`, `F1`,
+`KP_ENTER` (`src/keys.c` lists them). A listed key sends its action's key
+instead of its own; every other key is passed on as it is. A key and a
+button held on one action press it once and let go when both are released.
+Buttons are read only while the window is in front. Linux only for now.
 
 ## The maps
 

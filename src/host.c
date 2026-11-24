@@ -31,6 +31,9 @@
 #include "ssf.h"
 #include "autostart.h"
 #include "nudge.h"
+#include "ini.h"
+#include "keys.h"
+#include "hud.h"
 #include <ctype.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -41,6 +44,7 @@
 #define pclose _pclose
 #else
 #include <SDL.h>
+#include <unistd.h>
 #endif
 
 #define FRAME_MAX FRAME_PIXELS
@@ -129,6 +133,20 @@ static void compose_view(void)
         dmd_bar_hide(frame + vga_bar_row() * fw, fw, fh - vga_bar_row());
 }
 
+/* Over the picture the player sees, after compose_view (shots and
+ * recordings compose their own, without it): the nudge indicator while an
+ * accelerometer is read, on the playfield's picture, so it turns with it */
+int pad_nudge_indicator(void);
+int pad_nudge_range(void);
+
+static void compose_hud(void)
+{
+    int x, y;
+    if (fw != 320 || !vga_table_up() || !nudge_now(&x, &y)) return;   /* a table: not the menus, nor the text screen */
+    if (!nudge_traced() && !pad_nudge_indicator()) return;
+    hud_nudge(frame, fw, fh, frame_aspect * fh / fw, x, y, nudge_get_settings()->dead, pad_nudge_range());
+}
+
 /* How the playfield is drawn: stretched (F5) only while a table is up, the
  * menus always in their own shape */
 static Present playfield_how(void)
@@ -150,10 +168,12 @@ int  present_offscreen(const uint32_t *f, int w, int h, double aspect, const Pre
                        int ow, int oh, uint32_t *out);
 void pad_load(void);
 void pad_poll(int front);
+void pad_key(int sc, int up);
 const char *pad_ini(void);
 int pad_plunger_on(void);
 int pad_plunger(int front, PlungerInput *in);
 int pad_nudge_on(void);
+int pad_nudge_indicator(void);
 void pad_nudge(int front);
 static void plunger_let_go(void);
 
@@ -254,21 +274,12 @@ static void shots_due(uint64_t now)
 
 /* ---- scripted keys ----------------------------------------------------------- */
 
-typedef struct { uint64_t at; uint8_t sc; uint8_t up; } KeyEv;
+typedef struct { uint64_t at; uint16_t sc; uint8_t up; } KeyEv;
 static KeyEv kev[512];
 static int nkev, kev_i;
 
-/* A key's scan code by name, | 0x100 when it is E0-prefixed (the arrows) */
-int host_key_by_name(const char *s)
-{
-    static const struct { const char *n; int sc; } t[] = {
-        {"ESC",1},{"ENTER",0x1C},{"SPACE",0x39},{"UP",0x48|0x100},{"DOWN",0x50|0x100},
-        {"LEFT",0x4B|0x100},{"RIGHT",0x4D|0x100},{"CTRL",0x1D},{"ALT",0x38},{"SHIFT",0x2A},
-        {"TAB",0x0F},{"BKSP",0x0E},{"Y",0x15},{"N",0x31},{"F1",0x3B},{"F2",0x3C},{"F3",0x3D},
-        {"F10",0x44},{"LSHIFT",0x2A},{"RSHIFT",0x36},{"Z",0x2C},{"SLASH",0x35},{"1",2},{"2",3},{"3",4},{"4",5},{"5",6},{"6",7},{NULL,0}};
-    for (int i = 0; t[i].n; i++) if (!_stricmp(s, t[i].n)) return t[i].sc;
-    return (int)strtol(s, NULL, 16);
-}
+/* A key's scan code by name, | 0x100 when it is E0-prefixed (keys.c) */
+int host_key_by_name(const char *s) { return key_by_name(s); }
 
 static void keys_parse(void)
 {
@@ -280,8 +291,8 @@ static void keys_parse(void)
         if (h) { *h = 0; hold = atoi(h + 1); }
         int sc = host_key_by_name(name);
         uint64_t at = (uint64_t)(ms * PIT_HZ / 1000.0);
-        kev[nkev++] = (KeyEv){ at, (uint8_t)sc, 0 };
-        kev[nkev++] = (KeyEv){ at + (uint64_t)(hold * PIT_HZ / 1000.0), (uint8_t)sc, 1 };
+        kev[nkev++] = (KeyEv){ at, (uint16_t)sc, 0 };
+        kev[nkev++] = (KeyEv){ at + (uint64_t)(hold * PIT_HZ / 1000.0), (uint16_t)sc, 1 };
         p += n; if (*p == ',') p++;
     }
     /* sort by time (insertion; small) */
@@ -289,7 +300,6 @@ static void keys_parse(void)
         for (int j = i; j > 0 && kev[j].at < kev[j - 1].at; j--) { KeyEv t = kev[j]; kev[j] = kev[j - 1]; kev[j - 1] = t; }
 }
 
-static int ext_of(int sc) { return sc == 0x48 || sc == 0x50 || sc == 0x4B || sc == 0x4D; }
 
 /* --table: while PINBALL is driven to the table, and out after it, the
  * player's keys and pad are not the game's; Esc while starting cancels */
@@ -300,8 +310,8 @@ static void keys_due(void)
     if (driven()) return;                          /* --keys counts from the table's game */
     while (kev_i < nkev && kev[kev_i].at <= pit_now()) {
         int sc = kev[kev_i].sc;
-        if (ext_of(sc)) kbd_scancode(0xE0);
-        kbd_scancode((uint8_t)(sc | (kev[kev_i].up ? 0x80 : 0)));
+        if (sc & KEY_E0) kbd_scancode(0xE0);
+        kbd_scancode((uint8_t)((sc & 0xFF) | (kev[kev_i].up ? 0x80 : 0)));
         kev_i++;
     }
 }
@@ -312,33 +322,6 @@ static int mode_by_name(const char *s)
 {
     for (int i = 0; i < PRESENT_MODES; i++) if (!_stricmp(s, mode_names[i])) return i;
     return PRESENT_SHARP;
-}
-
-/* epicpinball.ini and controller.ini: [section], key = value, ; comments */
-const char *ini_get(const char *path, const char *sec, const char *key, const char *def, char *out, int n)
-{
-    FILE *f = fopen(path, "r");
-    char line[256], cur[64] = "";
-    snprintf(out, n, "%s", def);
-    while (f && fgets(line, sizeof line, f)) {
-        char *s = line, *e;
-        if ((e = strchr(s, ';')) != NULL) *e = 0;
-        while (isspace((unsigned char)*s)) s++;
-        for (e = s + strlen(s); e > s && isspace((unsigned char)e[-1]); ) *--e = 0;
-        if (*s == '[') {
-            if ((e = strchr(s, ']')) != NULL) *e = 0;
-            snprintf(cur, sizeof cur, "%s", s + 1);
-            continue;
-        }
-        if (_stricmp(cur, sec) || (e = strchr(s, '=')) == NULL) continue;
-        char *v = e + 1;
-        while (e > s && isspace((unsigned char)e[-1])) e--;
-        *e = 0;
-        while (isspace((unsigned char)*v)) v++;
-        if (!_stricmp(s, key)) { snprintf(out, n, "%s", v); break; }
-    }
-    if (f) fclose(f);
-    return out;
 }
 
 static char ini[512];
@@ -375,36 +358,42 @@ int host_parse_turn(const char *s)
     return -1;
 }
 
+/* Each setting the window changes, set in place: the rest of the file (its
+ * comments, [ssf], hide_messages, [modes] and whatever the settings tool
+ * wrote) is left as it is */
 static void settings_save(void)
 {
-    FILE *f = *ini ? fopen(ini, "w") : NULL;
-    if (!f) return;
-    fprintf(f, "[display]\nscale=%s\nlook=%s\nbars=%s\nwhole_table=%d\nfullscreen=%d\n",
-            mode_names[saved.mode], saved.look ? "vivid" : "natural", saved.bars ? "blur" : "black",
-            saved.whole, saved_full);
-    if (win_rect.right > win_rect.left)
-        fprintf(f, "window=%ld,%ld,%ld,%ld\n", (long)win_rect.left, (long)win_rect.top,
-                (long)(win_rect.right - win_rect.left), (long)(win_rect.bottom - win_rect.top));
-    fprintf(f, "[sound]\noutput=%s\n", g_audio_smooth ? "smooth" : "original");
+    if (!*ini) return;
+    char v[96];
+    ini_set(ini, "display", "scale", mode_names[saved.mode]);
+    ini_set(ini, "display", "look", saved.look ? "vivid" : "natural");
+    ini_set(ini, "display", "bars", saved.bars ? "blur" : "black");
+    ini_set(ini, "display", "whole_table", saved.whole ? "1" : "0");
+    ini_set(ini, "display", "fullscreen", saved_full ? "1" : "0");
+    if (win_rect.right > win_rect.left) {
+        snprintf(v, sizeof v, "%ld,%ld,%ld,%ld", (long)win_rect.left, (long)win_rect.top,
+                 (long)(win_rect.right - win_rect.left), (long)(win_rect.bottom - win_rect.top));
+        ini_set(ini, "display", "window", v);
+    }
+    ini_set(ini, "sound", "output", g_audio_smooth ? "smooth" : "original");
     int placed = saved_score.right > saved_score.left, placed_dmd = saved_dmdw.right > saved_dmdw.left;
-    if (g_opt.cabinet || placed || placed_dmd || saved_hide_set || saved.rot || saved.stretch || saved_display) {
-        fprintf(f, "[cabinet]\nrotation=%d\nstretch=%d\nplayfield_display=%d\n", saved.rot * 90, saved.stretch,
-                saved_display);
-        if (placed)
-            fprintf(f, "score_window=%ld,%ld,%ld,%ld\n", (long)saved_score.left, (long)saved_score.top,
-                    (long)(saved_score.right - saved_score.left), (long)(saved_score.bottom - saved_score.top));
-        if (placed_dmd)
-            fprintf(f, "dmd_window=%ld,%ld,%ld,%ld\n", (long)saved_dmdw.left, (long)saved_dmdw.top,
-                    (long)(saved_dmdw.right - saved_dmdw.left), (long)(saved_dmdw.bottom - saved_dmdw.top));
-        if (saved_hide_set) fprintf(f, "hide_messages=%s\n", saved_hide);
+    if (g_opt.cabinet || placed || placed_dmd || saved.rot || saved.stretch || saved_display) {
+        snprintf(v, sizeof v, "%d", saved.rot * 90);
+        ini_set(ini, "cabinet", "rotation", v);
+        ini_set(ini, "cabinet", "stretch", saved.stretch ? "1" : "0");
+        snprintf(v, sizeof v, "%d", saved_display);
+        ini_set(ini, "cabinet", "playfield_display", v);
+        if (placed) {
+            snprintf(v, sizeof v, "%ld,%ld,%ld,%ld", (long)saved_score.left, (long)saved_score.top,
+                     (long)(saved_score.right - saved_score.left), (long)(saved_score.bottom - saved_score.top));
+            ini_set(ini, "cabinet", "score_window", v);
+        }
+        if (placed_dmd) {
+            snprintf(v, sizeof v, "%ld,%ld,%ld,%ld", (long)saved_dmdw.left, (long)saved_dmdw.top,
+                     (long)(saved_dmdw.right - saved_dmdw.left), (long)(saved_dmdw.bottom - saved_dmdw.top));
+            ini_set(ini, "cabinet", "dmd_window", v);
+        }
     }
-    int any_ssf = 0;
-    for (int i = 0; i < 15; i++) any_ssf |= saved_ssf[i][0] != 0;
-    if (any_ssf) {                                 /* --ssf's: only what was written there */
-        fprintf(f, "[ssf]\n");
-        for (int i = 0; i < 15; i++) if (saved_ssf[i][0]) fprintf(f, "%s=%s\n", ssf_keys[i], saved_ssf[i]);
-    }
-    fclose(f);
 }
 
 static void settings_load(void)
@@ -470,6 +459,11 @@ static void settings_args(void)
     if (g_opt.stretch) S.stretch = 1;
     if (g_opt.display) cab_display = atoi(g_opt.display);
     if (g_opt.score_window) host_parse_place(g_opt.score_window, &cab_score);
+    if (g_opt.ssf_volumes) {
+        double fx = SSF_GAIN, roll = SSF_GAIN;
+        if (sscanf(g_opt.ssf_volumes, "%lf,%lf", &fx, &roll) < 1) fprintf(stderr, "--ssf-volumes takes FX,ROLL, e.g. 4,0\n");
+        else ssf_volumes(fx < 0 ? 0 : fx, roll < 0 ? 0 : roll);
+    }
 }
 
 /* ---- window ---------------------------------------------------------------- */
@@ -492,7 +486,8 @@ static void screenshot_key(void)
 }
 
 enum { ID_MODE = 100, ID_LOOK = 120, ID_WHOLE = 130, ID_BARS_BLUR, ID_BARS_BLACK, ID_FULL,
-       ID_SOUND_SMOOTH, ID_SOUND_ORIG, ID_SHOT, ID_PAD, ID_TURN, ID_STRETCH };
+       ID_SOUND_SMOOTH, ID_SOUND_ORIG, ID_SHOT, ID_PAD, ID_TURN, ID_STRETCH, ID_SETTINGS };
+static void settings_tool(void);
 
 /* A change made in the window: shown, and remembered */
 static void command(int id)
@@ -508,6 +503,7 @@ static void command(int id)
     else if (id == ID_SOUND_SMOOTH || id == ID_SOUND_ORIG) g_audio_smooth = id == ID_SOUND_SMOOTH;
     else if (id == ID_SHOT) screenshot_key();
     else if (id == ID_PAD) open_file(pad_ini());
+    else if (id == ID_SETTINGS) settings_tool();
     else return;
     settings_save();
 }
@@ -517,6 +513,7 @@ static HWND wnd;
 static BITMAPINFO bmi;
 
 static void open_file(const char *path) { ShellExecuteA(wnd, "open", path, NULL, NULL, SW_SHOWNORMAL); }
+static void settings_tool(void) { open_file(pad_ini()); }     /* the tool comes to Windows with its Win32 host */
 
 static void set_fullscreen(int on)
 {
@@ -612,9 +609,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         }
         if (!up && (lp & (1 << 30))) return 0;      /* the game does its own repeat */
         if (driven()) { if (!up && wp == VK_ESCAPE && driven() == 1) quit_req = 1; return 0; }
-        int sc = (lp >> 16) & 0xFF;
-        if (lp & (1 << 24)) kbd_scancode(0xE0);
-        kbd_scancode((uint8_t)(sc | (up ? 0x80 : 0)));
+        pad_key(((lp >> 16) & 0xFF) | (lp & (1 << 24) ? KEY_E0 : 0), up);   /* [keys] */
         return 0;
     }
     case WM_SYSCHAR: return 0;                       /* no menu beep on Alt */
@@ -708,6 +703,7 @@ static void window_frame(void)
 {
     window_events();
     compose_view();
+    compose_hud();
     paint();
 }
 
@@ -743,6 +739,26 @@ static void open_file(const char *path)
     char cmd[600];
     snprintf(cmd, sizeof cmd, "xdg-open \"%s\" >/dev/null 2>&1 &", path);
     if (system(cmd)) {}
+}
+
+/* The settings tool (config/, docs/config.md), beside this program; without
+ * it, controller.ini in an editor. What it saves the game reads when its
+ * window next comes to the front (and the modes at its next start). */
+static void settings_tool(void)
+{
+    char me[512], cmd[1200];
+    const ssize_t n = readlink("/proc/self/exe", me, sizeof me - 1);
+    char *slash = n > 0 ? (me[n] = 0, strrchr(me, '/')) : NULL;
+    if (slash) {
+        snprintf(slash + 1, sizeof me - (slash + 1 - me), "epicpinball-config");
+        if (access(me, X_OK) == 0) {
+            snprintf(cmd, sizeof cmd, "\"%s\" --save \"%s\" &", me, g_opt.savedir);
+            if (system(cmd)) {}
+            return;
+        }
+    }
+    fprintf(stderr, "[settings] no epicpinball-config beside the game (cmake -DEPIC_CONFIG=ON): controller.ini instead\n");
+    open_file(pad_ini());
 }
 
 /* The window's place, kept for the ini while it is not fullscreen or maximised */
@@ -784,7 +800,7 @@ static void menu(void)
     const SDL_MessageBoxButtonData b[] = {
         { 0, S.bars ? ID_BARS_BLACK : ID_BARS_BLUR, S.bars ? "Black bars" : "Blurred bars" },
         { 0, g_audio_smooth ? ID_SOUND_ORIG : ID_SOUND_SMOOTH, g_audio_smooth ? "Original sound" : "Smooth sound" },
-        { 0, ID_PAD, "Controller mapping..." },
+        { 0, ID_SETTINGS, "Settings..." },
         { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Close" },
     };
     SDL_Window *owner = g_opt.cabinet && SDL_GetKeyboardFocus() ? SDL_GetKeyboardFocus() : wnd;
@@ -804,33 +820,8 @@ static void menu(void)
     command(id);
 }
 
-/* SDL's scancodes (USB usage numbers) as the PC's set 1, | 0x100 for E0 */
-static int pc_scancode(int s)
-{
-    static const uint8_t t[101] = {
-        [4]  = 0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32,   /* A-M */
-               0x31, 0x18, 0x19, 0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D, 0x15, 0x2C,   /* N-Z */
-        [30] = 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,                     /* 1-0 */
-        [40] = 0x1C, 0x01, 0x0E, 0x0F, 0x39, 0x0C, 0x0D, 0x1A, 0x1B, 0x2B, 0x2B, 0x27, 0x28,   /* Enter... */
-               0x29, 0x33, 0x34, 0x35, 0x3A,                                                   /* ...Caps */
-        [58] = 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57, 0x58,         /* F1-F12 */
-        [71] = 0x46, 0, 0x52, 0x47, 0x49, 0x53, 0x4F, 0x51, 0x4D, 0x4B, 0x50, 0x48,           /* ScrLk; Ins-Up */
-        [83] = 0x45, 0x35, 0x37, 0x4A, 0x4E, 0x1C, 0x4F, 0x50, 0x51, 0x4B, 0x4C, 0x4D,         /* keypad */
-               0x47, 0x48, 0x49, 0x52, 0x53, 0x56,
-    };
-    switch (s) {
-    case SDL_SCANCODE_LCTRL:  return 0x1D;
-    case SDL_SCANCODE_LSHIFT: return 0x2A;
-    case SDL_SCANCODE_LALT:   return 0x38;
-    case SDL_SCANCODE_RCTRL:  return 0x11D;
-    case SDL_SCANCODE_RSHIFT: return 0x36;
-    case SDL_SCANCODE_RALT:   return 0x138;
-    }
-    if (s < 0 || s > 100 || !t[s]) return 0;
-    return t[s] | ((s >= SDL_SCANCODE_INSERT && s <= SDL_SCANCODE_UP) || s == SDL_SCANCODE_KP_DIVIDE
-                   || s == SDL_SCANCODE_KP_ENTER ? 0x100 : 0);
-}
-
+/* A key: the remaster's own (F-keys, PrtSc), else the game's, by keys.c's
+ * table and controller.ini's [keys] (pad.c) */
 static void key(const SDL_KeyboardEvent *k)
 {
     int up = k->type == SDL_KEYUP, s = k->keysym.scancode;
@@ -851,10 +842,8 @@ static void key(const SDL_KeyboardEvent *k)
     }
     if (k->repeat) return;                          /* the game does its own repeat */
     if (driven()) { if (!up && s == SDL_SCANCODE_ESCAPE && driven() == 1) quit_req = 1; return; }
-    int sc = pc_scancode(s);
-    if (!sc) return;
-    if (sc & 0x100) kbd_scancode(0xE0);
-    kbd_scancode((uint8_t)((sc & 0xFF) | (up ? 0x80 : 0)));
+    int sc = key_from_sdl(s);
+    if (sc) pad_key(sc, up);                       /* [keys] */
 }
 
 /* ---- --cabinet's windows */
@@ -1147,6 +1136,7 @@ static void window_frame(void)
 {
     window_events();
     compose_view();
+    compose_hud();
     if (g_opt.cabinet) cabinet_present();
     else {
         const Present v = playfield_how();

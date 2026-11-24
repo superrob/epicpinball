@@ -200,6 +200,25 @@ The command line (`--scale`, `--look`, `--bars`, `--whole-table`,
 is never written to it. Headless runs read only the command line, so a test
 never depends on anybody's preferences.
 
+The game sets only the keys it changed, in place, so the file's comments
+and anything else in it stay. That includes `[modes]`, which the settings
+tool ([config.md](config.md)) writes: the modes every run with a window
+starts with, as if their options were given.
+
+```ini
+[modes]
+cabinet = 1           ; --cabinet
+dmd = 0               ; --dmd
+dmd_device = 1        ; --dmd-device
+ssf = 1               ; --ssf
+dof = 1               ; --dof
+```
+
+`--no-cabinet`, `--no-dmd`, `--no-dmd-device`, `--no-ssf` and `--no-dof` leave
+one out for a run. A mode from the file that cannot run (a helper that is not
+built, `--cabinet` with `--window`) is left out with a line saying why; the
+game still starts.
+
 ## The controller
 
 An Xbox controller (XInput) presses keys, so it does whatever the key does.
@@ -217,7 +236,10 @@ An Xbox controller (XInput) presses keys, so it does whatever the key does.
 
 Each line is `input = KEY` (`none` for nothing); `trigger` and `stick` set how
 far they go before they count. Settings menu → *Controller mapping...* opens
-the file; it is read again when the window comes back to the front. What the
+the file (on Linux, *Settings...* opens the settings tool); it is read again
+when the window comes back to the front. The same file's `[keys]` adds
+keyboard keys to the game's actions, and `[buttons]` a cabinet board's
+buttons ([cabinet-feedback.md](cabinet-feedback.md#keys-and-buttons)). What the
 pad holds is let go when the window loses the front or the pad is unplugged.
 On Linux a cabinet board's axes are never taken for triggers or a stick (only
 its buttons count), and `[plunger]` in the same file sets up an
@@ -235,8 +257,9 @@ All of the above, with SDL2 doing what Win32 and Direct3D do on Windows
   it as a multiply (SDL's software renderer cannot brighten with it, so there
   CRT comes out darker); vivid and the blur are the same CPU code.
 - The settings menu (right-click, F10) is a dialog: what is set, the keys for
-  it, and buttons for the bars, the sound and `controller.ini` (opened with
-  `xdg-open`).
+  it, and buttons for the bars, the sound and the settings tool
+  ([config.md](config.md); `controller.ini` in an editor, by `xdg-open`, when
+  the tool is not built).
 - The pad is SDL's GameController, which gives any pad Xbox names, so
   `controller.ini` maps it as it does on Windows.
 - The files are the same: `saves/epicpinball.ini`, `saves/controller.ini`,

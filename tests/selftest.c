@@ -18,6 +18,10 @@
 #include "ssf.h"
 #include "autostart.h"
 #include "nudge.h"
+#include "ini.h"
+#include "keys.h"
+#include "hud.h"
+#include "vpx_import.h"
 #include <assert.h>
 #ifndef _WIN32
 #include <time.h>
@@ -690,7 +694,6 @@ static void test_plunger(void)
     assert(!plunger_trace("100:0,50:0") && !plunger_trace("10:101") && !plunger_trace("x") && !plunger_trace(""));
 }
 
-#ifndef _WIN32
 /* --dmd: a message set again for 128x32, moved as the game moves its dots;
  * a lasting one gives way to the board; the playfield gets back what the
  * game saved from under its dots while it is composed (src/dmd.c) */
@@ -1019,6 +1022,7 @@ static void test_ssf(void)
     watch_table_end();
 }
 
+#ifndef _WIN32
 static void pump(int ms)
 {
     for (uint64_t end = host_us() + (uint64_t)ms * 1000u; host_us() < end; ) { dof_tick(); usleep(1000); }
@@ -1198,6 +1202,183 @@ static void test_autostart(void)
 /* An accelerometer's shove (src/nudge.c): the push against the shove, the
  * dead zone, small pushes adding up, the game's gate, nothing tilted or in
  * the demo, and the tilt meter filling by how hard */
+/* ini.c: a key set in place keeps the file's comments, other keys, line ends
+ * and the comment after the value; a missing key joins its section, a
+ * missing section the end; NULL removes; VPinball's values keep their ';' */
+static char *slurp(const char *path)
+{
+    static char buf[4096];
+    FILE *f = fopen(path, "rb");
+    size_t n = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
+    if (f) fclose(f);
+    buf[n] = 0;
+    return buf;
+}
+
+static void test_ini(void)
+{
+    const char *p = "selftest-ini.tmp";
+    FILE *f = fopen(p, "wb");
+    fputs("\xEF\xBB\xBF; top comment\r\n[plunger]\r\ndevice = none                ; its name\r\naxis = none\r\n\r\n"
+          "[nudge]\r\nDead=1500\r\n", f);
+    fclose(f);
+    char v[64];
+    assert(!strcmp(ini_get(p, "Plunger", "DEVICE", "x", v, sizeof v), "none"));
+    assert(ini_set(p, "plunger", "device", "Pinscape Controller"));
+    assert(ini_set(p, "plunger", "rest", "120"));
+    assert(ini_set(p, "nudge", "dead", "900"));
+    assert(ini_set(p, "modes", "cabinet", "1"));
+    assert(!ini_set(p, "modes", "bad", "a;b"));
+    assert(!strcmp(slurp(p), "\xEF\xBB\xBF; top comment\r\n[plunger]\r\ndevice = Pinscape Controller ; its name\r\naxis = none\r\n"
+                             "rest = 120\r\n\r\n[nudge]\r\nDead = 900\r\n\r\n[modes]\r\ncabinet = 1\r\n"));
+    assert(!strcmp(ini_get(p, "plunger", "device", "x", v, sizeof v), "Pinscape Controller"));
+    assert(!strcmp(ini_get(p, "modes", "cabinet", "0", v, sizeof v), "1"));
+    assert(ini_set(p, "plunger", "rest", NULL));
+    assert(!strstr(slurp(p), "rest"));
+    remove(p);
+
+    f = fopen(p, "wb");                                   /* a new file; VPinball's ';' in values */
+    fclose(f);
+    remove(p);
+    assert(ini_set(p, "keys", "left_flipper", "LCTRL | A"));
+    assert(!strcmp(slurp(p), "[keys]\nleft_flipper = LCTRL | A\n"));
+    f = fopen(p, "wb");
+    fputs("[Input]\n; Devices: a comment\nMapping.LeftFlipper = Key;225 | SDLJoy_03000000_1;6\n", f);
+    fclose(f);
+    assert(!strcmp(ini_get_raw(p, "input", "mapping.leftflipper", "", v, sizeof v), "Key;225 | SDLJoy_03000000_1;6"));
+    assert(!strcmp(ini_get(p, "input", "mapping.leftflipper", "", v, sizeof v), "Key"));
+    remove(p);
+}
+
+/* keys.c: names both ways, SDL's and DirectInput's codes, actions, lists */
+static void test_keys(void)
+{
+    assert(key_by_name("lshift") == 0x2A && key_by_name("UP") == (KEY_E0 | 0x48) && key_by_name("RCTRL") == (KEY_E0 | 0x1D));
+    assert(key_by_name("CTRL") == 0x1D && key_by_name("1D") == 0x1D && key_by_name("1") == 0x02 && !key_by_name("nope"));
+    for (int sc = 1; sc < 0x200; sc++) {                  /* every named key reads back as itself */
+        const char *n = key_name(sc);
+        assert(key_by_name(n) == sc);
+    }
+    assert(!strcmp(key_name(0x2A), "LSHIFT") && !strcmp(key_name(KEY_E0 | 0x1C), "KP_ENTER"));
+    assert(key_from_sdl(4) == 0x1E && key_from_sdl(225) == 0x2A && key_from_sdl(229) == 0x36);      /* A, LShift, RShift */
+    assert(key_from_sdl(40) == 0x1C && key_from_sdl(88) == (KEY_E0 | 0x1C) && key_from_sdl(82) == (KEY_E0 | 0x48));
+    assert(key_from_sdl(228) == (KEY_E0 | 0x1D) && key_from_sdl(44) == 0x39 && key_from_sdl(56) == 0x35 && !key_from_sdl(72));
+    assert(key_from_dik(0x2A) == 0x2A && key_from_dik(0x9D) == (KEY_E0 | 0x1D) && key_from_dik(0xC8) == (KEY_E0 | 0x48));
+    assert(key_action_by_name("Left_Flipper") == 0 && k_actions[key_action_by_name("launch")].sc == 0x39);
+    assert(key_action_by_name("tilt") < 0);
+    int k[4];
+    assert(key_list("LCTRL | a", k, 4) == 2 && k[0] == 0x1D && k[1] == 0x1E);
+    assert(key_list("none", k, 4) == 0 && key_list("", k, 4) == 0 && key_list("LCTRL | bogus", k, 4) == -1);
+}
+
+/* hud.c: the nudge indicator's ring at the top right, its dot where the reading is */
+static void test_hud(void)
+{
+    static uint32_t f[320 * 240];
+    for (int i = 0; i < 320 * 240; i++) f[i] = 0xFF000000u;
+    hud_nudge(f, 320, 240, 1.0, 0, 0, 1500, 32767);
+    const int cx = 320 - 4 - 12, cy = 4 + 12;                         /* the ring's middle */
+    #define AT(x, y) f[(y) * 320 + (x)]
+    assert((AT(cx, cy) & 0xFF0000) > 0xC00000);                       /* the dot, at rest in the middle */
+    assert((AT(cx + 12, cy) & 0xFF) > 0x80 && (AT(cx, cy - 12) & 0xFF) > 0x80);   /* the ring */
+    assert(AT(10, 200) == 0xFF000000u && AT(cx - 6, cy + 6) == 0xFF000000u);      /* nothing else */
+    for (int i = 0; i < 8; i++) hud_nudge(f, 320, 240, 1.0, 32767, 0, 1500, 32767);   /* the cabinet moved right */
+    assert((AT(cx + 11, cy) & 0xFF0000) > 0xC00000);
+    for (int i = 0; i < 320 * 240; i++) f[i] = 0xFF000000u;
+    for (int i = 0; i < 8; i++) hud_nudge(f, 320, 240, 1.0, -4000, 0, 1500, 8000);   /* half its range: half way */
+    assert((AT(cx - 6, cy) & 0xFF0000) > 0xC00000 && (AT(cx - 11, cy) & 0xFF0000) < 0x800000);
+    for (int i = 0; i < 8; i++) hud_nudge(f, 320, 240, 1.0, 0, -9000, 1500, 8000);    /* past it: on the ring */
+    assert((AT(cx, cy - 11) & 0xFF0000) > 0xC00000);
+    for (int i = 0; i < 320 * 240; i++) f[i] = 0xFF000000u;
+    for (int i = 0; i < 8; i++) hud_nudge(f, 320, 200, 1.2, 0, 0, 0, 32767);       /* tall pixels: as round on screen */
+    assert((AT(cx, 4 + 14) & 0xFF0000) > 0xC00000 && (AT(cx, 4 + 14 - 14) & 0xFF) > 0x80);
+    #undef AT
+}
+
+/* vpx_import.c: VPinball's settings in each format it has written */
+static void vpx_file(const char *p, const char *text)
+{
+    FILE *f = fopen(p, "wb");
+    fputs(text, f);
+    fclose(f);
+}
+
+static int has(const int *list, int n, int v)
+{
+    for (int i = 0; i < n; i++) if (list[i] == v) return 1;
+    return 0;
+}
+
+static void test_vpx_import(void)
+{
+    const char *p = "selftest-vpx.tmp";
+    VpxImport o;
+    const int LF = key_action_by_name("left_flipper"), RF = key_action_by_name("right_flipper"),
+              LA = key_action_by_name("launch"), ST = key_action_by_name("start"), EX = key_action_by_name("exit"),
+              NL = key_action_by_name("nudge_left");
+
+    /* 10.8.1: SDL scancodes, a joystick's buttons from 0, sensors; empty is VPinball's default */
+    vpx_file(p, "[Version]\nVPinball = 10815362\n[Player]\n; Playfield Output Mode\nSound3D = 5\nSoundVolume = 80\n"
+                "NudgeOrientation0 = 180\n"
+                "[Input]\nDevices = Key;SDLJoy_0300abcdfafa0000f700000001000000_1\n"
+                "Mapping.LeftFlipper = Key;225 | SDLJoy_0300abcdfafa0000f700000001000000_1;3 | Key;224\n"
+                "Mapping.RightFlipper = SDLJoy_0300abcdfafa0000f700000001000000_1;4\n"
+                "Mapping.LaunchBall = \n"
+                "Mapping.Start = Key;30 & Key;226 | SDLJoy_0300abcdfafa0000f700000001000000_1;517;o;0.500000\n"
+                "Mapping.Plunger0.Position = SDLJoy_0300abcdfafa0000f700000001000000_1;514;P;0.000000;-1.000000;1.000000\n"
+                "Mapping.Nudge0.VelX = SDLJoy_0300abcdfafa0000f700000001000000_1;512;V;0.050000;1.000000;1.000000\n"
+                "Mapping.Nudge0.VelY = SDLJoy_0300abcdfafa0000f700000001000000_1;513;V;0.000000;-1.000000;1.000000\n");
+    assert(vpx_read(p, &o) && o.format == 2);
+    assert(o.nkey[LF] == 1 && o.key[LF][0] == 0x1D);                       /* LShift is its own: only LCtrl added */
+    assert(o.nbutton[LF] == 1 && o.button[LF][0] == 3 && o.button[RF][0] == 4);
+    assert(!strcmp(o.button_guid, "0300abcdfafa0000f700000001000000"));
+    assert(o.nkey[RF] == 0);                                                /* no key, only the button */
+    assert(o.nkey[LA] == 1 && o.key[LA][0] == 0x1C);                        /* empty: Return, VPinball's */
+    assert(o.nkey[ST] == 0 && o.nbutton[ST] == 0 && strstr(o.notes, "held together") && strstr(o.notes, "axis used as a button"));
+    assert(o.nkey[EX] == 0);                                                /* Esc, its own */
+    assert(o.plunger_axis == 2 && o.plunger_reversed && o.plunger_speed_axis == -1);
+    assert(o.nudge_x == 0 && o.nudge_y == 1 && o.is_velocity && o.dead == 1638);
+    assert(o.invert_x && !o.invert_y);                                      /* Y's -1 and the half turn cancel */
+    assert(o.ssf && o.sound_volume == 80);
+
+    /* the nightlies' NudgeX1 as acceleration, turned a quarter */
+    vpx_file(p, "[Player]\nNudgeOrientation0 = 90\n[Input]\nDevices = Key\n"
+                "Mapping.NudgeX1 = SDLJoy_1209eaea_1;512;A;0;1;1\nMapping.NudgeY1 = SDLJoy_1209eaea_1;513;A;0;1;1\n");
+    assert(vpx_read(p, &o) && o.format == 2 && !o.is_velocity);
+    assert(o.nudge_x == 1 && o.nudge_y == 0 && !o.invert_x && o.invert_y);   /* x' = y, y' = -x */
+    assert(!strcmp(o.nudge_guid, "1209eaea") && !o.ssf);
+
+    /* a cabinet's: Nudge0 as a game controller's stick (P), the older NudgeX1/Y1 still saying velocity */
+    vpx_file(p, "[Input]\nDevices = Key\nMapping.NudgeX1 = SDLJoy_E6614C311B560622.0B.01;512;V;0.099536;0.107216;1.000000\n"
+                "Mapping.NudgeY1 = SDLJoy_E6614C311B560622.0B.01;513;V;0.100641;0.107424;1.000000\n"
+                "Mapping.Nudge0.Type = 0\n"
+                "Mapping.Nudge0.X = SDLJoy_0300252c09120000ebea000011010000_1;512;P;0.000000;1.000000;1.000000\n"
+                "Mapping.Nudge0.Y = SDLJoy_0300252c09120000ebea000011010000_1;513;P;0.000000;0.440534;1.000000\n");
+    assert(vpx_read(p, &o) && o.nudge_x == 0 && o.nudge_y == 1 && o.is_velocity && o.dead == 3261);
+    assert(!strcmp(o.nudge_guid, "0300252c09120000ebea000011010000") && strstr(o.notes, "said velocity"));
+    vpx_file(p, "[Input]\nDevices = Key\n"                              /* no older line: a stick, as acceleration */
+                "Mapping.Nudge0.X = SDLJoy_0300252c09120000ebea000011010000_1;512;P;0.000000;1.000000;1.000000\n");
+    assert(vpx_read(p, &o) && !o.is_velocity && strstr(o.notes, "as a position"));
+
+    /* 10.8.0: DirectInput codes, buttons from 1, axes from 1 */
+    vpx_file(p, "[Player]\nLFlipKey = 29\nRFlipKey = 157\nPlungerKey = \nStartGameKey = 2\nExitGameKey = 16\n"
+                "JoyLFlipKey = 1\nJoyRFlipKey = 2\nJoyPlungerKey = 26\nLTiltKey = 44\n"
+                "PlungerAxis = 3\nReversePlungerAxis = 0\nPlungerSpeedAxis = 0\nLRAxis = 1\nUDAxis = 2\nLRAxisFlip = 1\n"
+                "DeadZone = 10\nAccelVelocityInput = 1\nSound3D = 1\n");
+    assert(vpx_read(p, &o) && o.format == 1);
+    assert(o.nkey[LF] == 1 && o.key[LF][0] == 0x1D && o.key[RF][0] == (KEY_E0 | 0x1D));
+    assert(o.key[LA][0] == 0x1C && o.key[ST][0] == 0x02 && has(o.key[EX], o.nkey[EX], 0x10));
+    assert(o.nkey[NL] == 0);                                                /* Z: its own */
+    assert(o.button[LF][0] == 0 && o.button[RF][0] == 1 && o.nbutton[LA] == 0 && strstr(o.notes, "mouse"));
+    assert(o.plunger_axis == 2 && !o.plunger_reversed && o.plunger_speed_axis == -1);
+    assert(o.nudge_x == 0 && o.nudge_y == 1 && o.invert_x && !o.invert_y && o.is_velocity && o.dead == 3277);
+    assert(!o.ssf && strstr(o.notes, "speaker mode 1"));
+
+    vpx_file(p, "[Display]\nscale = sharp\n");                             /* not VPinball's */
+    assert(!vpx_read(p, &o));
+    remove(p);
+}
+
 static void test_nudge(void)
 {
     assert(nudge_push(1000, 1500, 1) == 0 && nudge_push(-1500, 1500, 1) == 0);
@@ -1213,7 +1394,7 @@ static void test_nudge(void)
     memset(ds, 0, sizeof ds);
     ds[0x100] = 1;                                                   /* ball 0 in play, ball 1 not */
     ds[0x140] = 0x10;
-    NudgeSettings st = { 1500, 1.0, 1.0, 0, 0 };
+    NudgeSettings st = { 1500, 1.0, 1.0, 0, 0, 0 };
     nudge_settings(&st);
     #define VX(i) ((int16_t)(ds[0x110 + 2 * (i)] | ds[0x111 + 2 * (i)] << 8))
     #define VY(i) ((int16_t)(ds[0x120 + 2 * (i)] | ds[0x121 + 2 * (i)] << 8))
@@ -1252,6 +1433,40 @@ static void test_nudge(void)
     nudge_reading(0, -32767, 0);                                     /* none: nothing */
     nudge_step(&m, ds);
     assert(VX(0) == before - NUDGE_STEP);
+    st.invert_x = 0;
+
+    /* is_velocity: the push is the change of the cabinet's velocity, once */
+    st.is_velocity = 1;
+    nudge_settings(&st);
+    memset(ds + 0x110, 0, 0x20);
+    ds[0x131] = 0;
+    nudge_reading(1, 0, 0);
+    nudge_step(&m, ds);                                              /* at rest: the first step only learns */
+    assert(VX(0) == 0 && VY(0) == 0);
+    nudge_reading(1, -32767, 0);                                     /* moving left at full speed, all at once */
+    nudge_step(&m, ds);
+    assert(VX(0) == NUDGE_GAME && ds[0x131] >= 0x22 && ds[0x131] <= 0x23);   /* a whole game nudge, rightwards */
+    nudge_step(&m, ds);                                              /* still moving: nothing more */
+    nudge_step(&m, ds);
+    assert(VX(0) == NUDGE_GAME);
+    nudge_reading(1, 0, 0);                                          /* stopped: pushed back as much */
+    nudge_step(&m, ds);
+    assert(VX(0) == 0);
+    nudge_reading(1, 1400, -1400);                                   /* within the dead zone: nothing */
+    nudge_step(&m, ds);
+    assert(VX(0) == 0 && VY(0) == 0);
+    nudge_reading(0, 0, 0);                                          /* lost, then back moving: no jump */
+    nudge_step(&m, ds);
+    nudge_reading(1, 32767, 0);
+    nudge_step(&m, ds);
+    assert(VX(0) == 0);
+    int nx, ny;
+    st.invert_y = 1;
+    nudge_settings(&st);
+    nudge_reading(1, 100, 200);
+    assert(nudge_now(&nx, &ny) && nx == 100 && ny == -200);          /* the indicator's: inverted as set */
+    st.invert_y = 0; st.is_velocity = 0;
+    nudge_settings(&st);
     #undef VX
     #undef VY
 
@@ -1284,6 +1499,10 @@ int main(void)
     test_ssf();
     test_autostart();
     test_nudge();
+    test_ini();
+    test_keys();
+    test_hud();
+    test_vpx_import();
 #ifndef _WIN32
     test_dof_pipe();
 #endif

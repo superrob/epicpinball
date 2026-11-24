@@ -52,6 +52,7 @@ typedef struct {
     int dmd;                  /* --dmd: a 128x32 DMD of the table in a window, its messages off the playfield */
     int dmd_device;           /* --dmd-device: the same on a real DMD, through dmd/'s helper */
     int ssf;                  /* --ssf: 7.1, the board's sounds on the cabinet's exciters */
+    const char *ssf_volumes;  /* --ssf-volumes FX,ROLL: over [ssf]'s */
     int table;                /* --table N: straight to table N's game, out when it is quit; 0 none */
 } Options;
 extern Options g_opt;
@@ -114,6 +115,7 @@ uint8_t vga_vram_peek(uint32_t i);    /* vram[(address << 2) | plane] */
 void vga_vram_poke(uint32_t i, uint8_t v);
 void vga_compose(uint32_t *out, int *w, int *h);
 int  vga_compose_table(uint32_t *out, int *w, int *h);   /* the whole table, or 0 */
+int  vga_table_up(void);              /* a table is on screen (Mode X 240), not a menu */
 int  vga_compose_playfield(uint32_t *out, int *w, int *h);   /* --cabinet's playfield: 1 if it is a table */
 int  vga_compose_score(uint32_t *out, int *w, int *h);   /* --cabinet's scoreboard, or 0 */
 int  vga_bar_row(void);               /* the last vga_compose(_table)'s row of video address 0 (the bar), or -1 */

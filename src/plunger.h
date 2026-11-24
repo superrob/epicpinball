@@ -14,6 +14,15 @@ typedef struct {
     int speed;                       /* 0 to PLUNGER_FULL, either way; 0 if the board reports none */
 } PlungerInput;
 
+/* A sensor's axis as the plunger's position: rest 0, pulled PLUNGER_FULL,
+ * held to that range (pad.c, and the settings tool's drawn plunger) */
+static inline int plunger_map(int axis, int rest, int pulled)
+{
+    if (pulled == rest) return 0;
+    const long pos = ((long)axis - rest) * PLUNGER_FULL / (pulled - rest);
+    return pos < 0 ? 0 : pos > PLUNGER_FULL ? PLUNGER_FULL : (int)pos;
+}
+
 typedef struct {
     double t;
     int pos, speed;

@@ -74,6 +74,34 @@ All notable changes to this project are documented here. The format follows
   `--joysticks` shows buttons; `--nudge-trace` scripts an accelerometer. The
   feedback map is version 5 (the nudge's gate). Tested on a real cabinet's
   accelerometer.
+- **Velocity nudging**: `[nudge] is_velocity = 1` for a board set to report
+  the cabinet's velocity instead of its acceleration. Each physics step
+  pushes by how much the velocity changed, all at once; a full-scale change
+  is a whole game nudge. `--nudge-velocity` makes a `--nudge-trace` velocity.
+- **The nudge indicator**: while an accelerometer is read and a table is up,
+  a ring at the top right of the playfield shows the reading, as VPinball
+  does, with the dead zone and a short trail; it turns with the playfield in
+  a cabinet, and shots and recordings leave it out. `[nudge] indicator_range`
+  is the reading that takes it to the ring (8000); `indicator = 0` hides it.
+- **`--ssf-volumes FX,ROLL`**: SSF's effects and rolling volumes for one run,
+  over `[ssf]`'s.
+- **The settings tool**, `epicpinball-config` (Linux; [docs](docs/config.md)):
+  Dear ImGui pages for the modes, the picture, keys, a cabinet's buttons, the
+  plunger (finding its axis, calibrating it, a drawn plunger that moves with
+  it), nudging (a four-step calibration, and a live test with the game's own
+  push and tilt meter), SSF's volumes and a speaker test with the game's own
+  sounds (Super Android's music, its playfield sounds), the ZeDMD and a DOF
+  test. It imports VPinball's keys, buttons, plunger, nudging and sound, from
+  10.8.0's and 10.8.1's settings alike, asking on its first start. The game's
+  Linux menu opens it.
+- **Permanent modes**: `[modes]` in `epicpinball.ini` starts every run with a
+  window with `--cabinet`, `--dmd`, `--dmd-device`, `--ssf` and `--dof` as
+  set; `--no-cabinet` and the others leave one out for a run, and a mode that
+  cannot run is left out, saying why.
+- **Keys and buttons for the game's actions**: `[keys]` in `controller.ini`
+  adds keyboard keys to each action (the action's own key keeps working), and
+  `[buttons]` a cabinet board's joystick buttons (Linux). Every key has a
+  name now (`src/keys.c`), for `--keys` and `controller.ini` too.
 - **`--table N`**: straight to table N with a one-player game, for a
   frontend. PINBALL's own menus are driven to it unseen and unheard, a key at
   a time from where PINBALL is (its code and memory, never a clock), in
@@ -100,7 +128,13 @@ All notable changes to this project are documented here. The format follows
   feature to write the game's memory, and only when configured.
 - `--feedback-log` and `--plunger-trace`, for testing both. Conformance 152.
 
+### Changed
+- `epicpinball.ini` is updated in place, a setting at a time, so its comments
+  and the settings tool's keys stay (it was written anew each time).
+
 ### Fixed
+- The Windows self-test did not link: the DMD and SSF tests were inside the
+  POSIX-only part.
 - A cabinet board in gamepad mode held both flippers up: SDL reads its
   centred sensor axes as half-pulled triggers. Such boards now count for
   their buttons only. Keys a pad held are let go when it is unplugged or the
