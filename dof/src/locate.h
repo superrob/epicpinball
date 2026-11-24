@@ -5,6 +5,15 @@
 // (newer builds), and libdof reads directoutputconfig/ in that. The game's own
 // ini files, in directoutputconfig/ of the save folder, take the place of
 // VPX's for this game only: libdof looks beside the "table file" first.
+//
+// VPX's preference folder is SDL's: ~/.local/share/VPinballX/<major.minor>/ on
+// Linux, %APPDATA%\VPinballX\<major.minor>\ on Windows (or, from some 10.8
+// builds, %APPDATA%\VPinballX\ itself). On Windows, with neither the game's own
+// files nor VPX's, DirectOutput's C:\DirectOutput\Config is used: its ini files
+// are in it, not in a directoutputconfig/ of it, so it is read the way the
+// game's own are, as the "table file"'s folder. libdof reads no GlobalConfig
+// from there (only from <base>/directoutputconfig/), so it finds the boards
+// itself, as it does with no GlobalConfig at all.
 #pragma once
 #include <algorithm>
 #include <cctype>
@@ -82,10 +91,16 @@ inline std::string dof_path(const fs::path &ini)
 inline fs::path vpx_preferences()
 {
     fs::path data;
+#ifdef _WIN32
+    const char *appdata = std::getenv("APPDATA");
+    if (appdata && *appdata) data = appdata;
+    else return {};
+#else
     const char *xdg = std::getenv("XDG_DATA_HOME"), *home = std::getenv("HOME");
     if (xdg && *xdg == '/') data = xdg;
     else if (home && *home) data = fs::path(home) / ".local/share";
     else return {};
+#endif
     fs::path best;
     int major = -1, minor = -1;
     std::error_code e;
@@ -101,8 +116,17 @@ inline fs::path vpx_preferences()
             minor = b;
         }
     }
+#ifdef _WIN32
+    std::error_code kind;
+    if (best.empty() && fs::is_regular_file(data / "VPinballX" / "VPinballX.ini", kind)) best = data / "VPinballX";
+#endif
     return best;
 }
+
+#ifdef _WIN32
+// DirectOutput's own folder, its ini files directly in it
+inline constexpr const char *kDirectOutput = "C:\\DirectOutput\\Config";
+#endif
 
 struct Files {
     fs::path base;                  // for libdof: directoutputconfig/ is in it
@@ -117,6 +141,7 @@ inline Files find(const fs::path &save, const std::string &rom)
     Files r;
     r.base = save;
     const fs::path vpx = vpx_preferences(), own = save / kDir;
+    std::string vpx_has_none;       // the folder VPinball's should be in, if it has none
     if (!vpx.empty()) {
         fs::path base = vpx;
         const std::string set = dof_path(vpx / "VPinballX.ini");
@@ -124,11 +149,23 @@ inline Files find(const fs::path &save, const std::string &rom)
         else if (!set.empty()) r.said.push_back("ignoring VPinball's DOFPath, not an absolute path: " + set);
         std::error_code e;
         if (fs::is_directory(base / kDir, e)) r.base = base;
-        else r.said.push_back("VPinball has no " + (base / kDir).string() + ", so the game's own folder is used");
+        else vpx_has_none = (base / kDir).string();
     }
     r.rows = r.base / kDir;
-    r.said.push_back("DOF files: " + r.rows.string() + (r.base == save ? "" : " (VPinball's)"));
     r.numbers = ini_numbers(r.rows);
+#ifdef _WIN32
+    if (r.base == save && r.numbers.empty() && !ini_numbers(kDirectOutput).empty()) {
+        if (!vpx_has_none.empty()) r.said.push_back("VPinball has no " + vpx_has_none + ", so DirectOutput's folder is used");
+        r.rows = kDirectOutput;
+        r.numbers = ini_numbers(r.rows);
+        r.table = r.rows / rom;
+        r.said.push_back("DOF files: " + r.rows.string() + " (DirectOutput's; its GlobalConfig is not read,"
+                         " libdof finds the boards itself)");
+        return r;
+    }
+#endif
+    if (!vpx_has_none.empty()) r.said.push_back("VPinball has no " + vpx_has_none + ", so the game's own folder is used");
+    r.said.push_back("DOF files: " + r.rows.string() + (r.base == save ? "" : " (VPinball's)"));
     if (r.base != save) {
         auto mine = ini_numbers(own);
         if (!mine.empty()) {

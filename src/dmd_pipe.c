@@ -6,6 +6,11 @@
  * never waited for. A frame the socket has no room for waits for the next
  * host frame, and is replaced by a newer one meanwhile. A helper that goes
  * leaves the game running, without a DMD.
+ *
+ * Windows has no packet socket pair between processes: there the frames go
+ * back to back down an anonymous pipe, whose write end never waits
+ * (PIPE_NOWAIT), each frame whole before the next, the helper reading them
+ * by their size. The rest is the same.
  */
 #if !defined(_WIN32) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
@@ -15,16 +20,115 @@
 #include "machine.h"
 
 #ifdef _WIN32
+#include "win_spawn.h"
+
+#define FRAME (DMD_W * DMD_H * 3)
+static HANDLE to, child;             /* NULL: none */
+static uint8_t pending[FRAME];
+static uint8_t out[FRAME];           /* the frame on its way: a newer one waits for it */
+static size_t out_left;              /* of it still to go */
+static int waiting;                  /* a frame not yet on its way */
+static int have;                     /* a frame to send again: a display found late gets it */
+static uint64_t sent_at;
+
+int dmd_pipe_alive(void) { return to != NULL; }
+
+static void gone(const char *why)
+{
+    fprintf(stderr, "[dmd] the helper %s: no DMD for the rest of the run\n", why);
+    if (to) CloseHandle(to);
+    to = NULL;
+    waiting = 0;
+    out_left = 0;
+}
+
 int dmd_pipe_open(const char *helper, const char *savedir)
 {
-    (void)helper; (void)savedir;
-    fprintf(stderr, "--dmd-device is not supported on Windows yet (Linux only for now)\n");
-    return 0;
+    if (!win_file(helper)) {
+        fprintf(stderr, "--dmd-device needs %s: run dmd\\build.ps1 (docs/dmd.md)\n", helper);
+        return 0;
+    }
+    HANDLE rd, wr;
+    DWORD err;
+    if (!win_pipe(&rd, &wr, 4 * FRAME)) {
+        fprintf(stderr, "[dmd] no pipe: %s\n", win_error(GetLastError()));
+        return 0;
+    }
+    static char program[512], ini[600];
+    snprintf(program, sizeof program, "%s", helper);
+    snprintf(ini, sizeof ini, "%s/dmd/DMDUtil.ini", savedir);
+    char *argv[] = { program, (char *)"--ini", ini, NULL };
+    const int ok = win_spawn(program, argv, rd, NULL, &child, &err);
+    CloseHandle(rd);
+    if (!ok) {
+        CloseHandle(wr);
+        child = NULL;
+        fprintf(stderr, "[dmd] cannot run %s: %s\n", program, win_error(err));
+        return 0;
+    }
+    win_nowait(wr);
+    to = wr;
+    return 1;
 }
-void dmd_pipe_frame(const uint32_t *px) { (void)px; }
-void dmd_pipe_tick(void) { }
-void dmd_pipe_close(void) { }
-int dmd_pipe_alive(void) { return 0; }
+
+/* Frames go back to back down a byte pipe: one that did not all fit goes on
+   with the next host frame, before anything newer, so none is ever half sent */
+static void send_pending(void)
+{
+    for (;;) {
+        if (!to) return;
+        if (!out_left) {
+            if (!waiting) return;
+            memcpy(out, pending, FRAME);
+            out_left = FRAME;
+            waiting = 0;
+        }
+        DWORD w = 0;
+        if (!WriteFile(to, out + (FRAME - out_left), (DWORD)out_left, &w, NULL)) {
+            gone(win_error(GetLastError()));
+            return;
+        }
+        out_left -= w;
+        if (out_left) return;        /* the rest next frame */
+        sent_at = host_us();
+    }
+}
+
+void dmd_pipe_frame(const uint32_t *px)
+{
+    if (!to) return;
+    for (int i = 0; i < DMD_W * DMD_H; i++) {
+        pending[3 * i] = (uint8_t)(px[i] >> 16);
+        pending[3 * i + 1] = (uint8_t)(px[i] >> 8);
+        pending[3 * i + 2] = (uint8_t)px[i];
+    }
+    waiting = have = 1;
+    send_pending();
+}
+
+void dmd_pipe_tick(void)
+{
+    if (have && !waiting && !out_left && host_us() - sent_at > 1000000) waiting = 1;   /* once a second, unchanged */
+    send_pending();
+    if (child && WaitForSingleObject(child, 0) == WAIT_OBJECT_0) {
+        CloseHandle(child);
+        child = NULL;
+        if (to) gone("ended");
+    }
+}
+
+void dmd_pipe_close(void)
+{
+    if (to) { CloseHandle(to); to = NULL; }          /* the helper blanks the display and ends */
+    if (child) {
+        if (WaitForSingleObject(child, 2000) != WAIT_OBJECT_0) {   /* up to 2 s */
+            TerminateProcess(child, 1);
+            WaitForSingleObject(child, INFINITE);
+        }
+        CloseHandle(child);
+        child = NULL;
+    }
+}
 #else
 #include <errno.h>
 #include <signal.h>

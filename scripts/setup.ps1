@@ -155,6 +155,16 @@ $env:PCRECOMP_HOME = $pcr
 Step 4 "Lifting and building, then playing each table headless to find the rest"
 Run "configuring the build" { cmake -B build -G "Visual Studio 17 2022" -A x64 "-DPCRECOMP_HOME=$pcr" }
 Run "lifting and building, then playing each table headless to find the rest (a few minutes)" { & $py tools\discover.py }
+# Where the tables keep what --table, the DMD, SSF, DOF, the plunger and
+# nudging use (work/feedback, work/dmd), as build-linux.sh does. Without them
+# the game plays as it shipped, so a failure here does not stop the setup.
+function Maps($what, $tool) {
+    $ErrorActionPreference = "Continue"
+    & $py $tool 2>&1 | Out-File $Log -Append -Encoding utf8
+    if ($LASTEXITCODE -ne 0) { Say "  no $what (see $Log); the game itself is fine" } else { Say "  $what made" }
+}
+Maps "feedback maps" tools\feedback_map.py
+Maps "DMD maps" tools\dmd_survey.py
 
 # ---- 6. shortcut -----------------------------------------------------------------
 Step 5 "The shortcut"

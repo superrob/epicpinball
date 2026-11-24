@@ -7,4 +7,8 @@ int  dof_open(const char *helper, const char *savedir);      /* 0: cannot, and h
 void dof_tick(void);                 /* each host_frame; never waits */
 void dof_close(void);                /* the game is over; idempotent */
 
+#ifdef _WIN32
+#define DOF_HELPER "dof/build/epicpinball-dof.exe"
+#else
 #define DOF_HELPER "dof/build/epicpinball-dof"
+#endif

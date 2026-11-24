@@ -46,11 +46,11 @@ conformance harness passes 154/154 on Linux.**
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, played by hand | ✅ |
 | Cabinet mode, `--cabinet` (Linux only) | ✅ on a real cabinet (table 1) and on virtual displays |
-| Nudging from a cabinet: an accelerometer's shove by how hard, nudge buttons as the game's nudge (`[nudge]`, Linux) | ✅ on a real cabinet's accelerometer (a Pinscape Pico); by a scripted accelerometer on four tables and a virtual board in a window; nudge buttons not yet on a real board |
-| Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick) |
+| Nudging from a cabinet: an accelerometer's shove by how hard, nudge buttons as the game's nudge (`[nudge]`, Linux and Windows) | ✅ on a real cabinet's accelerometer (a Pinscape Pico); by a scripted accelerometer on four tables and a virtual board in a window; nudge buttons not yet on a real board; Windows not yet on a cabinet |
+| Cabinet feedback through libdof (`--dof`) and an analog plunger (`[plunger]`), Linux and Windows | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick); Windows not yet on a cabinet (`--dof`'s pipe run under Wine, its helper and `dof\build.ps1` not yet built) |
 | SSF: the board's sounds on a cabinet's exciters, 7.1 (`--ssf`, Linux) | ✅ headless on all 13 tables (eight channels measured), and on a cabinet's exciters |
 | Straight to a table, `--table N` | ✅ on a real cabinet; headless on all 13 tables (quit, high score, game over, play again); not on Windows |
-| A 128x32 DMD (`--dmd` in a window, `--dmd-device` on a real DMD through libdmdutil; Linux) | ✅ on a real cabinet with a ZeDMD, on table 1; all 13 tables headless |
+| A 128x32 DMD (`--dmd` in a window, `--dmd-device` on a real DMD through libdmdutil; `--dmd-device` on Linux and Windows) | ✅ on a real cabinet with a ZeDMD, on table 1; all 13 tables headless; `--dmd-device` on Windows not yet on a cabinet (its pipe run under Wine, its helper and `dmd\build.ps1` not yet built) |
 | **Conformance** ([docs](docs/conformance.md)) | **154/154** on Linux (Windows skips the 11 cabinet checks, and has not run the 10 feedback ones) |
 
 Everything marked ✅ was seen working in scripted headless runs, which the
@@ -84,14 +84,14 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   drop targets and the plunger play on the exciters, top or bottom, left or
   right, where on the table they happen, and a rolling sound follows the
   ball. [How](docs/ssf.md).
-- **A DMD** (`--dmd`, `--dmd-device`, Linux): a 128x32 dot-matrix picture of
+- **A DMD** (`--dmd`, Linux; `--dmd-device`, Linux and Windows): a 128x32 dot-matrix picture of
   every table, in a window of its own or on a real DMD (any libdmdutil
   drives; tested with a ZeDMD), taking the scoreboard window's place in a cabinet. The
   messages are the game's own, followed through the message engine all 13
   tables share and set again for 128x32 in each table's fonts and colours,
   with its explosions and waves; tables 1-8's leave the playfield for it.
   Between them, the table's score. [How it works](docs/dmd.md).
-- **Cabinet feedback** (`--dof`, Linux): flippers, slingshots, bumpers,
+- **Cabinet feedback** (`--dof`, Linux and Windows): flippers, slingshots, bumpers,
   launch, drain, nudge and the rest go to libdof as DOF events (on table 1
   also its holes, kickback, targets, lanes, ramps, jackpots and awards), with
   VPinball's DOF files if there are any (a Config Tool export works as it
@@ -225,9 +225,9 @@ A pad: triggers flip, bumpers nudge, A plunges, d-pad for menus; remap it in
 | `--table N` | straight to table N (1-13) and a one-player game; quitting it quits the program ([docs](docs/table.md)) |
 | `--ssf` | 7.1 for a cabinet with exciters: the board's sounds on the side (top) and rear (bottom) pairs; `[ssf]` in `epicpinball.ini` sets their volumes (Linux) ([docs](docs/ssf.md)) |
 | `--dmd` | a 128x32 DMD in a window of its own; in a cabinet, in place of the scoreboard window (Linux) ([docs](docs/dmd.md)) |
-| `--dmd-device` | the DMD on a real one, any libdmdutil drives (ZeDMD, Pixelcade, PinDMD3, ...; tested with a ZeDMD; PIN2DMD is left out of this build): build `dmd/build.sh` first; settings in `saves/dmd/DMDUtil.ini` (Linux) |
-| `--dof` | DOF events through libdof (Linux): build `dof/build.sh` first; rows in VPinball's DOF files or `saves/directoutputconfig/`; no output limits ([docs](docs/cabinet-feedback.md)) |
-| `--joysticks` | list joysticks, their live axes and buttons pressed, to set up `[plunger]` and `[nudge]` in `saves/controller.ini` (Linux) |
+| `--dmd-device` | the DMD on a real one, any libdmdutil drives (ZeDMD, Pixelcade, PinDMD3, ...; tested with a ZeDMD; PIN2DMD is left out of this build): build `dmd/build.sh` (Windows: `dmd\build.ps1`) first; settings in `saves/dmd/DMDUtil.ini` |
+| `--dof` | DOF events through libdof: build `dof/build.sh` (Windows: `dof\build.ps1`) first; rows in VPinball's DOF files or `saves/directoutputconfig/`; no output limits ([docs](docs/cabinet-feedback.md)) |
+| `--joysticks` | list joysticks, their live axes and buttons pressed, to set up `[plunger]` and `[nudge]` in `saves/controller.ini`; on Windows a board may have another name, and its axes are X Y Z RX RY RZ then the sliders |
 | `--feedback-log FILE`, `--plunger-trace "ms:percent,..."`, `--nudge-trace "ms:x,y,..."` | testing: what a cabinet would feel; a scripted plunger sensor; a scripted accelerometer |
 | `--mute` | |
 | `--headless` | no window, no audio device, deterministic time — works over RDP |
@@ -263,8 +263,8 @@ it reaches is lifted. What else is here:
 | `tools/conformance.py` | the scripted checks; `--update` records a new baseline |
 | `tools/feedback_map.py` | where each table keeps what cabinet feedback and the plunger use |
 | `tools/dmd_survey.py` | each table's message engine for the DMD, and every message a table can show |
-| `dof/` | the optional output helper: its own program, GPLv3, built by `dof/build.sh` |
-| `dmd/` | the optional DMD helper for a real DMD: its own program, GPLv3, built by `dmd/build.sh` |
+| `dof/` | the optional output helper: its own program, GPLv3, built by `dof/build.sh` (Windows: `dof/build.ps1`) |
+| `dmd/` | the optional DMD helper for a real DMD: its own program, GPLv3, built by `dmd/build.sh` (Windows: `dmd/build.ps1`) |
 | `setup.sh`, `build-linux.sh` | the Linux quick start and rebuild |
 | `tests/selftest.c` | the split screen, SB16 stereo, the image registry, the feedback watcher, the plunger, the helper's pipe, the DMD's layout and SSF's placing, with no game data — what CI runs (`cmake --build build --target selftest`) |
 | `src/` | the DOS machine: `dos.c` (DOS, BIOS, EXEC), `images.c` (which lifted code is where), `machine.c` (PIC, PIT, keyboard, interrupts), `vga.c`, `audio.c` (SB16, DMA), `host.c` (window, input, recording: Win32, or SDL2 on Linux), `present.c` (Direct3D 11, or SDL2), `pad.c`, `watch.c` and `feedback.c` (table events), `dof_pipe.c`, `plunger.c`, `dmd.c` and `dmd_pipe.c` (the DMD), `ssf.c` (the exciters), `autostart.c` (`--table`), `nudge.c` (a shove) |

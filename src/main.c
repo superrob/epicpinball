@@ -20,7 +20,7 @@
  *   --whole-table     the whole table, no scrolling (F7)
  *   --bars MODE       beside the picture: blur or black
  *   --classic         the game's own picture: nearest, no extras, GDI
- *   --cabinet         a virtual pinball machine (Linux): the whole table on
+ *   --cabinet         a virtual pinball machine: the whole table on
  *                     one display (F6 turns it), the scoreboard in a window
  *                     of its own, neither with a frame
  *   --rotate DEG      with --cabinet, the playfield turned clockwise: 0, 90, 180, 270
@@ -43,11 +43,11 @@
  *                     the game's sound, the side and rear pairs the board's
  *                     sounds where on the table they happen (docs/ssf.md)
  *   --dmd-device      the DMD on a real one (a ZeDMD) through libdmdutil;
- *                     build it with dmd/build.sh (Linux)
+ *                     build it with dmd/build.sh (Windows: dmd\build.ps1)
  *   --dof             table events to libdof, with VPinball's DOF files or
  *                     directoutputconfig/ in the save folder; no limits, they
  *                     are the controller's. Build it with dof/build.sh
- *                     (Linux; docs/cabinet-feedback.md first)
+ *                     (Windows: dof\build.ps1; docs/cabinet-feedback.md first)
  *   --joysticks       list joysticks, their axes as they move and buttons as
  *                     they are pressed, to set up [plunger] and [nudge] in
  *                     controller.ini (Linux)
@@ -101,9 +101,6 @@ static const char *cabinet_check(void)
             return "--rotate, --stretch, --playfield-display and --score-window need --cabinet";
         return NULL;
     }
-#ifdef _WIN32
-    return "--cabinet is not supported on Windows yet (Linux only for now)";
-#else
     RECT r;
     if (g_opt.classic) return "--cabinet and --classic do not go together";
     if (g_opt.window) return "--window is the ordinary window's size: with --cabinet use --score-window X,Y,W,H";
@@ -113,7 +110,6 @@ static const char *cabinet_check(void)
     if (g_opt.score_window && !host_parse_place(g_opt.score_window, &r))
         return "--score-window takes X,Y,W,H, at least 32x8, e.g. 1920,0,1280,116";
     return NULL;
-#endif
 }
 
 void fatal(const char *fmt, ...)
@@ -200,9 +196,6 @@ int main(int argc, char **argv)
         wrong = "--plunger-trace takes ms:percent,... in order of time, e.g. 20000:0,20500:100,20540:0";
     if (!wrong && g_opt.nudge_trace && !nudge_trace(g_opt.nudge_trace))
         wrong = "--nudge-trace takes ms:x,y,... in order of time, x and y -32768 to 32767, e.g. 30000:-20000,0,30100:0,0";
-#ifdef _WIN32
-    if (!wrong && g_opt.ssf) wrong = "--ssf is not supported on Windows yet (Linux only for now)";
-#endif
     if (!wrong && g_opt.dof && g_opt.headless && !g_opt.realtime)
         wrong = "--dof needs a window or --realtime: libdof times pulses by the wall clock";
     if (wrong) { fprintf(stderr, "%s\n", wrong); return 2; }

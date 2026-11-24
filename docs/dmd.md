@@ -12,9 +12,13 @@ picture is put together.
 python3 tools/dmd_survey.py                    # once: work/dmd/epN.map, from your copy of the game
 ./epicpinball.sh --dmd                         # a DMD window beside the game
 ./epicpinball.sh --cabinet --dmd               # in a cabinet: a DMD window, no scoreboard window
-dmd/build.sh                                   # once, for a real DMD (Linux; fetches libdmdutil)
+dmd/build.sh                                   # once, for a real DMD (fetches libdmdutil)
 ./epicpinball.sh --cabinet --dmd-device        # the DMD on a ZeDMD (or Pixelcade, PinDMD3), no scoreboard window
 ```
+
+On Windows the helper is built by
+`powershell -ExecutionPolicy Bypass -File dmd\build.ps1` (Visual Studio 2022
+and CMake; [dmd/](../dmd/README.md)), and `--dmd-device` is the same option.
 
 `--dmd` and `--dmd-device` go together or alone. In a cabinet with either,
 no scoreboard window opens: the DMD shows the scoreboard. With `--dmd` the
@@ -66,7 +70,8 @@ Brightness = 6
 ```
 
 The user running the game needs to be able to open the serial port (on most
-distributions, the `uucp` or `dialout` group).
+distributions, the `uucp` or `dialout` group). On Windows the port is a COM
+port (`Device = COM3`), which any user may open.
 
 ## The bar is not a DMD
 
@@ -272,7 +277,11 @@ Every table, in a scripted game, headless, with the picture captured:
 - the real DMD: `dmd/build/epicpinball-dmd` fed by the game on table 1, with
   no display attached: libdmdutil was given the frames the game composed,
   each one (its own RGB888 dump, `EPICPINBALL_DMD_DUMP=DIR`); then on the
-  real cabinet, table 1.
+  real cabinet, table 1;
+- Windows' end of the pipe (`src/dmd_pipe.c`) under Wine, with a stand-in
+  helper that reads slower than the game sends: frames arrive whole, in
+  order, the newest last. The helper itself and `dmd/build.ps1` were only
+  syntax-checked and written, not built: not yet on a Windows cabinet.
 
 
 ## libdmdutil
@@ -281,6 +290,7 @@ Every table, in a scripted game, headless, with the picture captured:
 Pixelcade, PIN2DMD and others. It is GPLv3 and C++20 only, so the game does
 not link it: `dmd/`'s helper, as `dof/`'s is for libdof, takes frames over a
 socket pair of packets (a frame each, never half of one, never waited for;
-`src/dmd_pipe.c`) and calls `UpdateRGB24Data`, which queues and does not
+`src/dmd_pipe.c`; on Windows an anonymous pipe whose write end never waits,
+frames back to back and each sent whole before the next) and calls `UpdateRGB24Data`, which queues and does not
 block. `FindDisplays()` looks for the displays on its own thread. The build
 leaves out Serum, VNI, PUP and PIN2DMD (colourisation, and libusb).

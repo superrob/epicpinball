@@ -121,7 +121,8 @@ static const char k_hlsl[] =
 "SamplerState s_lin : register(s0);\n"
 "SamplerState s_pt : register(s1);\n"
 "cbuffer C : register(b0) { float2 src; float2 pad0; float4 pic; float4 cover;\n"
-"                           int mode; int look; int bars; int pad1; };\n"
+"                           int mode; int look; int bars; int pad1;\n"
+"                           float2 win; int rot; int pad2; };\n"
 "struct V { float4 pos : SV_Position; float2 uv : TEXCOORD0; };\n"
 "V vs(uint id : SV_VertexID) {\n"
 "  V o; float2 p = float2((id << 1) & 2, id & 2);\n"
@@ -144,14 +145,23 @@ static const char k_hlsl[] =
 "                                                  : float3(0.87, 0.87, 1.25);\n"
 "  return col * beam * lerp(float3(1, 1, 1), mask, k);\n"
 "}\n"
+/* --cabinet's turned playfield: where a window pixel is in the picture drawn
+ * upright (pic and cover are laid out upright), rot quarter turns clockwise */
+"float2 upright(float2 p) {\n"
+"  if (rot == 1) return float2(p.y, win.x - p.x);\n"
+"  if (rot == 2) return win - p;\n"
+"  if (rot == 3) return float2(win.y - p.y, p.x);\n"
+"  return p;\n"
+"}\n"
 "float4 ps(V i) : SV_Target {\n"
-"  float2 uv = (i.pos.xy - pic.xy) / pic.zw;\n"
+"  float2 q = upright(i.pos.xy);\n"
+"  float2 uv = (q - pic.xy) / pic.zw;\n"
 "  if (any(uv < 0) || any(uv >= 1))\n"
-"    return float4(bars ? tb.Sample(s_lin, (i.pos.xy - cover.xy) / cover.zw).rgb : float3(0, 0, 0), 1);\n"
+"    return float4(bars ? tb.Sample(s_lin, (q - cover.xy) / cover.zw).rgb : float3(0, 0, 0), 1);\n"
 "  float3 c;\n"
 "  if (mode == 0) c = sharp(uv);\n"
 "  else if (mode == 1) c = t0.Sample(s_lin, uv).rgb;\n"
-"  else if (mode == 2) c = crt(uv, i.pos.xy);\n"
+"  else if (mode == 2) c = crt(uv, q);\n"
 "  else c = t0.Sample(s_pt, uv).rgb;\n"
 "  if (look == 1) {\n"                               /* vivid: saturation, a little contrast */
 "    float l = dot(c, float3(0.299, 0.587, 0.114));\n"
@@ -163,6 +173,17 @@ static const char k_hlsl[] =
 
 typedef struct { ID3D11Texture2D *tex; ID3D11ShaderResourceView *srv; int w, h; } Tex;
 
+/* A window drawn into: its swap chain, and its own textures, so the
+ * playfield and the scoreboard (or the DMD) do not remake one another's */
+typedef struct {
+    HWND hwnd;
+    IDXGISwapChain *sc;
+    ID3D11RenderTargetView *rtv;
+    int cw, ch;
+    Tex frame, back;
+} Win;
+#define WINDOWS 4
+
 static struct {
     int failed;
     ID3D11Device *dev;
@@ -171,12 +192,8 @@ static struct {
     ID3D11PixelShader *ps;
     ID3D11SamplerState *samp[2];
     ID3D11Buffer *cb;
-    Tex frame, back;
-    /* the window */
-    HWND hwnd;
-    IDXGISwapChain *sc;
-    ID3D11RenderTargetView *rtv;
-    int cw, ch;
+    Win win[WINDOWS];
+    Tex off_frame, off_back;          /* present_offscreen's */
 } d;
 
 static int fail(const char *what, HRESULT hr)
@@ -222,7 +239,7 @@ static int init(void)
     ID3D11Device_CreateSamplerState(d.dev, &s, &d.samp[1]);
 
     D3D11_BUFFER_DESC b = {0};
-    b.ByteWidth = 64;
+    b.ByteWidth = 80;
     b.Usage = D3D11_USAGE_DEFAULT;
     b.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     ID3D11Device_CreateBuffer(d.dev, &b, NULL, &d.cb);
@@ -245,26 +262,36 @@ static void upload(Tex *t, const uint32_t *px, int w, int h)
     ID3D11DeviceContext_UpdateSubresource(d.ctx, (ID3D11Resource *)t->tex, 0, NULL, px, w * 4, 0);
 }
 
-static void draw(ID3D11RenderTargetView *rtv, int cw, int ch, const uint32_t *f, int w, int h,
-                 double aspect, const Present *s)
+/* The frame into a cw x ch target. Turned (s->rot quarters clockwise), the
+ * picture and its backdrop are laid out in the upright tw x th, and the
+ * shader maps each target pixel back into it, as SDL turns a whole drawing. */
+static void draw(ID3D11RenderTargetView *rtv, int cw, int ch, Tex *frame, Tex *back, const uint32_t *f,
+                 int w, int h, double aspect, const Present *s)
 {
     int bw, bh;
-    upload(&d.frame, f, w, h);
-    if (s->bars) { make_backdrop(f, w, h, &bw, &bh); upload(&d.back, back_buf, bw, bh); }
-    else if (!d.back.tex) upload(&d.back, f, 1, 1);
+    upload(frame, f, w, h);
+    if (s->bars) { make_backdrop(f, w, h, &bw, &bh); upload(back, back_buf, bw, bh); }
+    else if (!back->tex) upload(back, f, 1, 1);
 
-    RECT r; present_rect(cw, ch, w, h, aspect, s->mode, s->stretch, &r);
-    float covw = (float)cw, covh = (float)(cw / aspect);       /* the backdrop covers the window */
-    if (covh < ch) { covh = (float)ch; covw = (float)(ch * aspect); }
-    struct { float src[2], pad0[2], pic[4], cover[4]; int mode, look, bars, pad1; } c = {
+    const int rot = s->rot & 3, tw = rot & 1 ? ch : cw, th = rot & 1 ? cw : ch;
+    RECT r; present_rect(tw, th, w, h, aspect, s->mode, s->stretch, &r);
+    float covw = (float)tw, covh = (float)(tw / aspect);       /* the backdrop covers the window */
+    if (covh < th) { covh = (float)th; covw = (float)(th * aspect); }
+    struct {
+        float src[2], pad0[2], pic[4], cover[4];
+        int mode, look, bars, pad1;
+        float win[2];
+        int rot, pad2;
+    } c = {
         { (float)w, (float)h }, { 0, 0 },
         { (float)r.left, (float)r.top, (float)(r.right - r.left), (float)(r.bottom - r.top) },
-        { (cw - covw) / 2, (ch - covh) / 2, covw, covh },
-        s->mode == PRESENT_INTEGER ? PRESENT_NEAREST : s->mode, s->look, s->bars, 0 };
+        { (tw - covw) / 2, (th - covh) / 2, covw, covh },
+        s->mode == PRESENT_INTEGER ? PRESENT_NEAREST : s->mode, s->look, s->bars, 0,
+        { (float)cw, (float)ch }, rot, 0 };
     ID3D11DeviceContext_UpdateSubresource(d.ctx, (ID3D11Resource *)d.cb, 0, NULL, &c, 0, 0);
 
     D3D11_VIEWPORT vp = { 0, 0, (float)cw, (float)ch, 0, 1 };
-    ID3D11ShaderResourceView *srv[2] = { d.frame.srv, d.back.srv };
+    ID3D11ShaderResourceView *srv[2] = { frame->srv, back->srv };
     ID3D11DeviceContext_RSSetViewports(d.ctx, 1, &vp);
     ID3D11DeviceContext_OMSetRenderTargets(d.ctx, 1, &rtv, NULL);
     ID3D11DeviceContext_IASetPrimitiveTopology(d.ctx, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -276,13 +303,44 @@ static void draw(ID3D11RenderTargetView *rtv, int cw, int ch, const uint32_t *f,
     ID3D11DeviceContext_Draw(d.ctx, 3, 0);
 }
 
+static void tex_free(Tex *t)
+{
+    if (t->srv) ID3D11ShaderResourceView_Release(t->srv);
+    if (t->tex) ID3D11Texture2D_Release(t->tex);
+    memset(t, 0, sizeof *t);
+}
+
+/* A window is going away (or its picture moves to another): its swap chain
+ * and textures with it */
+void present_forget(HWND hw)
+{
+    for (int i = 0; i < WINDOWS; i++) {
+        Win *v = &d.win[i];
+        if (!v->hwnd || v->hwnd != hw) continue;
+        if (d.ctx) ID3D11DeviceContext_OMSetRenderTargets(d.ctx, 0, NULL, NULL);
+        if (v->rtv) ID3D11RenderTargetView_Release(v->rtv);
+        if (v->sc) IDXGISwapChain_Release(v->sc);
+        tex_free(&v->frame); tex_free(&v->back);
+        memset(v, 0, sizeof *v);
+    }
+}
+
+void present_close(void)
+{
+    for (int i = 0; i < WINDOWS; i++) if (d.win[i].hwnd) present_forget(d.win[i].hwnd);
+}
+
 int present_window(HWND hw, const uint32_t *f, int w, int h, double aspect, const Present *s)
 {
     if (!init()) return 0;
     RECT cr; GetClientRect(hw, &cr);
     int cw = cr.right, ch = cr.bottom;
     if (cw <= 0 || ch <= 0) return 1;
-    if (!d.sc) {
+    Win *v = NULL;
+    for (int i = 0; i < WINDOWS && !v; i++) if (d.win[i].hwnd == hw) v = &d.win[i];
+    for (int i = 0; i < WINDOWS && !v; i++) if (!d.win[i].hwnd) v = &d.win[i];
+    if (!v) return 0;                  /* more windows than there are */
+    if (!v->sc) {
         IDXGIDevice *xd = NULL; IDXGIAdapter *ad = NULL; IDXGIFactory *fa = NULL;
         DXGI_SWAP_CHAIN_DESC sd = {0};
         sd.BufferCount = 2;
@@ -295,28 +353,29 @@ int present_window(HWND hw, const uint32_t *f, int w, int h, double aspect, cons
         HRESULT hr = ID3D11Device_QueryInterface(d.dev, &IID_IDXGIDevice, (void **)&xd);
         if (SUCCEEDED(hr)) hr = IDXGIDevice_GetAdapter(xd, &ad);
         if (SUCCEEDED(hr)) hr = IDXGIAdapter_GetParent(ad, &IID_IDXGIFactory, (void **)&fa);
-        if (SUCCEEDED(hr)) hr = IDXGIFactory_CreateSwapChain(fa, (IUnknown *)d.dev, &sd, &d.sc);
+        if (SUCCEEDED(hr)) hr = IDXGIFactory_CreateSwapChain(fa, (IUnknown *)d.dev, &sd, &v->sc);
         if (SUCCEEDED(hr))   /* Alt+Enter is ours (borderless), not DXGI's exclusive mode */
             IDXGIFactory_MakeWindowAssociation(fa, hw, DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_WINDOW_CHANGES);
         if (fa) IDXGIFactory_Release(fa);
         if (ad) IDXGIAdapter_Release(ad);
         if (xd) IDXGIDevice_Release(xd);
         if (FAILED(hr)) return fail("swap chain", hr);
-        d.hwnd = hw;
-        fprintf(stderr, "[present] Direct3D 11\n");
+        v->hwnd = hw;
+        static int said;
+        if (!said++) fprintf(stderr, "[present] Direct3D 11\n");
     }
-    if (!d.rtv || cw != d.cw || ch != d.ch) {
-        if (d.rtv) { ID3D11RenderTargetView_Release(d.rtv); d.rtv = NULL; }
+    if (!v->rtv || cw != v->cw || ch != v->ch) {
+        if (v->rtv) { ID3D11RenderTargetView_Release(v->rtv); v->rtv = NULL; }
         ID3D11DeviceContext_OMSetRenderTargets(d.ctx, 0, NULL, NULL);
-        if (FAILED(IDXGISwapChain_ResizeBuffers(d.sc, 0, cw, ch, DXGI_FORMAT_UNKNOWN, 0))) return 0;
+        if (FAILED(IDXGISwapChain_ResizeBuffers(v->sc, 0, cw, ch, DXGI_FORMAT_UNKNOWN, 0))) return 0;
         ID3D11Texture2D *back = NULL;
-        IDXGISwapChain_GetBuffer(d.sc, 0, &IID_ID3D11Texture2D, (void **)&back);
-        ID3D11Device_CreateRenderTargetView(d.dev, (ID3D11Resource *)back, NULL, &d.rtv);
+        IDXGISwapChain_GetBuffer(v->sc, 0, &IID_ID3D11Texture2D, (void **)&back);
+        ID3D11Device_CreateRenderTargetView(d.dev, (ID3D11Resource *)back, NULL, &v->rtv);
         ID3D11Texture2D_Release(back);
-        d.cw = cw; d.ch = ch;
+        v->cw = cw; v->ch = ch;
     }
-    draw(d.rtv, cw, ch, f, w, h, aspect, s);
-    IDXGISwapChain_Present(d.sc, 0, 0);
+    draw(v->rtv, cw, ch, &v->frame, &v->back, f, w, h, aspect, s);
+    IDXGISwapChain_Present(v->sc, 0, 0);
     return 1;
 }
 
@@ -336,7 +395,7 @@ int present_offscreen(const uint32_t *f, int w, int h, double aspect, const Pres
     td.Usage = D3D11_USAGE_STAGING; td.BindFlags = 0; td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
     ID3D11Device_CreateTexture2D(d.dev, &td, NULL, &st);
     ID3D11Device_CreateRenderTargetView(d.dev, (ID3D11Resource *)rt, NULL, &rtv);
-    draw(rtv, ow, oh, f, w, h, aspect, s);
+    draw(rtv, ow, oh, &d.off_frame, &d.off_back, f, w, h, aspect, s);
     ID3D11DeviceContext_CopyResource(d.ctx, (ID3D11Resource *)st, (ID3D11Resource *)rt);
     D3D11_MAPPED_SUBRESOURCE m;
     int ok = SUCCEEDED(ID3D11DeviceContext_Map(d.ctx, (ID3D11Resource *)st, 0, D3D11_MAP_READ, 0, &m));

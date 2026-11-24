@@ -5,7 +5,11 @@
 #pragma once
 #include <stdint.h>
 
+#ifdef _WIN32
+#define DMD_HELPER "dmd/build/epicpinball-dmd.exe"
+#else
 #define DMD_HELPER "dmd/build/epicpinball-dmd"
+#endif
 
 int  dmd_pipe_open(const char *helper, const char *savedir);  /* 0: said why, and off */
 void dmd_pipe_frame(const uint32_t *px);   /* 128x32 0xAARRGGBB, a picture that changed */

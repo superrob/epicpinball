@@ -10,6 +10,11 @@
 // ends it: the display is blanked first. It answers nothing; what it has to
 // say goes to stderr, which the game passes on.
 //
+// On Windows stdin is an anonymous pipe instead (no packet socket pair there
+// between processes, and the socket is only that: no network): the frames
+// come back to back, each whole, and are read by their size. End of file
+// ends it, as the socket closing does.
+//
 // --ini names a DMDUtil.ini-style file (libdmdutil's own keys: [ZeDMD]
 // Device, WiFiAddr, Brightness ...); without one libdmdutil looks for a
 // ZeDMD on every serial port and on the network, and for the others.
@@ -24,10 +29,22 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <thread>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
+#include <cerrno>
+#include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 namespace {
 
@@ -91,6 +108,16 @@ int main(int argc, char **argv)
 
     static uint8_t frame[kFrame];
     long frames = 0;
+#ifdef _WIN32
+    const HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+    for (;;) {
+        DWORD got = 0, n = 0;
+        while (got < (DWORD)kFrame && ReadFile(in, frame + got, kFrame - got, &n, nullptr) && n) got += n;
+        if (got < (DWORD)kFrame) break;          // the end, or the game gone (half a frame: dropped)
+        dmd->UpdateRGB24Data(frame, kW, kH);
+        frames++;
+    }
+#else
     for (;;) {
         ssize_t n = recv(STDIN_FILENO, frame, sizeof frame, 0);
         if (n < 0 && errno == EINTR) continue;
@@ -103,6 +130,7 @@ int main(int argc, char **argv)
         dmd->UpdateRGB24Data(frame, kW, kH);
         frames++;
     }
+#endif
     std::memset(frame, 0, sizeof frame);         // dark, as a table ends
     dmd->UpdateRGB24Data(frame, kW, kH);
     std::this_thread::sleep_for(std::chrono::milliseconds(150));

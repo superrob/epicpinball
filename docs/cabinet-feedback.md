@@ -1,6 +1,6 @@
 # Cabinet feedback, the analog plunger and nudging
 
-For a virtual pinball machine (Linux). Three separate things, each off until
+For a virtual pinball machine, on Linux or Windows. Three separate things, each off until
 you set it up:
 
 - **`--dof`**: the game tells [libdof](https://github.com/vpinball/libdof)
@@ -57,6 +57,19 @@ libudev. It downloads libdof and four libraries at pinned commits (about
 installed elsewhere. The helper is GPLv3 like libdof and is a program of its
 own; the game stays MIT and does not link it.
 
+On Windows, from the game's folder:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File dof\build.ps1
+```
+
+It needs Visual Studio 2022's C++ tools (`scripts\setup.ps1` installs the
+Build Tools), CMake 3.25 and git; curl and tar come with Windows. It fetches
+the same commits, checks the same sums, applies the same patch, builds all of
+it with Visual Studio (no MSYS2) and leaves `epicpinball-dof.exe` with its
+DLLs in `dof\build\` ([dof/README.md](../dof/README.md)). Not yet run on a
+Windows cabinet.
+
 ### 2. Let your user reach the board
 
 libdof talks to the Pico over hidraw, which is root's by default. As
@@ -74,6 +87,8 @@ sudo udevadm control --reload
 
 and plug the board in again.
 
+On Windows nothing is needed: the Pico is a HID device any user may open.
+
 ### 3. Which DOF files are used
 
 1. **VPinball's**, if it is installed and has a `directoutputconfig` folder:
@@ -87,12 +102,21 @@ and plug the board in again.
    has DOF files. A `DOFPath` under `[Plugin.DOF]` in that ini wins (a setting
    of newer VPX builds; where it is saved was inferred, not seen). VPX's DOF
    plugin does not need to be switched on.
-2. **Otherwise** `saves/directoutputconfig/`.
+2. **Otherwise** `saves/directoutputconfig/`. On Windows, if that has no ini
+   files either, **DirectOutput's** `C:\DirectOutput\Config\`: its ini files
+   are read from there, but not its GlobalConfig (libdof reads one only from
+   a `directoutputconfig` folder), so libdof finds the boards itself, as it
+   does when there is no GlobalConfig.
 3. **The game's own rows:** `directoutputconfig*.ini` files in
    `saves/directoutputconfig/` take the place of VPinball's ini files, for
    this game only. Its `Cabinet.xml` and `GlobalConfig_B2SServer.xml` still
    apply. Keep the rows there: a new Config Tool export replaces the files
    it goes into.
+
+On Windows VPinball's folder is `%APPDATA%\VPinballX\10.8\directoutputconfig\`
+(the newest version folder with a `VPinballX.ini`, or `%APPDATA%\VPinballX\`
+itself if the ini is there): where VPX's source puts it, not yet seen on a
+Windows install.
 
 The helper prints which it took. It writes nothing into VPinball's folder;
 libdof itself writes a log wherever that folder's GlobalConfig asks for one,
@@ -396,7 +420,7 @@ dof/build/epicpinball-dof --table ep1 --bumpers LR --sides "hole:LLCRR ramp:LRR 
 ```
 
 `--dof` also works in the ordinary window, and headless with `--realtime`.
-On Windows it says that it is not supported yet.
+On Windows it is the same option, once `dof\build.ps1` has built the helper.
 
 Events from before libdof is up are dropped, not sent late. A whole Config
 Tool export (4 MB) took it one to two seconds here; a ball arrives about
@@ -482,6 +506,12 @@ Pico configurations commonly use Z. The names assume a board with all six
 axes; the number is always right. The file is read again when the window
 comes back to the front.
 
+On Windows it is the same (`epicpinball.exe --joysticks`), read through
+DirectInput: a board may report another name there than on Linux, and its
+GUID is Windows' own, in braces; `--joysticks` shows both. Its axes are
+numbered X Y Z RX RY RZ and then the two sliders whether it has them or not,
+so a board without some of them has gaps that read 0.
+
 - **It follows** while a ball rests in the lane. The drawn plunger moves a
   pixel a frame, as the keyboard moves it, so it can trail your hand by up
   to a third of a second.
@@ -511,8 +541,9 @@ The game's own nudge is three keys: **Z** left, **/** right, **Space** up
 VPinball's default nudge keys are the same, needs nothing set up.
 
 A cabinet's accelerometer, and nudge buttons a board reports as joystick
-buttons, are set in `saves/controller.ini`. `--joysticks` shows the axes as
-you shove the cabinet, and each button's number as you press it:
+buttons, are set in `saves/controller.ini`, on Linux or Windows (a board's
+name and axes on Windows: [the plunger](#the-plunger)). `--joysticks` shows
+the axes as you shove the cabinet, and each button's number as you press it:
 
 ```ini
 [nudge]
@@ -564,7 +595,7 @@ signatures are proven on GOG 1.01 only.
 
 | Message or symptom | What to do |
 |---|---|
-| `--dof needs dof/build/epicpinball-dof` | run `dof/build.sh` |
+| `--dof needs dof/build/epicpinball-dof` | run `dof/build.sh` (Windows: `dof\build.ps1`) |
 | `no epicpinball row in ..., and no header line` | write rows there, or in `saves/directoutputconfig/` |
 | `no epicpinball_epNN and no epicpinball row` | that table has no row |
 | `VPinball has no .../directoutputconfig` | put the Config Tool's export there, or ignore it: `saves/directoutputconfig/` is used |
@@ -578,7 +609,8 @@ signatures are proven on GOG 1.01 only.
 | `the helper stopped`, `did not start` | feedback is off until the table is started again; the lines before say why |
 | `no work/feedback/epN.map`, `... of another copy` | `python3 tools/feedback_map.py` |
 | `the table's stack has left its bounds` | a fault in the game, seen on African Safari: feedback and the plunger stop for that table until it is started again |
-| no joysticks listed | your user must be able to read `/dev/input` |
+| no joysticks listed | Linux: your user must be able to read `/dev/input` |
+| `no device called ...` on Windows | Windows names the board itself: copy its name or GUID from `--joysticks` |
 | the plunger is ignored | let it rest first; check `rest` and `pulled` with `--joysticks` |
 
 ## What was tested
@@ -632,9 +664,21 @@ Without hardware, in a sandbox with no devices:
   the keyboard's and so are the speeds the ball leaves with. A ball's later
   path still differs with the millisecond of release, as it does from the
   keyboard;
+- the Windows joysticks (DirectInput), built with clang-cl against the
+  Windows SDK and run under Wine with a keyboard's joystick interface:
+  `--joysticks` lists it with its VID:PID, axes and buttons, and `[plunger]`
+  and `[nudge]` find it by its GUID, with and without braces, and say when
+  it is missing or has too few buttons. Not yet on a cabinet;
 - 70 frames a second in cabinet mode with the helper, a hung helper, and a
-  sensor present and absent.
+  sensor present and absent;
+- Windows' end of the pipe (`src/dof_pipe.c`), built for Windows and run
+  under Wine with a stand-in helper: the same protocol run as Linux's
+  selftest (a table each, `q`, no row, no rows at all, a helper that dies and
+  the `--all-off` after it), a helper that stops reading (killed, then
+  `--all-off`) and one that never says `ready` (the start timeout). The
+  helper's Windows half and `dof/build.ps1` were only syntax-checked (for
+  MSVC and MinGW, against Wine's headers) and written, not built.
 
 Not tested: tables 2 to 13 on a cabinet, other controllers and other
-cabinets' Config Tool headers, Flatpak and portable VPX, Windows (its halves
-were only syntax-checked), other releases of the game.
+cabinets' Config Tool headers, Flatpak and portable VPX, Windows on a
+cabinet (`--dof`'s helper not yet built there), other releases of the game.

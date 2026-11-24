@@ -26,6 +26,11 @@
 //
 // "ready" on stdout means libdof is up. Exit: 0 finished, 2 cannot start this
 // table (nothing was switched on), 3 failed, 4 hung, 5 no table has a row.
+//
+// Linux and Windows alike; where they differ: stdin is read by poll() on
+// Linux, by a thread of its own on Windows; a hung libdof is caught by alarm()
+// and the process becomes an --all-off by exec on Linux, by a watchdog thread
+// that runs an --all-off and passes on its exit code on Windows.
 #include "autorow.h"
 #include "events.h"
 #include "locate.h"
@@ -33,9 +38,22 @@
 #include <DOF/Config.h>
 #include <DOF/DOF.h>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <io.h>
+#include <condition_variable>
+#include <mutex>
+#else
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
+#endif
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
@@ -43,6 +61,7 @@
 #include <csignal>
 #include <cstdarg>
 #include <cstring>
+#include <iterator>
 #include <sstream>
 #include <thread>
 
@@ -74,10 +93,89 @@ void say(const std::string &s)
     std::fprintf(stderr, "[dof] %s\n", s.c_str());
 }
 
+#ifdef _WIN32
+// Ends the process here and now: ExitProcess (and so _exit) would still run
+// the DLLs' destructors, libdof's among them
+[[noreturn]] void end_now(int code)
+{
+    TerminateProcess(GetCurrentProcess(), (UINT)code);
+    for (;;) Sleep(INFINITE);
+}
+
+void raw_say(const char *s, size_t n)
+{
+    DWORD w;
+    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, (DWORD)n, &w, nullptr);
+}
+
+// One argument onto a command line, as the C runtime will split it again
+void quote(std::wstring &line, const std::wstring &a)
+{
+    if (!line.empty()) line += L' ';
+    line += L'"';
+    for (size_t i = 0;; i++) {
+        size_t slashes = 0;
+        while (i < a.size() && a[i] == L'\\') { i++; slashes++; }
+        if (i == a.size()) {
+            line.append(slashes * 2, L'\\');
+            break;
+        }
+        if (a[i] == L'"') line.append(slashes * 2 + 1, L'\\');
+        else line.append(slashes, L'\\');
+        line += a[i];
+    }
+    line += L'"';
+}
+
+// What exec does on Linux: an --all-off in this process's place. Its exit code is ours.
+[[noreturn]] void all_off_instead()
+{
+    wchar_t me[32768];
+    const DWORD n = GetModuleFileNameW(nullptr, me, (DWORD)std::size(me));
+    if (!n || n >= std::size(me)) end_now(HUNG);
+    std::wstring line;
+    quote(line, me);
+    quote(line, L"--all-off");
+    quote(line, L"--save");
+    quote(line, fs::path(g_save).wstring());
+    SECURITY_ATTRIBUTES sa{ sizeof sa, nullptr, TRUE };
+    HANDLE nul = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+    HANDLE err = nullptr;
+    DuplicateHandle(GetCurrentProcess(), GetStdHandle(STD_ERROR_HANDLE), GetCurrentProcess(), &err, 0, TRUE, DUPLICATE_SAME_ACCESS);
+    HANDLE list[2];
+    DWORD count = 0;
+    if (nul != INVALID_HANDLE_VALUE) list[count++] = nul;
+    if (err) list[count++] = err;
+    SIZE_T size = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
+    std::vector<char> attrs(size);
+    STARTUPINFOEXW si{};
+    si.StartupInfo.cb = sizeof si;
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    si.StartupInfo.hStdInput = nul;
+    si.StartupInfo.hStdOutput = err;                // as on Linux: stdout is stderr by now
+    si.StartupInfo.hStdError = err;
+    si.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrs.data());
+    PROCESS_INFORMATION pi{};
+    if (!InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &size)
+        || !UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, list, count * sizeof *list, nullptr, nullptr)
+        || !CreateProcessW(me, line.data(), nullptr, nullptr, TRUE, EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, &si.StartupInfo, &pi))
+        end_now(HUNG);
+    DWORD code = HUNG;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    GetExitCodeProcess(pi.hProcess, &code);
+    end_now((int)code);
+}
+#endif
+
 [[noreturn]] void leave(int code)
 {
     std::fflush(stderr);
+#ifdef _WIN32
+    end_now(code);
+#else
     _exit(code);                                // libdof's destructors can block or crash
+#endif
 }
 
 // libdof hung starting or finishing: only a fresh process can still switch off.
@@ -85,6 +183,14 @@ void hung(int)
 {
     static const char gave_up[] = "[dof] libdof hung while switching off: check the board\n";
     static const char again[] = "[dof] libdof hung: starting again only to switch everything off\n";
+#ifdef _WIN32
+    if (g_all_off) {
+        raw_say(gave_up, sizeof gave_up - 1);
+        end_now(HUNG);
+    }
+    raw_say(again, sizeof again - 1);
+    all_off_instead();
+#else
     if (g_all_off) {
         if (write(STDERR_FILENO, gave_up, sizeof gave_up - 1) < 0) {}
         _exit(HUNG);
@@ -94,6 +200,32 @@ void hung(int)
     char *argv[] = { me, off, save, g_save.data(), nullptr };
     execv("/proc/self/exe", argv);
     _exit(HUNG);
+#endif
+}
+
+// hung() in this many seconds, unless armed again first; 0 disarms
+void arm(unsigned seconds)
+{
+#ifdef _WIN32
+    using clock = std::chrono::steady_clock;
+    static std::atomic<long long> deadline{0};  // ms on the steady clock, 0: none
+    static std::once_flag watchdog;
+    const auto now = [] {
+        return (long long)std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count();
+    };
+    deadline = seconds ? now() + 1000LL * seconds : 0;
+    std::call_once(watchdog, [now] {
+        std::thread([now] {
+            for (;;) {
+                Sleep(100);
+                const long long d = deadline;
+                if (d && now() >= d) hung(0);
+            }
+        }).detach();
+    });
+#else
+    alarm(seconds);
+#endif
 }
 
 // libdof reports trouble only in its log, and not all of it as errors. It is
@@ -181,7 +313,7 @@ enum Rows { NONE, OTHER_TABLES, THIS_TABLE };
 Rows rows(DOF::DOF *dof, const fs::path &table, const std::string &rom)
 {
     bool exact = false, every = false, any = false;
-    for (auto &name : dof->GetLedControlRomNames(table.c_str())) {
+    for (auto &name : dof->GetLedControlRomNames(table.string().c_str())) {
         const std::string n = locate::lower(name);
         exact |= n == rom;
         every |= n == kRom;
@@ -270,6 +402,80 @@ int find_rows(DOF::DOF *dof, const locate::Files &at, const fs::path &work, cons
     return NOTHING_TO_DO;
 }
 
+// Its lines so far, in `in`: -1 to go on, else how to end
+int lines(std::string &in, Sender &send)
+{
+    for (size_t nl; (nl = in.find('\n')) != std::string::npos;) {
+        const std::string line = in.substr(0, nl);
+        in.erase(0, nl + 1);
+        std::istringstream w(line);
+        std::string op, name, extra;
+        int on;
+        w >> op;
+        if (op == "e" && (w >> name >> on) && (on == 0 || on == 1) && event_by_name(name) >= 0
+            && !(w >> extra)) {
+            send.event(event_by_name(name), on != 0);
+        } else if (line == "o") {
+            send.release();
+        } else if (line == "q") {
+            return DONE;
+        } else {
+            say("a line it does not understand");
+            return FAILED;
+        }
+    }
+    if (in.size() > 4096) {
+        say("a line without an end");
+        return FAILED;
+    }
+    return -1;
+}
+
+#ifdef _WIN32
+// stdin, read by a thread of its own: a ReadFile waits for the game's next
+// line, and the main thread must still see g_quit. It lives until the process
+// ends, still waiting in ReadFile.
+struct Input {
+    std::mutex m;
+    std::condition_variable cv;
+    std::string data;
+    bool end = false;
+};
+Input g_input;
+
+int serve(Sender &send, HANDLE out)
+{
+    DWORD w;
+    WriteFile(out, "ready\n", 6, &w, nullptr);  // a game that is gone shows as end of file
+    std::thread([] {
+        HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+        char buf[2048];
+        DWORD n = 0;
+        while (ReadFile(h, buf, sizeof buf, &n, nullptr) && n) {
+            std::lock_guard l(g_input.m);
+            g_input.data.append(buf, n);
+            g_input.cv.notify_one();
+        }
+        std::lock_guard l(g_input.m);           // end of file: the game closed it, or has gone
+        g_input.end = true;
+        g_input.cv.notify_one();
+    }).detach();
+    std::string in;
+    while (!g_quit) {
+        bool end;
+        {
+            std::unique_lock l(g_input.m);
+            g_input.cv.wait_for(l, 250ms, [] { return !g_input.data.empty() || g_input.end; });
+            in += g_input.data;
+            end = g_input.end && g_input.data.empty();
+            g_input.data.clear();
+        }
+        if (const int code = lines(in, send); code >= 0) return code;
+        if (end) break;
+    }
+    return DONE;
+}
+#else
 // The game's lines, until it says q or goes
 int serve(Sender &send, int out, pid_t parent)
 {
@@ -284,32 +490,11 @@ int serve(Sender &send, int out, pid_t parent)
         const ssize_t n = read(STDIN_FILENO, buf, sizeof buf);
         if (n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR)) break;
         if (n > 0) in.append(buf, (size_t)n);
-        for (size_t nl; (nl = in.find('\n')) != std::string::npos;) {
-            const std::string line = in.substr(0, nl);
-            in.erase(0, nl + 1);
-            std::istringstream w(line);
-            std::string op, name, extra;
-            int on;
-            w >> op;
-            if (op == "e" && (w >> name >> on) && (on == 0 || on == 1) && event_by_name(name) >= 0
-                && !(w >> extra)) {
-                send.event(event_by_name(name), on != 0);
-            } else if (line == "o") {
-                send.release();
-            } else if (line == "q") {
-                return DONE;
-            } else {
-                say("a line it does not understand");
-                return FAILED;
-            }
-        }
-        if (in.size() > 4096) {
-            say("a line without an end");
-            return FAILED;
-        }
+        if (const int code = lines(in, send); code >= 0) return code;
     }
     return DONE;
 }
+#endif
 
 int run(int argc, char **argv)
 {
@@ -343,23 +528,34 @@ int run(int argc, char **argv)
             say("no --sides: a made row has none of the table's own features (docs/cabinet-feedback.md)");
     }
 
+#ifndef _WIN32
     const pid_t parent = getppid();
+#endif
     std::error_code e;
     const fs::path save = fs::absolute(g_save, e).lexically_normal();
     g_save = save.string();
     const locate::Files at = locate::find(save, rom);
-    g_show_unread = at.base == save || !at.table.empty();     // VPinball's export: only counted
+    g_show_unread = at.rows == save / locate::kDir;           // the game's own: shown; an export: only counted
     if (!g_all_off)
         for (auto &s : at.said) say(s);
 
     // libdof also reads, and by default logs, in the working directory
     const fs::path work = save / "dof";
     fs::create_directories(work, e);
-    if (e || chdir(work.c_str())) {
+    if (!e) fs::current_path(work, e);
+    if (e) {
         say("cannot use " + work.string());
         return CANNOT_START;
     }
 
+#ifdef _WIN32
+    HANDLE out = nullptr;                       // not inheritable: an --all-off run must not hold it
+    DuplicateHandle(GetCurrentProcess(), GetStdHandle(STD_OUTPUT_HANDLE), GetCurrentProcess(), &out, 0, FALSE,
+                    DUPLICATE_SAME_ACCESS);
+    std::fflush(stdout);
+    _dup2(_fileno(stderr), _fileno(stdout));    // whatever libdof prints is not protocol
+    SetStdHandle(STD_OUTPUT_HANDLE, GetStdHandle(STD_ERROR_HANDLE));
+#else
     const int out = fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC, 10);
     dup2(STDERR_FILENO, STDOUT_FILENO);         // whatever libdof prints is not protocol
     std::signal(SIGPIPE, SIG_IGN);
@@ -367,18 +563,19 @@ int run(int argc, char **argv)
     sa.sa_handler = hung;
     sa.sa_flags = SA_NODEFER;                   // or the restarted process inherits it blocked
     sigaction(SIGALRM, &sa, nullptr);
+#endif
 
     auto *cfg = DOF::Config::GetInstance();
     cfg->SetLogCallback(dof_log);
     cfg->SetLogLevel(DOF_LogLevel_ERROR);       // info and warnings come below this
     cfg->SetBasePath((at.base.string() + "/").c_str());
 
-    alarm(kStartS);
+    arm(kStartS);
     auto *dof = new DOF::DOF();                 // this already looks for Pinscapes over HID
     if (g_all_off) {
         dof->Init("", "");                      // no table, so no row can switch anything on
         std::this_thread::sleep_for(150ms);
-        alarm(kFinishS);
+        arm(kFinishS);
         dof->Finish();
         say("all outputs switched off");
         return DONE;
@@ -386,23 +583,35 @@ int run(int argc, char **argv)
 
     fs::path table_file;
     if (const int no = find_rows(dof, at, work, rom, table_file)) return no;
-    dof->Init(table_file.c_str(), rom.c_str());
-    alarm(0);
+    dof->Init(table_file.string().c_str(), rom.c_str());
+    arm(0);
     if (!g_pico_found && std::any_of(at.numbers.begin(), at.numbers.end(),
                                      [](int n) { return n >= 120 && n <= 135; }))
+#ifdef _WIN32
+        say("there are Pinscape Pico files, and no Pico answers (plugged in? held by another program?)");
+#else
         say("there are Pinscape Pico files, and no Pico answers (plugged in? may this user open its hidraw device?)");
+#endif
     if (g_unread_once)
         say("libdof could not read " + std::to_string(g_unread_once) + " settings in the DOF files and skips them,"
             " as it does under VPinball (saves/dof/DirectOutput.log names them, if logging is on)");
 
+#ifdef _WIN32
+    SetConsoleCtrlHandler([](DWORD) -> BOOL { g_quit = 1; return TRUE; }, TRUE);
+#else
     sa.sa_handler = [](int) { g_quit = 1; };
     sa.sa_flags = 0;
     for (int s : { SIGTERM, SIGINT, SIGHUP }) sigaction(s, &sa, nullptr);
+#endif
 
     Sender send(dof);
     int code = DONE;
     if (test.empty()) {
+#ifdef _WIN32
+        code = serve(send, out);
+#else
         code = serve(send, out, parent);
+#endif
     } else {
         std::this_thread::sleep_for(300ms);     // libdof's controllers connect on threads of their own
         const int ev = event_by_name(test);
@@ -413,7 +622,7 @@ int run(int argc, char **argv)
         for (int i = 0; i < 30 && !g_quit; i++) std::this_thread::sleep_for(100ms);
     }
 
-    alarm(kFinishS);
+    arm(kFinishS);
     send.release();
     dof->Finish();
     return code;

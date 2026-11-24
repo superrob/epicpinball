@@ -63,7 +63,7 @@ typedef struct {
     int look;                 /* 0 natural, 1 vivid */
     int bars;                 /* beside the picture: 0 black, 1 a blur of it */
     int whole;                /* the whole table, no scrolling (vga_compose_table) */
-    int rot;                  /* --cabinet: quarter turns clockwise (SDL only) */
+    int rot;                  /* --cabinet: quarter turns clockwise */
     int stretch;              /* --cabinet: the playfield fills its window, out of shape */
 } Present;
 extern int g_audio_smooth;    /* audio.c: interpolate the DSP's samples (else hold them) */

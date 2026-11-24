@@ -13,7 +13,7 @@
  * right-click / F10. Headless runs ignore the file: what they draw is set on
  * the command line only, so a test never depends on someone's preferences.
  *
- * --cabinet (Linux) is two borderless windows instead: the playfield, filling
+ * --cabinet is two borderless windows instead: the playfield, filling
  * a display and turned with F6, and the scoreboard, placed anywhere. Its
  * settings are the ini's [cabinet], apart from the ordinary window's.
  *
@@ -35,6 +35,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <mmsystem.h>
+#include <mmreg.h>
 #include <shellapi.h>
 #include <direct.h>
 #define popen _popen
@@ -141,6 +142,8 @@ static Present playfield_how(void)
 void present_rect(int cw, int ch, int w, int h, double aspect, int mode, int fill, RECT *r);
 #ifdef _WIN32
 int  present_window(HWND hw, const uint32_t *f, int w, int h, double aspect, const Present *s);
+void present_forget(HWND hw);
+void present_close(void);
 #else
 int  present_window(SDL_Window *wnd, const uint32_t *f, int w, int h, double aspect, const Present *s);
 int  present_prepare(SDL_Window *wnd);
@@ -513,8 +516,24 @@ static void command(int id)
 }
 
 #ifdef _WIN32
-static HWND wnd;
+static HWND wnd;                       /* with --cabinet, the playfield */
 static BITMAPINFO bmi;
+
+/* --cabinet's scoreboard window (the DMD's, with --dmd), or on the desktop
+ * --dmd's window of its own */
+static struct {
+    HWND wnd;
+    int dirty;
+    uint64_t settled;                /* from here a move is the player's */
+    RECT at;                         /* where it opened, then where it was last */
+    uint32_t shown[FRAME_MAX];       /* what is in it */
+    int shown_w, shown_h;
+    Present how;
+} board;
+
+/* With a real DMD (--dmd-device) the scoreboard is on it: no window for it,
+ * unless --dmd asks for the DMD in a window too */
+static int board_wanted(void) { return !g_opt.dmd_device || g_opt.dmd; }
 
 static void open_file(const char *path) { ShellExecuteA(wnd, "open", path, NULL, NULL, SW_SHOWNORMAL); }
 
@@ -538,24 +557,33 @@ static void set_fullscreen(int on)
     is_full = on;
 }
 
-/* GDI, when Direct3D is not there: a stretch, nearest or halftone, no extras */
-static void paint_gdi(HDC dc)
+/* GDI, when Direct3D is not there: a stretch, nearest or halftone, no extras,
+ * and not turned */
+static void paint_gdi(HWND hw, const uint32_t *px, int w, int h, double aspect, int stretch)
 {
-    RECT c, r; GetClientRect(wnd, &c);
-    present_rect(c.right, c.bottom, fw, fh, frame_aspect, S.mode, S.stretch, &r);
-    int w = r.right - r.left, h = r.bottom - r.top;
+    HDC dc = GetDC(hw);
+    RECT c, r; GetClientRect(hw, &c);
+    present_rect(c.right, c.bottom, w, h, aspect, S.mode, stretch, &r);
     PatBlt(dc, 0, 0, c.right, r.top, BLACKNESS); PatBlt(dc, 0, r.bottom, c.right, c.bottom - r.bottom, BLACKNESS);
     PatBlt(dc, 0, 0, r.left, c.bottom, BLACKNESS); PatBlt(dc, r.right, 0, c.right - r.right, c.bottom, BLACKNESS);
-    bmi.bmiHeader.biWidth = fw; bmi.bmiHeader.biHeight = -fh;
+    bmi.bmiHeader.biWidth = w; bmi.bmiHeader.biHeight = -h;
     SetStretchBltMode(dc, S.mode == PRESENT_SMOOTH ? HALFTONE : COLORONCOLOR);
     SetBrushOrgEx(dc, 0, 0, NULL);
-    StretchDIBits(dc, r.left, r.top, w, h, 0, 0, fw, fh, frame, &bmi, DIB_RGB_COLORS, SRCCOPY);
+    StretchDIBits(dc, r.left, r.top, r.right - r.left, r.bottom - r.top, 0, 0, w, h, px, &bmi, DIB_RGB_COLORS, SRCCOPY);
+    ReleaseDC(hw, dc);
+}
+
+/* A picture into a window: the presenter, else GDI */
+static void show(HWND hw, const uint32_t *px, int w, int h, double aspect, const Present *how)
+{
+    if (!g_opt.classic && present_window(hw, px, w, h, aspect, how)) return;
+    paint_gdi(hw, px, w, h, aspect, how->stretch);
 }
 
 static void paint(void)
 {
-    if (!g_opt.classic && present_window(wnd, frame, fw, fh, frame_aspect, &S)) return;
-    HDC dc = GetDC(wnd); paint_gdi(dc); ReleaseDC(wnd, dc);
+    const Present v = playfield_how();
+    show(wnd, frame, fw, fh, frame_aspect, &v);
 }
 
 static void menu(int x, int y)
@@ -571,11 +599,17 @@ static void menu(int x, int y)
     AppendMenuA(bars, MF_STRING | (!S.bars ? MF_CHECKED : 0), ID_BARS_BLACK, "Black");
     AppendMenuA(snd, MF_STRING | (g_audio_smooth ? MF_CHECKED : 0), ID_SOUND_SMOOTH, "Smooth");
     AppendMenuA(snd, MF_STRING | (!g_audio_smooth ? MF_CHECKED : 0), ID_SOUND_ORIG, "Original (stepped)");
-    AppendMenuA(m, MF_STRING | (S.whole ? MF_CHECKED : 0), ID_WHOLE, "Whole table\tF7");
+    if (g_opt.cabinet) {                           /* always the whole table, always filling its display */
+        char turn[48];
+        snprintf(turn, sizeof turn, "Turn the playfield (now %d degrees)\tF6", S.rot * 90);
+        AppendMenuA(m, MF_STRING, ID_TURN, turn);
+        AppendMenuA(m, MF_STRING | (S.stretch ? MF_CHECKED : 0), ID_STRETCH, "Stretch the playfield\tF5");
+    } else
+        AppendMenuA(m, MF_STRING | (S.whole ? MF_CHECKED : 0), ID_WHOLE, "Whole table\tF7");
     AppendMenuA(m, MF_POPUP, (UINT_PTR)look, "Colour\tF9");
     AppendMenuA(m, MF_POPUP, (UINT_PTR)sc, "Scaling\tF12");
     AppendMenuA(m, MF_POPUP, (UINT_PTR)bars, "Beside the picture");
-    AppendMenuA(m, MF_STRING | (is_full ? MF_CHECKED : 0), ID_FULL, "Fullscreen\tF11");
+    if (!g_opt.cabinet) AppendMenuA(m, MF_STRING | (is_full ? MF_CHECKED : 0), ID_FULL, "Fullscreen\tF11");
     AppendMenuA(m, MF_SEPARATOR, 0, NULL);
     AppendMenuA(m, MF_POPUP, (UINT_PTR)snd, "Sound");
     AppendMenuA(m, MF_STRING, ID_PAD, "Controller mapping...");
@@ -588,19 +622,68 @@ static void menu(int x, int y)
     machine_paused(host_us() - t);                 /* the game stood still meanwhile */
     DestroyMenu(m);                                /* and its submenus */
     command(id);
+    board.dirty = 1;
+}
+
+/* Saved only when it has moved since it opened: --score-window alone is for
+ * the one run, as the other options are */
+static void board_moved(void)
+{
+    RECT r; GetWindowRect(board.wnd, &r);
+    if (host_us() >= board.settled && memcmp(&r, &board.at, sizeof r)) *(g_opt.dmd ? &saved_dmdw : &saved_score) = r;
+    board.at = r;
+}
+
+/* The cabinet's scoreboard has no frame: dragged by its middle, resized by its edges */
+static LRESULT board_hit(HWND h, LPARAM lp)
+{
+    POINT p = { (short)LOWORD(lp), (short)HIWORD(lp) };
+    RECT c; GetClientRect(h, &c);
+    ScreenToClient(h, &p);
+    int ex = c.right / 4 < 10 ? c.right / 4 : 10, ey = c.bottom / 4 < 10 ? c.bottom / 4 : 10;
+    int l = p.x < ex, r = p.x >= c.right - ex, t = p.y < ey, b = p.y >= c.bottom - ey;
+    if (t) return l ? HTTOPLEFT : r ? HTTOPRIGHT : HTTOP;
+    if (b) return l ? HTBOTTOMLEFT : r ? HTBOTTOMRIGHT : HTBOTTOM;
+    return l ? HTLEFT : r ? HTRIGHT : HTCAPTION;
 }
 
 static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
 {
+    const int is_board = board.wnd && h == board.wnd;
     switch (m) {
-    case WM_CLOSE: quit_req = 1; return 0;
-    case WM_PAINT: { PAINTSTRUCT ps; BeginPaint(h, &ps); EndPaint(h, &ps); paint(); return 0; }
+    case WM_CLOSE:
+        if (is_board && !g_opt.cabinet) { ShowWindow(h, SW_HIDE); return 0; }   /* the game goes on */
+        quit_req = 1;
+        return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT ps; BeginPaint(h, &ps); EndPaint(h, &ps);
+        if (is_board) board.dirty = 1;
+        else paint();
+        return 0;
+    }
     case WM_ERASEBKGND: return 1;
+    case WM_SIZE: if (is_board) board.dirty = 1; break;
+    case WM_NCCALCSIZE:                            /* the cabinet's scoreboard: sizing edges, no frame drawn */
+        if (is_board && g_opt.cabinet && wp) return 0;
+        break;
+    case WM_NCHITTEST:
+        if (is_board && g_opt.cabinet) return board_hit(h, lp);
+        break;
+    case WM_NCLBUTTONDBLCLK:
+        if (is_board && g_opt.cabinet) return 0;   /* no maximising by its "title" */
+        break;
+    case WM_SETCURSOR:                             /* no pointer over the cabinet's playfield */
+        if (g_opt.cabinet && !is_board && LOWORD(lp) == HTCLIENT) { SetCursor(NULL); return TRUE; }
+        break;
     case WM_SYSKEYDOWN: case WM_KEYDOWN: case WM_SYSKEYUP: case WM_KEYUP: {
         int up = (m == WM_KEYUP || m == WM_SYSKEYUP);
         if (wp == VK_RETURN && (lp & (1 << 29))) { if (!up) command(ID_FULL); return 0; }
         if (wp == VK_F4 && (lp & (1 << 29))) { quit_req = 1; return 0; }
         if (wp == VK_SNAPSHOT) { if (up) screenshot_key(); return 0; }   /* Windows sends PrtSc's up only */
+        if (g_opt.cabinet && (wp == VK_F5 || wp == VK_F6)) {          /* press and release: any key ends the demo */
+            if (!up && !(lp & (1 << 30))) command(wp == VK_F5 ? ID_STRETCH : ID_TURN);
+            return 0;
+        }
         if (wp == VK_F7 || (wp >= VK_F9 && wp <= VK_F12)) {
             if (up) return 0;
             if (wp == VK_F7) command(ID_WHOLE);
@@ -628,45 +711,218 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         if (LOWORD(wp) != WA_INACTIVE) pad_load();   /* controller.ini may have been edited */
         break;
     case WM_EXITSIZEMOVE:
-        if (!is_full && !IsZoomed(h)) { GetWindowRect(h, &win_rect); settings_save(); }
+        if (is_board) { if (g_opt.cabinet) board_moved(); }
+        else if (!g_opt.cabinet && !is_full && !IsZoomed(h)) { GetWindowRect(h, &win_rect); settings_save(); }
         break;
     }
     return DefWindowProcA(h, m, wp, lp);
 }
 
-/* waveOut: a ring the main thread fills and a few buffers cycling under it */
+/* waveOut: a ring the main thread fills and a few buffers cycling under it.
+ * With --ssf it is opened as 7.1 (FL FR FC LFE BL BR SL SR, as SDL orders
+ * them); Windows mixes that to the device as its speakers are set up. */
 #define WBUF 8
 #define WLEN 1024
 static HWAVEOUT wout;
 static WAVEHDR whdr[WBUF];
-static int16_t wdata[WBUF][WLEN * 2];
-static int wfill, wcur;
+static int16_t wdata[WBUF][WLEN * 8];
+static int wfill, wcur, wch = 2;     /* the channels it was opened with */
+
+static int wave_try(int ch)
+{
+    static const GUID pcm = { 0x00000001, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71 } };
+    WAVEFORMATEXTENSIBLE x;
+    memset(&x, 0, sizeof x);
+    x.Format.wFormatTag = ch > 2 ? WAVE_FORMAT_EXTENSIBLE : WAVE_FORMAT_PCM;
+    x.Format.nChannels = (WORD)ch;
+    x.Format.nSamplesPerSec = AUDIO_RATE;
+    x.Format.wBitsPerSample = 16;
+    x.Format.nBlockAlign = (WORD)(ch * 2);
+    x.Format.nAvgBytesPerSec = AUDIO_RATE * ch * 2;
+    x.Format.cbSize = ch > 2 ? (WORD)(sizeof x - sizeof x.Format) : 0;
+    x.Samples.wValidBitsPerSample = 16;
+    x.dwChannelMask = 0x63F;
+    x.SubFormat = pcm;
+    return waveOutOpen(&wout, WAVE_MAPPER, &x.Format, 0, 0, CALLBACK_NULL) == MMSYSERR_NOERROR;
+}
 
 static void wave_open(void)
 {
-    WAVEFORMATEX f = { WAVE_FORMAT_PCM, 2, AUDIO_RATE, AUDIO_RATE * 4, 4, 16, 0 };
-    if (waveOutOpen(&wout, WAVE_MAPPER, &f, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) { wout = NULL; return; }
+    wch = out_channels();
+    if (!wave_try(wch)) {
+        wout = NULL;
+        if (wch == 2) return;
+        fprintf(stderr, "[ssf] the sound device takes no 7.1, so the exciters are silent: set its speakers"
+                        " to 7.1 in Windows' sound settings\n");
+        wch = 2;
+        if (!wave_try(2)) { wout = NULL; return; }
+    } else if (g_opt.ssf) fprintf(stderr, "[ssf] sound out: 7.1 to the default device\n");
     for (int i = 0; i < WBUF; i++) {
-        whdr[i].lpData = (LPSTR)wdata[i]; whdr[i].dwBufferLength = WLEN * 4;
+        whdr[i].lpData = (LPSTR)wdata[i]; whdr[i].dwBufferLength = WLEN * wch * 2;
         waveOutPrepareHeader(wout, &whdr[i], sizeof whdr[i]);
         whdr[i].dwFlags |= WHDR_DONE;
     }
 }
 
+/* s: out_channels() a frame; the front pair only, if 7.1 was refused */
 static void wave_push(const int16_t *s, int frames)
 {
+    const int in = out_channels();
     while (frames > 0) {
         WAVEHDR *h = &whdr[wcur];
         if (!(h->dwFlags & WHDR_DONE)) return;       /* all queued: drop rather than block */
         int n = WLEN - wfill; if (n > frames) n = frames;
-        memcpy(&wdata[wcur][wfill * 2], s, n * 4);
-        wfill += n; s += n * 2; frames -= n;
+        int16_t *d = &wdata[wcur][wfill * wch];
+        if (in == wch) memcpy(d, s, (size_t)n * wch * 2);
+        else for (int i = 0; i < n; i++) { d[i * 2] = s[i * in]; d[i * 2 + 1] = s[i * in + 1]; }
+        wfill += n; s += n * in; frames -= n;
         if (wfill == WLEN) {
             h->dwFlags &= ~WHDR_DONE;
             waveOutWrite(wout, h, sizeof *h);
             wfill = 0; wcur = (wcur + 1) % WBUF;
         }
     }
+}
+
+/* ---- --cabinet's windows */
+
+typedef struct { RECT r; char name[40]; int primary; } Display;
+static Display displays[16];
+static int ndisplays;
+
+static BOOL CALLBACK display_found(HMONITOR m, HDC dc, LPRECT rc, LPARAM lp)
+{
+    MONITORINFOEXA mi;
+    (void)dc; (void)rc; (void)lp;
+    mi.cbSize = sizeof mi;
+    if (ndisplays < 16 && GetMonitorInfoA(m, (MONITORINFO *)&mi)) {
+        Display *d = &displays[ndisplays++];
+        d->r = mi.rcMonitor;
+        d->primary = (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+        snprintf(d->name, sizeof d->name, "%s", mi.szDevice);
+    }
+    return TRUE;
+}
+
+/* The displays, the main one first, then left to right, top to bottom */
+static void displays_list(void)
+{
+    ndisplays = 0;
+    EnumDisplayMonitors(NULL, NULL, display_found, 0);
+    for (int i = 1; i < ndisplays; i++)
+        for (int j = i; j > 0; j--) {
+            const Display *a = &displays[j - 1], *b = &displays[j];
+            int before = b->primary > a->primary
+                      || (b->primary == a->primary && (b->r.left < a->r.left || (b->r.left == a->r.left && b->r.top < a->r.top)));
+            if (!before) break;
+            Display t = displays[j]; displays[j] = displays[j - 1]; displays[j - 1] = t;
+        }
+}
+
+static void cabinet_open(HINSTANCE hi)
+{
+    uint64_t t = host_us();
+    displays_list();
+    if (ndisplays < 1) fatal("no display found");
+    for (int i = 0; i < ndisplays; i++) {
+        const RECT *b = &displays[i].r;
+        fprintf(stderr, "[cabinet] display %d: %s %ldx%ld at %ld,%ld\n", i, displays[i].name,
+                (long)(b->right - b->left), (long)(b->bottom - b->top), (long)b->left, (long)b->top);
+    }
+    int pd = cab_display;
+    if (pd < 0 || pd >= ndisplays) {
+        fprintf(stderr, "[cabinet] there is no display %d: the playfield goes on display 0\n", pd);
+        pd = 0;
+    }
+    RECT r = cab_score;
+    int placed = r.right > r.left;
+    if (placed && !MonitorFromRect(&r, MONITOR_DEFAULTTONULL)) {
+        fprintf(stderr, "[cabinet] %ld,%ld is on no display: the scoreboard opens in its default place\n",
+                (long)r.left, (long)r.top);
+        placed = 0;
+    }
+    int bd = ndisplays > 1 ? (pd ? 0 : 1) : pd;    /* a display of its own, if there is one */
+    if (!placed) {
+        const RECT b = displays[bd].r;
+        int bw = b.right - b.left, bh = b.bottom - b.top;
+        int w = bw < 960 ? bw : 960, h = g_opt.dmd ? w / 4 : w * 29 / 320;
+        r.left = b.left + (bw - w) / 2;
+        r.top = ndisplays > 1 ? b.top + (bh - h) / 2 : b.top;
+        r.right = r.left + w; r.bottom = r.top + h;
+    }
+    board.at = r;
+    if (board_wanted()) {
+        board.wnd = CreateWindowExA(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, "epicpinball",
+                                    g_opt.dmd ? "Epic Pinball DMD" : "Epic Pinball scoreboard", WS_POPUP | WS_THICKFRAME,
+                                    r.left, r.top, r.right - r.left, r.bottom - r.top, NULL, NULL, hi, NULL);
+        if (!board.wnd) fatal("the scoreboard window: error %lu", (unsigned long)GetLastError());
+        SetWindowPos(board.wnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    } else fprintf(stderr, "[cabinet] the scoreboard is on the DMD: no window for it\n");
+    const RECT p = displays[pd].r;                 /* the playfield: the whole display, borderless */
+    wnd = CreateWindowExA(0, "epicpinball", "Epic Pinball", WS_POPUP, p.left, p.top, p.right - p.left,
+                          p.bottom - p.top, NULL, NULL, hi, NULL);
+    if (!wnd) fatal("the playfield window: error %lu", (unsigned long)GetLastError());
+
+    /* the scoreboard first, the playfield last, which gets the keys */
+    compose_view();
+    board.how = S; board.how.rot = board.how.bars = board.how.stretch = 0;
+    if (board.wnd) {
+        ShowWindow(board.wnd, SW_SHOWNOACTIVATE);
+        show(board.wnd, score, sw, sh, (double)sw / sh, &board.how);
+    }
+    ShowWindow(wnd, SW_SHOW);
+    paint();
+    SetForegroundWindow(wnd);
+    board.dirty = 1;
+    board.settled = host_us() + 1000000;
+    machine_paused(host_us() - t);
+}
+
+/* Both windows; the scoreboard only when there is something new in it */
+static void cabinet_present(void)
+{
+    uint64_t t0 = host_us();
+    paint();
+    uint64_t t1 = host_us(), t2 = t1;
+    Present how = S;
+    how.rot = how.bars = how.stretch = 0;            /* upright, black round it */
+    size_t bytes = (size_t)sw * sh * 4;
+    if (board.wnd && (board.dirty || board.shown_w != sw || board.shown_h != sh
+        || memcmp(&how, &board.how, sizeof how) || memcmp(board.shown, score, bytes))) {
+        show(board.wnd, score, sw, sh, (double)sw / sh, &how);
+        memcpy(board.shown, score, bytes);
+        board.shown_w = sw; board.shown_h = sh; board.how = how; board.dirty = 0;
+        t2 = host_us();
+    }
+    if (t2 - t0 > 1000)
+        trace("[present] slow at %llu ms: playfield %u us, scoreboard %u us\n",
+              (unsigned long long)(emu_us() / 1000), (unsigned)(t1 - t0), (unsigned)(t2 - t1));
+}
+
+static void desktop_open(HINSTANCE hi)
+{
+    int x = win_rect.left, y = win_rect.top, w = win_rect.right - win_rect.left, h = win_rect.bottom - win_rect.top;
+    if (g_opt.window || w <= 0) {                  /* --window N, or no place remembered */
+        int s = g_opt.window ? g_opt.window : 3;
+        RECT r = { 0, 0, 320 * s, 240 * s };
+        AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+        x = y = CW_USEDEFAULT; w = r.right - r.left; h = r.bottom - r.top;
+    }
+    wnd = CreateWindowA("epicpinball", "Epic Pinball", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                        x, y, w, h, NULL, NULL, hi, NULL);
+    GetWindowRect(wnd, &win_rect);
+    if (g_opt.dmd) {                               /* --dmd: a window of its own, beside */
+        RECT r = { 0, 0, DMD_W * 6, DMD_H * 6 };
+        AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+        board.wnd = CreateWindowA("epicpinball", "Epic Pinball DMD", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+                                  r.right - r.left, r.bottom - r.top, NULL, NULL, hi, NULL);
+        if (!board.wnd) fatal("the DMD window: error %lu", (unsigned long)GetLastError());
+        board.how = S; board.how.rot = board.how.bars = board.how.stretch = 0;
+        board.dirty = 1;
+        ShowWindow(board.wnd, SW_SHOWNOACTIVATE);
+        SetForegroundWindow(wnd);
+    }
+    if (g_opt.fullscreen) set_fullscreen(1);
 }
 
 static void window_open(void)
@@ -678,21 +934,17 @@ static void window_open(void)
     wc.hCursor = LoadCursor(NULL, IDC_ARROW); wc.lpszClassName = "epicpinball";
     wc.hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(1));
     RegisterClassA(&wc);
-    int x = win_rect.left, y = win_rect.top, w = win_rect.right - win_rect.left, h = win_rect.bottom - win_rect.top;
-    if (g_opt.window || w <= 0) {                  /* --window N, or no place remembered */
-        int s = g_opt.window ? g_opt.window : 3;
-        RECT r = { 0, 0, 320 * s, 240 * s };
-        AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
-        x = y = CW_USEDEFAULT; w = r.right - r.left; h = r.bottom - r.top;
-    }
-    wnd = CreateWindowA("epicpinball", "Epic Pinball", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                        x, y, w, h, NULL, NULL, wc.hInstance, NULL);
-    GetWindowRect(wnd, &win_rect);
-    if (g_opt.fullscreen) set_fullscreen(1);
+    if (g_opt.cabinet) cabinet_open(wc.hInstance);
+    else desktop_open(wc.hInstance);
     if (!g_opt.mute) wave_open();
 }
 
-static int window_front(void) { return GetForegroundWindow() == wnd; }
+/* In a cabinet either window may have the keys */
+static int window_front(void)
+{
+    HWND f = GetForegroundWindow();
+    return f == wnd || (g_opt.cabinet && board.wnd && f == board.wnd);
+}
 
 /* Messages and the pad */
 static void window_events(void)
@@ -708,7 +960,14 @@ static void window_frame(void)
 {
     window_events();
     compose_view();
-    paint();
+    if (g_opt.cabinet) cabinet_present();
+    else {
+        paint();
+        if (board.wnd && IsWindowVisible(board.wnd) && (dmd_new || board.dirty)) {
+            show(board.wnd, dmd_big, DMD_W * DMD_S, DMD_H * DMD_S, 4.0, &board.how);
+            dmd_new = board.dirty = 0;
+        }
+    }
 }
 
 static void window_live(void) {}
@@ -718,7 +977,12 @@ static void window_audio(const int16_t *s, int frames) { if (wout) wave_push(s, 
 static void window_close(void)
 {
     if (wout) { waveOutReset(wout); waveOutClose(wout); }
-    if (wnd) { settings_save(); DestroyWindow(wnd); }
+    if (wnd) {
+        settings_save();
+        present_close();
+        if (board.wnd) DestroyWindow(board.wnd);
+        DestroyWindow(wnd);
+    }
 }
 
 #else /* SDL2: Linux */
@@ -1269,10 +1533,10 @@ static int dmd_showing(void)
 {
     if (dmd_pipe_alive()) return 1;
     if (!g_opt.dmd) return 0;
-#ifdef _WIN32
-    return g_opt.headless;                         /* no DMD window on Windows yet */
-#else
     if (!wnd || g_opt.cabinet) return 1;
+#ifdef _WIN32
+    return board.wnd && IsWindowVisible(board.wnd);
+#else
     return board.wnd && (SDL_GetWindowFlags(board.wnd) & SDL_WINDOW_SHOWN);
 #endif
 }

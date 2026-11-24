@@ -690,7 +690,6 @@ static void test_plunger(void)
     assert(!plunger_trace("100:0,50:0") && !plunger_trace("10:101") && !plunger_trace("x") && !plunger_trace(""));
 }
 
-#ifndef _WIN32
 /* --dmd: a message set again for 128x32, moved as the game moves its dots;
  * a lasting one gives way to the board; the playfield gets back what the
  * game saved from under its dots while it is composed (src/dmd.c) */
@@ -1019,6 +1018,7 @@ static void test_ssf(void)
     watch_table_end();
 }
 
+#ifndef _WIN32
 static void pump(int ms)
 {
     for (uint64_t end = host_us() + (uint64_t)ms * 1000u; host_us() < end; ) { dof_tick(); usleep(1000); }

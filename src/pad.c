@@ -7,7 +7,9 @@
  * the settings menu says so. The pad only acts while the window is in front;
  * what it held is let go when that ends, or the pad is unplugged.
  * The file's [plunger] section names a cabinet's plunger sensor, which is
- * read here as a joystick axis (Linux) and played in by plunger.c.
+ * read here as a joystick axis and played in by plunger.c; [nudge] names an
+ * accelerometer and nudge buttons (nudge.c). Those joysticks are SDL2's on
+ * Linux and DirectInput 8's on Windows, behind the joy_ functions below.
  * On Linux the pad is SDL2's GameController, which names any pad's buttons
  * the Xbox way, so the same file maps it. A cabinet's board is a pad for its
  * buttons only: its axes are sensors, and SDL takes a centred one for a half
@@ -18,6 +20,8 @@
 #include "nudge.h"
 #ifdef _WIN32
 #include <windows.h>
+#define DIRECTINPUT_VERSION 0x0800
+#include <dinput.h>
 #else
 #include <SDL.h>
 #endif
@@ -47,7 +51,7 @@ static const char k_default[] =
 "; how far a trigger (0-255) and the stick (0-32767) go before they count\r\n"
 "trigger = 64\r\nstick = 12000\r\n"
 "\r\n"
-"; A cabinet's plunger sensor (Linux; docs/cabinet-feedback.md), off until an\r\n"
+"; A cabinet's plunger sensor (docs/cabinet-feedback.md), off until an\r\n"
 "; axis is set. epicpinball --joysticks lists devices and live axis values.\r\n"
 "[plunger]\r\n"
 "device = none                ; its name or GUID\r\n"
@@ -56,7 +60,7 @@ static const char k_default[] =
 "pulled = 32767               ; and pulled right back\r\n"
 "speed_axis = none            ; for boards that report the release speed\r\n"
 "\r\n"
-"; A cabinet's nudging (Linux; docs/cabinet-feedback.md). An accelerometer's\r\n"
+"; A cabinet's nudging (docs/cabinet-feedback.md). An accelerometer's\r\n"
 "; shove pushes the ball by how hard; nudge buttons are the game's own nudge\r\n"
 "; (Z, /, Space). A board that types those keys needs nothing here.\r\n"
 "[nudge]\r\n"
@@ -113,12 +117,237 @@ static void press(uint32_t now)
     was = now;
 }
 
-#ifndef _WIN32
-static void plunger_forget(void);
-static void nudge_forget(void);
+/* ---- a cabinet board's joystick: its axes and buttons, by number ----
+ * joy_count lists what is plugged in, then joy_name/joy_id/joy_is/joy_open
+ * take an index into that list. joy_update reads every open one, after
+ * which joy_attached, joy_axis (-32768 to 32767) and joy_button tell. */
+enum { JOY_ID = 40 };                /* a GUID as text */
+
+#ifdef _WIN32
+/* DirectInput 8. Its axes are numbered X Y Z RX RY RZ as on Linux, then the
+ * two sliders; a board without some of them has gaps, read as 0. Background
+ * and non-exclusive: read whichever window has the keys, and shared with
+ * whatever else reads the board. */
+enum { JOY_MOST = 16 };
+static LPDIRECTINPUT8A di;
+static HWND di_wnd;                  /* SetCooperativeLevel wants a window: one that is never shown */
+static int di_failed;
+static struct { GUID inst, prod; char name[MAX_PATH]; } dl[JOY_MOST];
+static int dn;
+
+typedef struct Joy {
+    LPDIRECTINPUTDEVICE8A dev;
+    DIJOYSTATE2 st;
+    int axes, buttons, gone;
+    uint8_t has[8];                  /* which of the axes it has */
+    struct Joy *next;
+} Joy;
+static Joy *joys;                    /* the open ones */
+
+static const DWORD k_axis_ofs[8] = {
+    DIJOFS_X, DIJOFS_Y, DIJOFS_Z, DIJOFS_RX, DIJOFS_RY, DIJOFS_RZ, DIJOFS_SLIDER(0), DIJOFS_SLIDER(1) };
+
+static int di_init(void)
+{
+    if (di) return 1;
+    if (di_failed) return 0;
+    HRESULT hr = DirectInput8Create(GetModuleHandleA(NULL), DIRECTINPUT_VERSION, &IID_IDirectInput8A, (void **)&di, NULL);
+    if (FAILED(hr)) {
+        di = NULL;
+        di_failed = 1;
+        fprintf(stderr, "DirectInput: error %08lX, so no joysticks\n", (unsigned long)hr);
+        return 0;
+    }
+    di_wnd = CreateWindowExA(0, "STATIC", "epicpinball joysticks", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
+    return 1;
+}
+
+static BOOL CALLBACK di_device(LPCDIDEVICEINSTANCEA d, LPVOID ctx)
+{
+    (void)ctx;
+    if (dn >= JOY_MOST) return DIENUM_STOP;
+    dl[dn].inst = d->guidInstance;
+    dl[dn].prod = d->guidProduct;
+    snprintf(dl[dn].name, sizeof dl[dn].name, "%s", d->tszProductName);
+    dn++;
+    return DIENUM_CONTINUE;
+}
+
+static int joy_count(void)
+{
+    dn = 0;
+    if (di_init()) IDirectInput8_EnumDevices(di, DI8DEVCLASS_GAMECTRL, di_device, NULL, DIEDFL_ATTACHEDONLY);
+    return dn;
+}
+
+static const char *joy_name(int i) { return dl[i].name[0] ? dl[i].name : NULL; }
+
+static void guid_text(const GUID *g, char *s, int n)
+{
+    snprintf(s, n, "{%08lX-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}", (unsigned long)g->Data1, g->Data2, g->Data3,
+             g->Data4[0], g->Data4[1], g->Data4[2], g->Data4[3], g->Data4[4], g->Data4[5], g->Data4[6], g->Data4[7]);
+}
+
+static void joy_id(int i, char *id, int n) { guid_text(&dl[i].inst, id, n); }
+
+/* with or without its braces */
+static int guid_is(const char *device, const GUID *g)
+{
+    char s[JOY_ID];
+    guid_text(g, s, sizeof s);
+    return !_stricmp(device, s) || (strlen(device) == 36 && !_strnicmp(device, s + 1, 36));
+}
+
+/* by its name, its instance GUID (--joysticks), or its product GUID */
+static int joy_is(int i, const char *device)
+{
+    return (dl[i].name[0] && !_stricmp(device, dl[i].name)) || guid_is(device, &dl[i].inst) || guid_is(device, &dl[i].prod);
+}
+
+/* A USB device's product GUID is its vendor and product IDs, then "PIDVID" */
+static int joy_usb(int i, uint16_t *vid, uint16_t *pid)
+{
+    if (memcmp(&dl[i].prod.Data4[2], "PIDVID", 6)) return *vid = *pid = 0;
+    *vid = LOWORD(dl[i].prod.Data1);
+    *pid = HIWORD(dl[i].prod.Data1);
+    return 1;
+}
+
+static void joy_read(Joy *j)
+{
+    HRESULT hr = IDirectInputDevice8_Poll(j->dev);
+    if (FAILED(hr)) {                /* not acquired yet, or lost: once more */
+        IDirectInputDevice8_Acquire(j->dev);
+        hr = IDirectInputDevice8_Poll(j->dev);
+    }
+    if (SUCCEEDED(hr)) hr = IDirectInputDevice8_GetDeviceState(j->dev, sizeof j->st, &j->st);
+    if (FAILED(hr)) memset(&j->st, 0, sizeof j->st);
+    j->gone = FAILED(hr);
+}
+
+static void joy_close(Joy *j)
+{
+    for (Joy **p = &joys; *p; p = &(*p)->next)
+        if (*p == j) { *p = j->next; break; }
+    IDirectInputDevice8_Unacquire(j->dev);
+    IDirectInputDevice8_Release(j->dev);
+    free(j);
+}
+
+static Joy *joy_open(int i)
+{
+    Joy *j = calloc(1, sizeof *j);
+    if (!j || !di || FAILED(IDirectInput8_CreateDevice(di, &dl[i].inst, &j->dev, NULL))) { free(j); return NULL; }
+    j->next = joys;
+    joys = j;
+    if (FAILED(IDirectInputDevice8_SetDataFormat(j->dev, &c_dfDIJoystick2))) { joy_close(j); return NULL; }
+    if (di_wnd)                      /* without, DirectInput reads in the background anyway */
+        IDirectInputDevice8_SetCooperativeLevel(j->dev, di_wnd, DISCL_BACKGROUND | DISCL_NONEXCLUSIVE);
+    for (int a = 0; a < 8; a++) {    /* each axis it has to SDL's range; one it lacks is not found */
+        DIPROPRANGE r;
+        memset(&r, 0, sizeof r);
+        r.diph.dwSize = sizeof r;
+        r.diph.dwHeaderSize = sizeof r.diph;
+        r.diph.dwObj = k_axis_ofs[a];
+        r.diph.dwHow = DIPH_BYOFFSET;
+        r.lMin = -32768;
+        r.lMax = 32767;
+        if (SUCCEEDED(IDirectInputDevice8_SetProperty(j->dev, DIPROP_RANGE, &r.diph))) {
+            j->has[a] = 1;
+            j->axes = a + 1;
+        }
+    }
+    DIDEVCAPS caps;
+    memset(&caps, 0, sizeof caps);
+    caps.dwSize = sizeof caps;
+    if (SUCCEEDED(IDirectInputDevice8_GetCapabilities(j->dev, &caps)))
+        j->buttons = caps.dwButtons > 128 ? 128 : (int)caps.dwButtons;
+    joy_read(j);
+    if (j->gone) { joy_close(j); return NULL; }
+    return j;
+}
+
+static int joy_axes(Joy *j) { return j->axes; }
+static int joy_buttons(Joy *j) { return j->buttons; }
+static void joy_update(void) { for (Joy *j = joys; j; j = j->next) joy_read(j); }
+static int joy_attached(Joy *j) { return !j->gone; }
+
+static int joy_axis(Joy *j, int a)
+{
+    if (a < 0 || a >= 8 || !j->has[a]) return 0;
+    return (int)*(const LONG *)((const uint8_t *)&j->st + k_axis_ofs[a]);
+}
+
+static int joy_button(Joy *j, int b) { return b >= 0 && b < j->buttons && (j->st.rgbButtons[b] & 0x80); }
+
+/* --joysticks has no window: Ctrl+C ends it */
+static const char k_no_joysticks[] = "No joysticks.";
+static int joy_list_begin(void) { return di_init() ? 0 : 1; }
+static int joy_list_pump(void) { return 1; }
+static void joy_list_wait(int ms) { Sleep(ms); }
+static void joy_list_end(void) { while (joys) joy_close(joys); }
+#else
+/* SDL2's joysticks, numbered as SDL numbers them */
+typedef SDL_Joystick Joy;
+static int joy_count(void) { return SDL_NumJoysticks(); }
+static const char *joy_name(int i) { return SDL_JoystickNameForIndex(i); }
+static void joy_id(int i, char *id, int n) { SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(i), id, n); }
+
+static int joy_is(int i, const char *device)
+{
+    char id[JOY_ID];
+    const char *name = joy_name(i);
+    joy_id(i, id, sizeof id);
+    return (name && !_stricmp(device, name)) || !_stricmp(device, id);
+}
+
+static int joy_usb(int i, uint16_t *vid, uint16_t *pid)
+{
+    *vid = SDL_JoystickGetDeviceVendor(i);
+    *pid = SDL_JoystickGetDeviceProduct(i);
+    return 1;
+}
+
+static Joy *joy_open(int i) { return SDL_JoystickOpen(i); }
+static void joy_close(Joy *j) { SDL_JoystickClose(j); }
+static int joy_axes(Joy *j) { return SDL_JoystickNumAxes(j); }
+static int joy_buttons(Joy *j) { return SDL_JoystickNumButtons(j); }
+static void joy_update(void) { SDL_JoystickUpdate(); }
+static int joy_attached(Joy *j) { return SDL_JoystickGetAttached(j); }
+static int joy_axis(Joy *j, int a) { return SDL_JoystickGetAxis(j, a); }
+static int joy_button(Joy *j, int b) { return SDL_JoystickGetButton(j, b) != 0; }
+
+static const char k_no_joysticks[] = "No joysticks. (May this user read /dev/input? docs/cabinet-feedback.md)";
+
+static int joy_list_begin(void)
+{
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");     /* there is no window */
+    if (SDL_Init(SDL_INIT_JOYSTICK)) {
+        fprintf(stderr, "SDL: %s\n", SDL_GetError());
+        return 1;
+    }
+    return 0;
+}
+
+/* 0 when Ctrl+C asks it to end */
+static int joy_list_pump(void)
+{
+    SDL_Event e;
+    int go = 1;
+    while (SDL_PollEvent(&e))
+        if (e.type == SDL_QUIT) go = 0;
+    return go;
+}
+
+static void joy_list_wait(int ms) { SDL_Delay(ms); }
+static void joy_list_end(void) { SDL_Quit(); }
 #endif
 
-/* -1 none, -2 not an axis. The names are the order SDL gives a board that has all six. */
+static void plunger_forget(void);
+static void nudge_forget(void);
+
+/* -1 none, -2 not an axis. The names are the order SDL gives a board that has all six,
+ * and DirectInput's axes on Windows. */
 static int axis_by_name(const char *s)
 {
     static const char *const k[] = { "X", "Y", "Z", "RX", "RY", "RZ" };
@@ -145,9 +374,6 @@ static void plunger_load(void)
     else if (plg.rest < -32768 || plg.rest > 32767 || plg.pulled < -32768 || plg.pulled > 32767)
         why = "rest and pulled are -32768 to 32767";
     else if (abs(plg.pulled - plg.rest) < 1000) why = "rest and pulled are too close together";
-#ifdef _WIN32
-    else why = "not supported on Windows yet (Linux only for now)";
-#endif
     if (why) fprintf(stderr, "[plunger] %s: %s. The plunger is off.\n", ini, why);
     plg.on = !why;
 }
@@ -183,9 +409,6 @@ static void nudge_load(void)
     else if (!*ndg.device || !_stricmp(ndg.device, "none")) why = "an axis or button is set, but no device";
     else if (st.dead < 0 || st.dead > 30000) why = "dead is 0 to 30000";
     else if (!(st.strength >= 0) || !(st.tilt >= 0)) why = "strength and tilt are 0 or more";
-#ifdef _WIN32
-    else why = "not supported on Windows yet (Linux only for now)";
-#endif
     if (why) fprintf(stderr, "[nudge] %s: %s. Nudging from the cabinet is off.\n", ini, why);
     ndg.on = !why;
 }
@@ -208,10 +431,8 @@ void pad_load(void)
     stick = atoi(ini_get(ini, "controller", "stick", "12000", v, sizeof v));
     plunger_load();
     nudge_load();
-#ifndef _WIN32
     plunger_forget();
     nudge_forget();
-#endif
 }
 
 /* XINPUT_STATE's layout */
@@ -233,207 +454,7 @@ static int get_state(XState *s)
     }
     return get && get(0, s) == ERROR_SUCCESS;
 }
-
-int pad_plunger(int front, PlungerInput *in)
-{
-    (void)front;
-    memset(in, 0, sizeof *in);
-    return 0;
-}
-
-void pad_nudge(int front) { (void)front; nudge_reading(0, 0, 0); }
-
-int pad_list(double seconds)
-{
-    (void)seconds;
-    fprintf(stderr, "--joysticks is not supported on Windows yet (Linux only for now)\n");
-    return 2;
-}
 #else
-static SDL_Joystick *pjoy;           /* the plunger's */
-
-static void plunger_forget(void)
-{
-    if (!pjoy) return;
-    SDL_JoystickClose(pjoy);
-    pjoy = NULL;
-}
-
-/* A board by its name or GUID that has `axes` axes and `buttons` buttons
- * (numbered from 0), looked for twice a second; NULL until it is there.
- * Opened twice (the plunger and the nudge on one board), SDL counts it. */
-typedef struct { uint64_t looked; int said; } Looking;
-
-static SDL_Joystick *joy_find(const char *device, int axes, int buttons, const char *tag, Looking *l)
-{
-    if (l->looked && host_us() - l->looked < 500000) return NULL;
-    l->looked = host_us();
-    for (int i = 0; i < SDL_NumJoysticks(); i++) {
-        char id[33];
-        const char *name = SDL_JoystickNameForIndex(i);
-        SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(i), id, sizeof id);
-        if ((!name || _stricmp(device, name)) && _stricmp(device, id)) continue;
-        SDL_Joystick *j = SDL_JoystickOpen(i);
-        if (!j) continue;
-        int na = SDL_JoystickNumAxes(j), nb = SDL_JoystickNumButtons(j);
-        if (axes <= na && buttons <= nb) {
-            l->said = 0;
-            fprintf(stderr, "[%s] %s\n", tag, name ? name : id);
-            return j;
-        }
-        if (!l->said) fprintf(stderr, "[%s] %s has %d axes and %d buttons, numbered from 0\n", tag, name ? name : id, na, nb);
-        SDL_JoystickClose(j);
-        l->said = 1;
-        return NULL;
-    }
-    if (!l->said) fprintf(stderr, "[%s] no device called %s (--joysticks lists them); waiting for it\n", tag, device);
-    l->said = 1;
-    return NULL;
-}
-
-static void plunger_find(void)
-{
-    static Looking l;
-    const int need = (plg.axis > plg.speed_axis ? plg.axis : plg.speed_axis) + 1;
-    pjoy = joy_find(plg.device, need, 0, "plunger", &l);
-}
-
-/* ---- nudging ---- */
-
-static SDL_Joystick *njoy;
-static uint8_t nudge_down[3];
-
-static void nudge_buttons_up(void)
-{
-    for (int i = 0; i < 3; i++)
-        if (nudge_down[i]) { key_hold(k_nudge_key[i], 0); nudge_down[i] = 0; }
-}
-
-static void nudge_forget(void)
-{
-    nudge_buttons_up();
-    nudge_reading(0, 0, 0);
-    if (!njoy) return;
-    SDL_JoystickClose(njoy);
-    njoy = NULL;
-}
-
-/* Asked on every host_frame, read once a millisecond: the accelerometer for
- * the next physics step (nudge.c), and the buttons as the game's nudge keys.
- * Not in front, or unplugged: no shove, and its keys let go. */
-void pad_nudge(int front)
-{
-    static uint64_t at;
-    static Looking l;
-    if (!front || !ndg.on) { nudge_buttons_up(); nudge_reading(0, 0, 0); return; }
-    if (host_us() - at < 1000) return;
-    at = host_us();
-    SDL_JoystickUpdate();
-    if (njoy && !SDL_JoystickGetAttached(njoy)) {
-        fprintf(stderr, "[nudge] unplugged\n");
-        nudge_forget();
-    }
-    if (!njoy) {
-        int axes = (ndg.x_axis > ndg.y_axis ? ndg.x_axis : ndg.y_axis) + 1, buttons = 0;
-        for (int i = 0; i < 3; i++) if (ndg.button[i] + 1 > buttons) buttons = ndg.button[i] + 1;
-        njoy = joy_find(ndg.device, axes, buttons, "nudge", &l);
-        if (!njoy) { nudge_reading(0, 0, 0); return; }
-    }
-    nudge_reading(ndg.x_axis >= 0 || ndg.y_axis >= 0,
-                  ndg.x_axis >= 0 ? SDL_JoystickGetAxis(njoy, ndg.x_axis) : 0,
-                  ndg.y_axis >= 0 ? SDL_JoystickGetAxis(njoy, ndg.y_axis) : 0);
-    for (int i = 0; i < 3; i++) {
-        if (ndg.button[i] < 0) continue;
-        const uint8_t d = SDL_JoystickGetButton(njoy, ndg.button[i]) != 0;
-        if (d != nudge_down[i]) { key_hold(k_nudge_key[i], d); nudge_down[i] = d; }
-    }
-}
-
-/* Asked on every host_frame, looked at once a millisecond. Not in front, or
- * unplugged, is no sensor: SDL centres the axes then, which is a full release. */
-int pad_plunger(int front, PlungerInput *in)
-{
-    static PlungerInput last;
-    static uint64_t at;
-    if (!front || !plg.on) {
-        memset(&last, 0, sizeof last);
-    } else if (host_us() - at >= 1000) {
-        at = host_us();
-        SDL_JoystickUpdate();
-        if (pjoy && !SDL_JoystickGetAttached(pjoy)) {
-            fprintf(stderr, "[plunger] unplugged\n");
-            plunger_forget();
-        }
-        memset(&last, 0, sizeof last);
-        if (!pjoy) plunger_find();
-        if (pjoy) {
-            long pos = ((long)SDL_JoystickGetAxis(pjoy, plg.axis) - plg.rest) * PLUNGER_FULL / (plg.pulled - plg.rest);
-            last.have = 1;
-            last.pos = pos < 0 ? 0 : pos > PLUNGER_FULL ? PLUNGER_FULL : (int)pos;
-            if (plg.speed_axis >= 0)
-                last.speed = abs(SDL_JoystickGetAxis(pjoy, plg.speed_axis)) * PLUNGER_FULL / 32768;
-        }
-    }
-    *in = last;
-    return last.have;
-}
-
-/* --joysticks: what is plugged in, and each axis as it moves */
-int pad_list(double seconds)
-{
-    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");     /* there is no window */
-    if (SDL_Init(SDL_INIT_JOYSTICK)) {
-        fprintf(stderr, "SDL: %s\n", SDL_GetError());
-        return 1;
-    }
-    enum { MOST = 16, AXES = 16, BUTTONS = 64 };
-    SDL_Joystick *j[MOST];
-    int shown[MOST][AXES], n = SDL_NumJoysticks();
-    static uint8_t pressed[MOST][BUTTONS];
-    if (n > MOST) n = MOST;
-    if (!n) printf("No joysticks. (May this user read /dev/input? docs/cabinet-feedback.md)\n");
-    for (int i = 0; i < n; i++) {
-        char id[33];
-        const char *name = SDL_JoystickNameForIndex(i);
-        SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(i), id, sizeof id);
-        j[i] = SDL_JoystickOpen(i);
-        printf("%d: %s\n   GUID %s, %04X:%04X, %d axes, %d buttons\n", i, name ? name : "?", id,
-               SDL_JoystickGetDeviceVendor(i), SDL_JoystickGetDeviceProduct(i), j[i] ? SDL_JoystickNumAxes(j[i]) : 0,
-               j[i] ? SDL_JoystickNumButtons(j[i]) : 0);
-        for (int a = 0; a < AXES; a++) shown[i][a] = 1 << 20;
-    }
-    if (n) printf("Move the plunger or shove the cabinet to see the axis and range; press a button to see its number."
-                  " Ctrl+C ends.\n");
-    fflush(stdout);
-    for (uint64_t end = host_us() + (uint64_t)(seconds * 1e6); n && (seconds <= 0 || host_us() < end); ) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e))
-            if (e.type == SDL_QUIT) n = 0;
-        SDL_JoystickUpdate();
-        for (int i = 0; i < n; i++) {
-            if (!j[i]) continue;
-            int nb = SDL_JoystickNumButtons(j[i]);
-            for (int b = 0; b < nb && b < BUTTONS; b++) {
-                const uint8_t d = SDL_JoystickGetButton(j[i], b) != 0;
-                if (d != pressed[i][b]) printf("%d: button %d %s\n", i, b, d ? "down" : "up");
-                pressed[i][b] = d;
-            }
-            int axes = SDL_JoystickNumAxes(j[i]), changed = 0;
-            if (axes > AXES) axes = AXES;
-            for (int a = 0; a < axes; a++)
-                if (abs(SDL_JoystickGetAxis(j[i], a) - shown[i][a]) >= 600) changed = 1;
-            if (!changed) continue;
-            printf("%d:", i);
-            for (int a = 0; a < axes; a++) printf("  %d=%6d", a, shown[i][a] = SDL_JoystickGetAxis(j[i], a));
-            printf("\n");
-        }
-        fflush(stdout);
-        SDL_Delay(100);
-    }
-    SDL_Quit();
-    return 0;
-}
-
 /* Boards that report a cabinet's plunger and nudge as a pad's axes */
 static int cabinet_board(uint16_t vid, uint16_t pid)
 {
@@ -481,6 +502,186 @@ static int get_state(XState *s)
     return 1;
 }
 #endif
+
+static Joy *pjoy;                     /* the plunger's */
+
+static void plunger_forget(void)
+{
+    if (!pjoy) return;
+    joy_close(pjoy);
+    pjoy = NULL;
+}
+
+/* A board by its name or GUID that has `axes` axes and `buttons` buttons
+ * (numbered from 0), looked for twice a second; NULL until it is there.
+ * Opened twice (the plunger and the nudge on one board), SDL counts it;
+ * DirectInput gives each its own device. */
+typedef struct { uint64_t looked; int said; } Looking;
+
+static Joy *joy_find(const char *device, int axes, int buttons, const char *tag, Looking *l)
+{
+    if (l->looked && host_us() - l->looked < 500000) return NULL;
+    l->looked = host_us();
+    for (int i = 0, n = joy_count(); i < n; i++) {
+        char id[JOY_ID];
+        const char *name = joy_name(i);
+        joy_id(i, id, sizeof id);
+        if (!joy_is(i, device)) continue;
+        Joy *j = joy_open(i);
+        if (!j) continue;
+        int na = joy_axes(j), nb = joy_buttons(j);
+        if (axes <= na && buttons <= nb) {
+            l->said = 0;
+            fprintf(stderr, "[%s] %s\n", tag, name ? name : id);
+            return j;
+        }
+        if (!l->said) fprintf(stderr, "[%s] %s has %d axes and %d buttons, numbered from 0\n", tag, name ? name : id, na, nb);
+        joy_close(j);
+        l->said = 1;
+        return NULL;
+    }
+    if (!l->said) fprintf(stderr, "[%s] no device called %s (--joysticks lists them); waiting for it\n", tag, device);
+    l->said = 1;
+    return NULL;
+}
+
+static void plunger_find(void)
+{
+    static Looking l;
+    const int need = (plg.axis > plg.speed_axis ? plg.axis : plg.speed_axis) + 1;
+    pjoy = joy_find(plg.device, need, 0, "plunger", &l);
+}
+
+/* ---- nudging ---- */
+
+static Joy *njoy;
+static uint8_t nudge_down[3];
+
+static void nudge_buttons_up(void)
+{
+    for (int i = 0; i < 3; i++)
+        if (nudge_down[i]) { key_hold(k_nudge_key[i], 0); nudge_down[i] = 0; }
+}
+
+static void nudge_forget(void)
+{
+    nudge_buttons_up();
+    nudge_reading(0, 0, 0);
+    if (!njoy) return;
+    joy_close(njoy);
+    njoy = NULL;
+}
+
+/* Asked on every host_frame, read once a millisecond: the accelerometer for
+ * the next physics step (nudge.c), and the buttons as the game's nudge keys.
+ * Not in front, or unplugged: no shove, and its keys let go. */
+void pad_nudge(int front)
+{
+    static uint64_t at;
+    static Looking l;
+    if (!front || !ndg.on) { nudge_buttons_up(); nudge_reading(0, 0, 0); return; }
+    if (host_us() - at < 1000) return;
+    at = host_us();
+    joy_update();
+    if (njoy && !joy_attached(njoy)) {
+        fprintf(stderr, "[nudge] unplugged\n");
+        nudge_forget();
+    }
+    if (!njoy) {
+        int axes = (ndg.x_axis > ndg.y_axis ? ndg.x_axis : ndg.y_axis) + 1, buttons = 0;
+        for (int i = 0; i < 3; i++) if (ndg.button[i] + 1 > buttons) buttons = ndg.button[i] + 1;
+        njoy = joy_find(ndg.device, axes, buttons, "nudge", &l);
+        if (!njoy) { nudge_reading(0, 0, 0); return; }
+    }
+    nudge_reading(ndg.x_axis >= 0 || ndg.y_axis >= 0,
+                  ndg.x_axis >= 0 ? joy_axis(njoy, ndg.x_axis) : 0,
+                  ndg.y_axis >= 0 ? joy_axis(njoy, ndg.y_axis) : 0);
+    for (int i = 0; i < 3; i++) {
+        if (ndg.button[i] < 0) continue;
+        const uint8_t d = joy_button(njoy, ndg.button[i]);
+        if (d != nudge_down[i]) { key_hold(k_nudge_key[i], d); nudge_down[i] = d; }
+    }
+}
+
+/* Asked on every host_frame, looked at once a millisecond. Not in front, or
+ * unplugged, is no sensor: the axes read 0 then, which is a full release. */
+int pad_plunger(int front, PlungerInput *in)
+{
+    static PlungerInput last;
+    static uint64_t at;
+    if (!front || !plg.on) {
+        memset(&last, 0, sizeof last);
+    } else if (host_us() - at >= 1000) {
+        at = host_us();
+        joy_update();
+        if (pjoy && !joy_attached(pjoy)) {
+            fprintf(stderr, "[plunger] unplugged\n");
+            plunger_forget();
+        }
+        memset(&last, 0, sizeof last);
+        if (!pjoy) plunger_find();
+        if (pjoy) {
+            long pos = ((long)joy_axis(pjoy, plg.axis) - plg.rest) * PLUNGER_FULL / (plg.pulled - plg.rest);
+            last.have = 1;
+            last.pos = pos < 0 ? 0 : pos > PLUNGER_FULL ? PLUNGER_FULL : (int)pos;
+            if (plg.speed_axis >= 0)
+                last.speed = abs(joy_axis(pjoy, plg.speed_axis)) * PLUNGER_FULL / 32768;
+        }
+    }
+    *in = last;
+    return last.have;
+}
+
+/* --joysticks: what is plugged in, and each axis as it moves */
+int pad_list(double seconds)
+{
+    if (joy_list_begin()) return 1;
+    enum { MOST = 16, AXES = 16, BUTTONS = 64 };
+    Joy *j[MOST];
+    int shown[MOST][AXES], n = joy_count();
+    static uint8_t pressed[MOST][BUTTONS];
+    if (n > MOST) n = MOST;
+    if (!n) printf("%s\n", k_no_joysticks);
+    for (int i = 0; i < n; i++) {
+        char id[JOY_ID];
+        uint16_t vid, pid;
+        const char *name = joy_name(i);
+        joy_id(i, id, sizeof id);
+        j[i] = joy_open(i);
+        joy_usb(i, &vid, &pid);
+        printf("%d: %s\n   GUID %s, %04X:%04X, %d axes, %d buttons\n", i, name ? name : "?", id,
+               vid, pid, j[i] ? joy_axes(j[i]) : 0, j[i] ? joy_buttons(j[i]) : 0);
+        for (int a = 0; a < AXES; a++) shown[i][a] = 1 << 20;
+    }
+    if (n) printf("Move the plunger or shove the cabinet to see the axis and range; press a button to see its number."
+                  " Ctrl+C ends.\n");
+    fflush(stdout);
+    for (uint64_t end = host_us() + (uint64_t)(seconds * 1e6); n && (seconds <= 0 || host_us() < end); ) {
+        if (!joy_list_pump()) n = 0;
+        joy_update();
+        for (int i = 0; i < n; i++) {
+            if (!j[i]) continue;
+            int nb = joy_buttons(j[i]);
+            for (int b = 0; b < nb && b < BUTTONS; b++) {
+                const uint8_t d = joy_button(j[i], b);
+                if (d != pressed[i][b]) printf("%d: button %d %s\n", i, b, d ? "down" : "up");
+                pressed[i][b] = d;
+            }
+            int axes = joy_axes(j[i]), changed = 0;
+            if (axes > AXES) axes = AXES;
+            for (int a = 0; a < axes; a++)
+                if (abs(joy_axis(j[i], a) - shown[i][a]) >= 600) changed = 1;
+            if (!changed) continue;
+            printf("%d:", i);
+            for (int a = 0; a < axes; a++) printf("  %d=%6d", a, shown[i][a] = joy_axis(j[i], a));
+            printf("\n");
+        }
+        fflush(stdout);
+        joy_list_wait(100);
+    }
+    joy_list_end();
+    return 0;
+}
 
 /* front: the window has the keys */
 void pad_poll(int front)
