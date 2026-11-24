@@ -59,6 +59,7 @@ function Install($n) {
     if (-not (Have "winget")) { Fail "Install $($n.name) yourself (winget is not available), then run Setup again." }
     if (-not (Ask "Install $($n.name) now with winget?")) { Fail "Setup needs $($n.name). Install it and run Setup again." }
     $wargs = @("install", "--id", $n.id, "-e", "--accept-package-agreements", "--accept-source-agreements")
+    # each a separate argument: --override, then the installer's whole line
     if ($n.args) { $wargs += $n.args }
     Run "installing $($n.name)" { winget @wargs }
     # a fresh install is on the machine PATH but not in this window's
@@ -74,8 +75,8 @@ if (-not (Find-Python)) { Install @{ name = "Python 3"; id = "Python.Python.3.12
 $py = Find-Python
 if (-not (Have "cmake")) { Install @{ name = "CMake"; id = "Kitware.CMake"; size = "about 35 MB"; why = "configures the build" } }
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-$vs = if (Test-Path $vswhere) { & $vswhere -latest -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath } else { $null }
-if (-not $vs) { Install @{ name = "Visual Studio 2022 Build Tools (C++)"; id = "Microsoft.VisualStudio.2022.BuildTools"; size = "about 2 GB"; why = "compiles the lifted C"; args = "--override `"--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended`"" } }
+$vs = if (Test-Path $vswhere) { & $vswhere -latest -products * -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath } else { $null }
+if (-not $vs) { Install @{ name = "Visual Studio 2022 Build Tools (C++)"; id = "Microsoft.VisualStudio.2022.BuildTools"; size = "about 2 GB"; why = "compiles the lifted C"; args = @("--override", "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended") } }
 if (-not (Have "ffmpeg")) { Say "  (ffmpeg not found: everything works except --record. winget install Gyan.FFmpeg adds it.)" }
 
 # ---- 2 + 3. the game ----------------------------------------------------------------

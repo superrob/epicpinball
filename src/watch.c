@@ -123,6 +123,7 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         memcpy(line, p, n); line[n] = 0;
         p += n;
         if (*p) p++;
+        if (n && line[n - 1] == '\r') line[--n] = 0;      /* written on Windows: CRLF */
         unsigned a, b, x, y, slot, c, x1, y1;
         char kind[16], s;
         if (!strcmp(line, "end")) ended = 1;

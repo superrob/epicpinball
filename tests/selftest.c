@@ -354,6 +354,14 @@ static void test_feedback_map(void)
     assert(!strcmp(m.layout, "LR"));
     /* a table's own features: the zone a switch is, and every side for made rows */
     assert(!strcmp(m.sides, "hole:LCR ramp:LR kickback:L target:LLL"));
+    {                                                     /* written on Windows: CRLF reads the same */
+        static char crlf[2 * sizeof k_map];
+        char *o = crlf;
+        for (const char *p = k_map; *p; p++) { if (*p == '\n') *o++ = '\r'; *o++ = *p; }
+        *o = 0;
+        WatchMap w;
+        assert(watch_map_parse(crlf, &w, &why) && !memcmp(&w, &m, sizeof w));
+    }
     assert(watch_zone(&m, WZ_HOLE, 0xF6, 219, 50) == 1 && watch_zone(&m, WZ_HOLE, 0xF6, 220, 50) == 2);
     assert(watch_zone(&m, WZ_RAMP, 0xF6, 220, 50) == 7 && watch_zone(&m, WZ_RAMP, 0xF6, 219, 50) < 0);
     assert(watch_zone(&m, WZ_KICKBACK, 0xF8, 30, 320) < 0 && watch_zone(&m, WZ_KICKBACK, 0xF8, 30, 321) == 3);
@@ -1124,6 +1132,12 @@ static void test_autostart(void)
     strcpy(bad, map);
     bad[18] = '2';                                                    /* another version */
     assert(!autostart_map_parse(bad, &m, &why));
+    {                                                                 /* written on Windows: CRLF */
+        char crlf[2 * sizeof map], *o = crlf;
+        for (const char *p = map; *p; p++) { if (*p == '\n') *o++ = '\r'; *o++ = *p; }
+        *o = 0;
+        assert(autostart_map_parse(crlf, &m, &why) && m.nsub == 2 && !strcmp(m.sub_fn[1], "pin_R"));
+    }
     assert(autostart_map_parse(map, &m, &why));
 
     uint8_t present[26] = { 0 };

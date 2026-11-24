@@ -547,13 +547,20 @@ static void axis_bars(Joy *j, int mark)
 
 /* ---- pages ---------------------------------------------------------------------------- */
 
+/* how a helper is built (docs/dmd.md, docs/cabinet-feedback.md) */
+#ifdef _WIN32
+#define HELPER_BUILD(dir) dir "\\build.ps1"
+#else
+#define HELPER_BUILD(dir) dir "/build.sh"
+#endif
+
 static void page_modes()
 {
     ImGui::SeparatorText("Every run with a window starts with");
     const bool helper[5] = { true, true, exists("dmd/build/epicpinball-dmd") || exists("dmd/build/epicpinball-dmd.exe"), true,
                              exists("dof/build/epicpinball-dof") || exists("dof/build/epicpinball-dof.exe") };
-    const char *why[5] = { nullptr, nullptr, "its helper is not built: dmd/build.sh (docs/dmd.md)", nullptr,
-                           "its helper is not built: dof/build.sh (docs/cabinet-feedback.md)" };
+    const char *why[5] = { nullptr, nullptr, "its helper is not built: " HELPER_BUILD("dmd") " (docs/dmd.md)", nullptr,
+                           "its helper is not built: " HELPER_BUILD("dof") " (docs/cabinet-feedback.md)" };
     for (int i = 0; i < 5; i++) {
         bool on = g_s.mode[i];
         if (ImGui::Checkbox(k_mode_labels[i], &on)) g_s.mode[i] = on;
@@ -1298,7 +1305,7 @@ static void page_dmd_dof()
     }
     ImGui::SeparatorText("DOF test");
     const bool built = exists("dof/build/epicpinball-dof") || exists("dof/build/epicpinball-dof.exe");
-    if (!built) { ImGui::TextColored({ 1, 0.6f, 0.2f, 1 }, "The DOF helper is not built: dof/build.sh (docs/cabinet-feedback.md)."); return; }
+    if (!built) { ImGui::TextColored({ 1, 0.6f, 0.2f, 1 }, "The DOF helper is not built: " HELPER_BUILD("dof") " (docs/cabinet-feedback.md)."); return; }
     ImGui::TextWrapped("Each fires one event through table 1's row for a moment, with the DOF files the game uses "
                        "(the first line of the output says where they are).");
     static const char *const ev[] = { "flipper_left", "flipper_right", "sling_left", "sling_right", "bumper_1", "bumper_2",

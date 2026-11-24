@@ -95,9 +95,12 @@ was found and what it becomes, in five groups that can each be left out, and
 what was there but cannot be imported; *Apply* puts it into the pages, and
 nothing is written until Save.
 
-Where it looks: `~/.local/share/VPinballX/<newest version>/VPinballX.ini`
-(or under `$XDG_DATA_HOME`), then `~/.vpinball/VPinballX.ini`;
-`%APPDATA%\VPinballX\<version>\` and `%APPDATA%\VPinballX\` on Windows.
+Where it looks: `~/.local/share/VPinballX/<version>/VPinballX.ini` and
+`~/.local/share/VPinballX/VPinballX.ini` (or under `$XDG_DATA_HOME`), and
+`~/.vpinball/VPinballX.ini`; `%APPDATA%\VPinballX\<version>\` and
+`%APPDATA%\VPinballX\` on Windows. Of those, the one saved last: each
+VPinball from 10.8.1 keeps its own under its version and 10.8.0 its own
+beside them, so the newest version's can be one no longer used.
 
 Every format VPinball has written is read (`config/vpx_import.c`):
 
@@ -145,5 +148,9 @@ exciters), with its VPinball settings imported.
 
 On Windows: built with MSVC, and run under Wine with no board: pages drawn
 (`--shot` reads Direct3D's back buffer), and the SSF page's recording made by
-the Windows game. Not yet on a cabinet's Windows: DirectInput's boards, the
-speaker test's 7.1 and the import of VPinball's settings there are untried.
+the Windows game. Then on a cabinet's Windows, built by `Setup.cmd`: every
+page drawn on its display, the SSF page's recording made (14 sounds), and
+the Pinscape Pico read through DirectInput, its axes live on the plunger and
+nudging pages; its VPinball 10.8.0 settings read by the importer (outside
+the tool). Not yet there: the import window, *+ press*, *+ add*,
+calibration, and the speaker test heard.

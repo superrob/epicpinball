@@ -137,6 +137,17 @@ All notable changes to this project are documented here. The format follows
   and the settings tool's keys stay (it was written anew each time).
 
 ### Fixed
+- Windows, found on a cabinet: setup stopped at the Visual Studio Build Tools
+  (winget was given `--override` and the installer's options as one
+  argument), and once they were in, setup, `dmd\build.ps1` and
+  `dof\build.ps1` did not see them (vswhere wants `-products *` for Build
+  Tools). `dof\build.ps1`'s libdof patch did not apply from a CRLF checkout
+  (GitHub Desktop's git); it is applied with LF now, and `.gitattributes`
+  keeps patches LF. The maps setup writes with Python on Windows have CRLF
+  line ends, which `--table`, the DMD and the feedback refused; they read
+  either now, and the tools write LF. The settings tool imports the
+  VPinball settings saved last, not the newest version's (VPinball 10.8.0
+  keeps its own beside 10.8.1's), and names `build.ps1` for the helpers.
 - The Windows self-test did not link: the DMD and SSF tests were inside the
   POSIX-only part.
 - A cabinet board in gamepad mode held both flippers up: SDL reads its

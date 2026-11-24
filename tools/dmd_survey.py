@@ -181,7 +181,7 @@ def main():
             print(f'{img}: no DMD map: {e}')
             lines = None
         if lines:
-            with open(os.path.join(OUT, f'{img}.map'), 'w') as out:
+            with open(os.path.join(OUT, f'{img}.map'), 'w', newline='\n') as out:
                 out.write('\n'.join(lines) + '\n')
         with open(os.path.join(OUT, f'{img}.txt'), 'w') as out:
             out.write(f'{img}: message function {msg}, line appenders {", ".join(app) or "none"}\n\n')

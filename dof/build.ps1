@@ -47,7 +47,7 @@ foreach ($t in "cmake", "git", "curl.exe", "tar.exe") {
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $msbuild = $null
 if (Test-Path $vswhere) {
-    $msbuild = & $vswhere -latest -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+    $msbuild = & $vswhere -latest -products * -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
 }
 if (-not $msbuild) { Fail "Visual Studio 2022 with C++ is missing (scripts\setup.ps1 installs the Build Tools)" }
 New-Item -ItemType Directory -Force (Join-Path $S "dl"), $L | Out-Null
@@ -159,8 +159,11 @@ Copy-Item (Join-Path $ftdi "src\ftdi.h") (Join-Path $I "libftdi1")
 Copy-Item ([IO.Path]::ChangeExtension($ftdidll, ".lib")) (Join-Path $BL "libftdi164.lib")
 Copy-Item $ftdidll $R
 
-# Named by what is in the patch, so a tree built without it is built again
-$Patch = Join-Path $Here "patches\pico-output-bound.patch"
+# Named by what is in the patch, so a tree built without it is built again.
+# Applied with LF line ends, as libdof's files have: git for Windows checks
+# this repository out with CRLF when core.autocrlf is on (GitHub Desktop's).
+$Patch = Join-Path $S "pico-output-bound.patch"
+[IO.File]::WriteAllText($Patch, ([IO.File]::ReadAllText((Join-Path $Here "patches\pico-output-bound.patch")) -replace "`r`n", "`n"))
 $Sum = (Get-FileHash -Algorithm SHA256 $Patch).Hash.ToLower().Substring(0, 16)
 if (-not (Test-Path (Join-Path $S ".libdof-patched-$Sum"))) {
     # outside any repository (this one holds dof\build): git apply works as patch does
@@ -172,7 +175,7 @@ if (-not (Test-Path (Join-Path $S ".libdof-patched-$Sum"))) {
     $ErrorActionPreference = "Stop"
     Pop-Location
     if ($rc -ne 0) {
-        Fail "$Patch does not apply to $S\libdof: delete that folder and $S\.libdof-*, and run again"
+        Fail "dof\patches\pico-output-bound.patch does not apply to $S\libdof: delete that folder and $S\.libdof-*, and run again"
     }
     New-Item -ItemType File (Join-Path $S ".libdof-patched-$Sum") | Out-Null
 }

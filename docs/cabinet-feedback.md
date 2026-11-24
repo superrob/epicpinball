@@ -718,7 +718,9 @@ Without hardware, in a sandbox with no devices:
   Windows SDK and run under Wine with a keyboard's joystick interface:
   `--joysticks` lists it with its VID:PID, axes and buttons, and `[plunger]`
   and `[nudge]` find it by its GUID, with and without braces, and say when
-  it is missing or has too few buttons. Not yet on a cabinet;
+  it is missing or has too few buttons. On a cabinet's Windows,
+  `--joysticks` lists a Pinscape Pico's four interfaces with their axes
+  live, and `[plunger]` and `[nudge]` find it by name;
 - 70 frames a second in cabinet mode with the helper, a hung helper, and a
   sensor present and absent;
 - Windows' end of the pipe (`src/dof_pipe.c`), built for Windows and run
@@ -726,9 +728,10 @@ Without hardware, in a sandbox with no devices:
   selftest (a table each, `q`, no row, no rows at all, a helper that dies and
   the `--all-off` after it), a helper that stops reading (killed, then
   `--all-off`) and one that never says `ready` (the start timeout). The
-  helper's Windows half and `dof/build.ps1` were only syntax-checked (for
-  MSVC and MinGW, against Wine's headers) and written, not built.
+  helper's Windows half was then built by `dof\build.ps1` on a cabinet's
+  Windows and started with table 1: it read DirectOutput's files
+  (`C:\DirectOutput\Config`) and made table 1's rows from their headers.
 
 Not tested: tables 2 to 13 on a cabinet, other controllers and other
-cabinets' Config Tool headers, Flatpak and portable VPX, Windows on a
-cabinet (`--dof`'s helper not yet built there), other releases of the game.
+cabinets' Config Tool headers, Flatpak and portable VPX, play on a
+cabinet's Windows (the events reaching its outputs), other releases of the game.

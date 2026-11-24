@@ -29,8 +29,8 @@
   SB16 covers everyone today.
 - **Gamepad**: `controller.ini`, GOG's mapping by default, untested on hardware.
   Rumble on the flippers and bumpers would be the remaster's next touch.
-- **Cabinet mode on Windows**: `--cabinet` is Linux only. Windows needs a
-  swap chain per window and the turn in the shader.
+- **Cabinet mode on Windows**: run on one cabinet, with its DMD, DOF and
+  SSF, on table 1, left alone; not yet played there.
 - **Cabinet mode on more cabinets**: it works on one real cabinet under KDE,
   on table 1, with the scoreboard placed on the second display, and is tested
   on virtual displays. wlroots compositors and SDL2 proper (not sdl2-compat)

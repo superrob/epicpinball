@@ -1,2 +1,4 @@
 # Shell scripts keep LF, or bash on Linux reads the CRs
 *.sh text eol=lf
+# Patches keep LF, as the sources they apply to have
+*.patch text eol=lf

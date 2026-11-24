@@ -122,6 +122,7 @@ int autostart_map_parse(const char *text, MenusMap *m, const char **why)
         if (n >= sizeof line) n = sizeof line - 1;
         memcpy(line, p, n); line[n] = 0;
         p = e ? e + 1 : p + n;
+        if (n && line[n - 1] == '\r') line[--n] = 0;      /* written on Windows: CRLF */
         char k[32], v[64];
         if (!*line) continue;
         if (!seen++) {

@@ -706,7 +706,7 @@ def write_menus(show):
     path = os.path.join(OUT, 'pin.map')
     text = menus_text(size, fnv, v)
     if not os.path.exists(path) or open(path).read() != text:
-        with open(path, 'w') as out:
+        with open(path, 'w', newline='\n') as out:
             out.write(text)
     if show:
         print('pin: ' + ' '.join(f'{k}={x}' if k.endswith(('_fn', '_fns')) else f'{k}={x:X}' for k, x in v.items()))
@@ -733,7 +733,7 @@ def main():
         path = os.path.join(OUT, f'{img}.map')
         text = text_of(img, r)
         if not os.path.exists(path) or open(path).read() != text:
-            with open(path, 'w') as out:
+            with open(path, 'w', newline='\n') as out:
                 out.write(text)
         if show:
             print(f'{img}: ' + ' '.join(f'{k}={x}' if k.endswith('_fn') else f'{k}={x:X}'

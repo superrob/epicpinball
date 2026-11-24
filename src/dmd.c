@@ -73,7 +73,8 @@ static int parse_map(char *text, const char **why)
 {
     memset(&M, 0, sizeof M);
     int version = 0, have = 0;
-    for (char *line = strtok(text, "\n"); line; line = strtok(NULL, "\n")) {
+    /* "\r" too: a map written on Windows has CRLF line ends */
+    for (char *line = strtok(text, "\r\n"); line; line = strtok(NULL, "\r\n")) {
         char key[24]; int n = 0;
         if (sscanf(line, "%23s %n", key, &n) != 1) continue;
         const char *v = line + n;

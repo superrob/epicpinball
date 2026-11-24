@@ -280,8 +280,9 @@ Every table, in a scripted game, headless, with the picture captured:
   real cabinet, table 1;
 - Windows' end of the pipe (`src/dmd_pipe.c`) under Wine, with a stand-in
   helper that reads slower than the game sends: frames arrive whole, in
-  order, the newest last. The helper itself and `dmd/build.ps1` were only
-  syntax-checked and written, not built: not yet on a Windows cabinet.
+  order, the newest last. Then `dmd\build.ps1` built the helper on a
+  cabinet's Windows; it found the ZeDMD (COM4, firmware 6.0.0) and sent it
+  table 1's frames, 1130 in a 100-second run. Not yet looked at there.
 
 
 ## libdmdutil

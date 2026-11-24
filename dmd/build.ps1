@@ -46,7 +46,7 @@ foreach ($t in "cmake", "curl.exe", "tar.exe") {
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $msbuild = $null
 if (Test-Path $vswhere) {
-    $msbuild = & $vswhere -latest -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+    $msbuild = & $vswhere -latest -products * -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
 }
 if (-not $msbuild) { Fail "Visual Studio 2022 with C++ is missing (scripts\setup.ps1 installs the Build Tools)" }
 New-Item -ItemType Directory -Force (Join-Path $S "dl"), $L | Out-Null

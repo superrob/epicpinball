@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 #ifdef _WIN32
 #include <windows.h>
 #define strtok_r strtok_s
@@ -44,86 +46,76 @@ static char *trim(char *s)
 
 /* ---- finding it ------------------------------------------------------------------ */
 
-static int exists(const char *p)
+/* Of the files VPinball may have written, the one saved last goes into
+   best (when: its time). Each VPinball 10.8.1 and newer keeps its own
+   dir/<version>/VPinballX.ini, and 10.8.0 dir/VPinballX.ini, so the newest
+   version's file can be one left behind by a VPinball no longer used. */
+static void consider(const char *p, char *best, int n, time_t *when)
 {
-    FILE *f = fopen(p, "rb");
-    if (f) fclose(f);
-    return f != NULL;
+    struct stat st;
+    if (stat(p, &st) || (*best && st.st_mtime <= *when)) return;
+    *when = st.st_mtime;
+    snprintf(best, n, "%s", p);
 }
 
-/* "10.8" over "10.10"? by number, not text */
-static int newer(const char *a, const char *b)
+static void find_in(const char *dir, char *best, int n, time_t *when)
 {
-    int a1 = 0, a2 = 0, b1 = 0, b2 = 0;
-    sscanf(a, "%d.%d", &a1, &a2);
-    sscanf(b, "%d.%d", &b1, &b2);
-    return a1 != b1 ? a1 > b1 : a2 > b2;
-}
-
-/* dir/<newest major.minor>/VPinballX.ini, else dir/VPinballX.ini */
-static int find_in(const char *dir, char *path, int n)
-{
-    char best[64] = "";
+    char p[700];
 #ifdef _WIN32
-    char pat[600];
     WIN32_FIND_DATAA fd;
-    snprintf(pat, sizeof pat, "%s\\*", dir);
-    HANDLE h = FindFirstFileA(pat, &fd);
+    snprintf(p, sizeof p, "%s\\*", dir);
+    HANDLE h = FindFirstFileA(p, &fd);
     if (h != INVALID_HANDLE_VALUE) {
         do {
-            const char *v = fd.cFileName;
-            char p[700];
             int a, b;
-            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || sscanf(v, "%d.%d", &a, &b) != 2) continue;
-            snprintf(p, sizeof p, "%s\\%s\\VPinballX.ini", dir, v);
-            if (exists(p) && (!*best || newer(v, best))) snprintf(best, sizeof best, "%s", v);
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || sscanf(fd.cFileName, "%d.%d", &a, &b) != 2) continue;
+            snprintf(p, sizeof p, "%s\\%s\\VPinballX.ini", dir, fd.cFileName);
+            consider(p, best, n, when);
         } while (FindNextFileA(h, &fd));
         FindClose(h);
     }
-    const char sep = '\\';
+    snprintf(p, sizeof p, "%s\\VPinballX.ini", dir);
 #else
     DIR *d = opendir(dir);
     for (struct dirent *e; d && (e = readdir(d)) != NULL; ) {
-        char p[700];
         int a, b;
         if (sscanf(e->d_name, "%d.%d", &a, &b) != 2) continue;
         snprintf(p, sizeof p, "%s/%s/VPinballX.ini", dir, e->d_name);
-        if (exists(p) && (!*best || newer(e->d_name, best))) snprintf(best, sizeof best, "%s", e->d_name);
+        consider(p, best, n, when);
     }
     if (d) closedir(d);
-    const char sep = '/';
+    snprintf(p, sizeof p, "%s/VPinballX.ini", dir);
 #endif
-    if (*best) snprintf(path, n, "%s%c%s%cVPinballX.ini", dir, sep, best, sep);
-    else snprintf(path, n, "%s%cVPinballX.ini", dir, sep);
-    return exists(path);
+    consider(p, best, n, when);
 }
 
 int vpx_find(char *path, int n)
 {
     char dir[600];
+    time_t when = 0;
+    *path = 0;
 #ifdef _WIN32
     const char *app = getenv("APPDATA");
     if (app) {
         snprintf(dir, sizeof dir, "%s\\VPinballX", app);
-        if (find_in(dir, path, n)) return 1;
+        find_in(dir, path, n, &when);
     }
 #else
     const char *home = getenv("HOME"), *xdg = getenv("XDG_DATA_HOME");
     if (xdg && *xdg == '/') {
         snprintf(dir, sizeof dir, "%s/VPinballX", xdg);
-        if (find_in(dir, path, n)) return 1;
+        find_in(dir, path, n, &when);
     }
     if (home) {
         snprintf(dir, sizeof dir, "%s/.local/share/VPinballX", home);
-        if (find_in(dir, path, n)) return 1;
+        find_in(dir, path, n, &when);
         snprintf(dir, sizeof dir, "%s/Library/Application Support/VPinballX", home);
-        if (find_in(dir, path, n)) return 1;
-        snprintf(path, n, "%s/.vpinball/VPinballX.ini", home);     /* 10.8.0 */
-        if (exists(path)) return 1;
+        find_in(dir, path, n, &when);
+        snprintf(dir, sizeof dir, "%s/.vpinball", home);              /* 10.8.0 */
+        find_in(dir, path, n, &when);
     }
 #endif
-    *path = 0;
-    return 0;
+    return *path != 0;
 }
 
 /* ---- 10.8.1: [Input] ----------------------------------------------------------- */
