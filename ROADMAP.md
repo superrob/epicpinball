@@ -37,13 +37,13 @@
   are untried.
 - **More cabinet feedback**: every table has its own events now, tried
   only by `--autoplay`: each on a real cabinet, and the jackpots, multiball
-  and later levels the autoplayer never reaches. Table 6's three banks of
-  targets as banks (they are switches each), gates, lamps, general joystick
-  buttons, Windows, and an entry in the DOF Config Tool's database.
-- **The DMD** (works on a real cabinet on table 1): tables 2-13
-  on a cabinet and looked at message by message (several players' scores on 9-13, tables 5 and 6,
-  whose line appenders are another shape); screens no scripted game reached
-  (jackpots, modes, high score entry); Windows.
+  and later levels the autoplayer never reaches. Lamps (each table's lights
+  as levels), Windows, and an entry in the DOF Config Tool's database, which
+  is the Config Tool's site to take.
+- **The DMD** (works on a real cabinet on table 1; every table's messages
+  looked at, headless, docs/dmd.md): tables 2-13 on a real DMD; the
+  jackpots, modes and later levels `--autoplay` does not reach; table 1's
+  66x13 picture in the bar; Windows.
 - **SSF** (works on a real cabinet's exciters): each table's own board
   effects beyond slots 0-6 by ear on a cabinet (they were chosen by sample
   and by when they play: docs/ssf.md); Windows.

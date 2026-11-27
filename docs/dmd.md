@@ -162,8 +162,8 @@ the game; not committed). A run with every call logged (a scripted game of
 | 2 | Pot of Gold | `ep2_3484E` | 2 | 85 | 27 / 10 |
 | 3 | Excalibur | `ep3_3217E` | 2 | 25 | 9 / 6 |
 | 4 | Crash and Burn | `ep4_31B29` | 2 | 84 | 44 / 21 |
-| 5 | Magic | `ep5_2F411` | none found | 13 | 6 / 4 |
-| 6 | Jungle Pinball | `ep6_3515F` | none found | 39 | 27 / 9 |
+| 5 | Magic | `ep5_2F411` | 1 | 22 | 6 / 4 |
+| 6 | Jungle Pinball | `ep6_3515F` | 2 | 75 | 27 / 9 |
 | 7 | Deep Sea | `ep7_3226A` | 2 | 96 | 160 / 84 |
 | 8 | Enigma | `ep8_36965` | 2 | 86 | 17 / 12 |
 | 9 | Cyborgirl | `ep9_320D5` | 3 | 55 | 277 / 110 |
@@ -196,14 +196,19 @@ list, a logged game, the bar captured. Still open:
   function and the appenders draw with, and on 1-8 the save-under lists, for
   every table: `work/dmd/epN.map`, by `tools/dmd_survey.py`, so none is
   written down as an address;
-- [ ] tables 5 and 6: no appender matched the signature; how they add lines
-  (table 6 does: its second lines are missing on the DMD);
+- [x] tables 5 and 6: their appenders read the list's end as the others do
+  but leave it there (the next line continues it), which the signature did
+  not allow; found now, their further lines are on the DMD;
 - [ ] tables 3 and 5 say very little through messages (6 and 4 distinct in a
   game): what else tells the player what happened;
 - [ ] table 1's 66x13 picture in the bar, and the like on 2-8;
 - [ ] the effects of each table beside table 1's (11 ids; 9-13 add one);
-- [ ] screens the scripted game did not reach: jackpots, modes, high score
-  entry, matches.
+- [x] every table's messages looked at, a picture each (`EPIC_DMD_SHOTS`,
+  below), over two hours of `--autoplay`: bonus pages, scores, awards, the
+  board, GAME OVER;
+- [x] several players' boards on 9-13 (`EPIC_TABLE_PLAYERS`, below): with
+  four, the other three scores two to a row, so the score stays on;
+- [ ] screens `--autoplay` did not reach: jackpots, modes, later levels.
 
 ## How the DMD picture is put together
 
@@ -248,13 +253,18 @@ How (`src/dmd.c`):
 - **the real DMD** gets a frame when the picture changes, and the last one
   again each second, so a display found late is not left dark.
 
+For looking at them: `EPIC_DMD_SHOTS=DIR` saves the DMD's picture of each
+distinct message as it settles (0.8 s in) and later (3 s, its next page),
+`DIR/epN-NNN-a.ppm` with `DIR/epN.txt` naming them, headless too; and
+`EPIC_TABLE_PLAYERS=N` starts `--table`'s game with N players.
+
 `EPIC_DMD_CHECK=1` says, for each message, whether the game's list holds the
 dots rasterised here: where it ends against how many there are, and how many
 are in place. Scripted games of 200 s on all 13 tables (4,778 messages): the
 count right and every dot in place on twelve tables, but for one dot an
-effect had already moved on a few messages of 9-13. Table 6 adds lines with
-an appender the survey does not find, so its second lines (the instructions,
-the bonus) are missing.
+effect had already moved on a few messages of 9-13. Table 6's further lines
+were missing until its appenders were found; with them, two hours of
+`--autoplay` on each table (over 160,000 messages) had every count right.
 
 The window costs 0.1 ms to redraw (only when the picture changes) and 0.04
 ms for a cabinet's scoreboard copy, measured here.
@@ -269,11 +279,16 @@ Every table, in a scripted game, headless, with the picture captured:
   carried over; waves kept on the display; the board from the bar; no
   message left on the playfield, the keyboard ones nowhere;
 - **tables 2-8**: the same engine and board, in their own colours (green on
-  4 and 8, yellow on 7) and digit styles. Not looked at message by message;
-  table 6 lacks its appended lines (above);
+  4 and 8, yellow on 7) and digit styles. Every message looked at, a picture
+  each, over two hours of `--autoplay` per table; tables 5 and 6's further
+  lines found (above);
 - **tables 9-13**: messages in their colours, a dot each (table 10's "T-REX
-  BONUS NOW" green over its value in red), the board as chosen. The board's
-  other players' scores (several players) not seen yet;
+  BONUS NOW" green over its value in red), the board as chosen. Two, three
+  and four players' boards: the others' scores under the score, two to a
+  row with four;
+- **two hours of `--autoplay` on every table with `EPIC_DMD_CHECK`**: every
+  message's dots in the game's list where predicted, but GAME OVER's, which
+  the game starts all at one point and flies into place;
 - the real DMD: `dmd/build/epicpinball-dmd` fed by the game on table 1, with
   no display attached: libdmdutil was given the frames the game composed,
   each one (its own RGB888 dump, `EPICPINBALL_DMD_DUMP=DIR`); then on the

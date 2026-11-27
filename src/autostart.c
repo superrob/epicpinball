@@ -532,7 +532,10 @@ void autostart_exec(const char *name, uint8_t *tail)
     int same = strlen(b) == strlen(expect);
     for (size_t i = 0; same && b[i]; i++) same = toupper((unsigned char)b[i]) == expect[i];
     if (!same) stop("PINBALL ran another program than that table");
-    if (tail[0] >= 2 && tail[1] == ' ' && tail[2] >= '1' && tail[2] <= '4') tail[2] = '1';   /* one player */
+    if (tail[0] >= 2 && tail[1] == ' ' && tail[2] >= '1' && tail[2] <= '4') {
+        const char *p = getenv("EPIC_TABLE_PLAYERS");       /* testing: several players' boards */
+        tail[2] = p && *p >= '1' && *p <= '4' ? *p : '1';   /* one player */
+    }
     if (held) let_go();
     on_screen = 0;                               /* drawn again after the table */
     to(TABLE);

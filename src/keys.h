@@ -15,6 +15,7 @@
 int key_by_name(const char *s);
 /* A key's name: "LSHIFT", or "0x54" when it has none */
 const char *key_name(int sc);
+const char *key_name_at(int i);      /* the i-th name keys know, NULL past the last */
 
 /* From SDL's scancodes (USB HID usage ids, as SDL2 and SDL3 number them, and
  * VPinball 10.8.1 writes them); 0 when the game has no such key */

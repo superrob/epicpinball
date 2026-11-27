@@ -36,9 +36,10 @@ def message_fns(f):
            if re.search(r'cmp cx, 0x1E\n', t) and 'mov cx, 0x140\n' in t and re.search(r'sub ah, 0x3\n', t)]
     if len(msg) != 1:
         raise fm.Missing(f'message function: found {len(msg)}, not one')
+    # (tables 5 and 6 leave the list's end where it is: the next line continues it)
     app = sorted(n for n, (t, _) in f.items() if re.search(
         r'mov ax, ds\nmov es, ax\npush ds\nmov ax, 0x[0-9A-F]+\nmov ds, ax\n'
-        r'mov si, word ds:\[0x([0-9A-F]+)\]\nmov word ds:\[0x\1\], 0x0\n', t))
+        r'mov si, word ds:\[0x([0-9A-F]+)\]\n(?:mov word ds:\[0x\1\], 0x0\n)?pop ds\ncmp si, 0x0\n', t))
     return msg[0], app
 
 

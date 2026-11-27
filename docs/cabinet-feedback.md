@@ -937,6 +937,8 @@ device = Pinscape Pico      ; the name or GUID from --joysticks
 left_flipper = 0            ; button numbers from --joysticks, | between
 right_flipper = 1
 launch = 2
+F7 = 9                      ; any other key, by its name: the whole table
+P = 10
 ```
 
 The actions are `left_flipper`, `right_flipper`, `launch`, `nudge_left`,
@@ -945,6 +947,10 @@ The actions are `left_flipper`, `right_flipper`, `launch`, `nudge_left`,
 `KP_ENTER` (`src/keys.c` lists them). A listed key sends its action's key
 instead of its own; every other key is passed on as it is. A key and a
 button held on one action press it once and let go when both are released.
+In `[buttons]` a key's name instead of an action's makes a button that key,
+up to 16 of them: one of the window's own (F5, F6 in a cabinet, F7, F9-F12)
+does what it does on the keyboard, any other goes to the game. A name that
+is an action's (`UP`, `LEFT` ...) is the action.
 Buttons are read only while the window is in front, on Linux and Windows.
 
 ## The maps
