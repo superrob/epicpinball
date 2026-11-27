@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 11
+table 1's power-up hole and nothing on any other table. **Tables 1 to 12
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -389,6 +389,29 @@ Four hours of `--autoplay` (172 games) fired every one of them but
 | `t11LeftTarget`, `t11CentreTarget`, `t11RightTarget` | the targets that light the lock, the comet and the asteroid |
 | `Jackpot`, `SuperJackpot` | JACKPOT  JACKPOT, SUPER JACKPOT! 50MIL |
 | `Award` | 10 MILLION, PLANET ADVANCED, MULTIPLIER ADVANCE, 2 MILLION AND ADVANCE, 1 MILLION! |
+
+Four hours of `--autoplay` (163 games) fired every one of them but the
+jackpots.
+
+#### Table 12 (Toy Factory)
+
+| Event | Is |
+|---|---|
+| `t12JunkHeap` | INTO THE JUNK HEAP, left |
+| `t12LockHole` | the lock, centre: BALL LOCKED is `t12BallLock` |
+| `t12Superball` | the hole on the right: SUPERBALL |
+| `t12Joystick` | the joystick, centre: the extra ball |
+| `t12SkateboardRamp` | SKATEBOARD RAMP |
+| `t12TopLane1` … `t12TopLane4` | the top lanes, left to right |
+| `t12ExpressLeft`, `t12ExpressRight` | the toy express loop's ends |
+| `t12ToyExpress` | TOY EXPRESS-2M: the loop made |
+| `t12ToyChest` | the toy chest's targets, left |
+| `t12DisplayCase` | HIT THE DISPLAY CASE!, left |
+| `t12PaintShop` | the paint shop |
+| `t12LeftOrbit` | the orbit top left |
+| `t12LeftOutlane`, `t12RightOutlane` | the outlanes |
+| `Jackpot`, `SuperJackpot` | JACKPOT  JACKPOT, SUPER JACKPOT! 50MIL |
+| `Award` | SKATEBOARD MILLIONS, MULTIPLIER ADVANCE, SUPERBALL |
 
 Four hours of `--autoplay` (163 games) fired every one of them but the
 jackpots.

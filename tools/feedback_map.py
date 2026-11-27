@@ -85,6 +85,36 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep12': dict(                                      # Toy Factory
+        zones=[
+            ('hole', 1, 'JunkHeap', 0xBF, 0, 0, 319, 399),            # left: INTO THE JUNK HEAP
+            ('hole', 1, 'JunkHeap', 0xC7, 0, 0, 319, 399),            # (its other way in, the same timer)
+            ('hole', 2, 'LockHole', 0xC4, 0, 0, 319, 399),            # centre: BALL LOCKED
+            ('hole', 3, 'Superball', 0xC5, 0, 0, 319, 399),           # right
+            ('hole', 4, 'Joystick', 0xC6, 0, 0, 319, 399),            # centre: the extra ball
+            ('rollover', 1, 'TopLane1', 0xC1, 0, 0, 125, 399),        # the top lanes, left to right
+            ('rollover', 2, 'TopLane2', 0xC1, 126, 0, 151, 399),
+            ('rollover', 3, 'TopLane3', 0xC1, 152, 0, 176, 399),
+            ('rollover', 4, 'TopLane4', 0xC1, 177, 0, 319, 399),
+            ('switch', 1, 'ExpressLeft', 0xB6, 0, 0, 319, 399),       # the toy express loop's ends
+            ('switch', 2, 'ExpressRight', 0xB5, 0, 0, 319, 399),
+            ('switch', 3, 'ToyChest', 0xBB, 0, 0, 319, 399),          # the toy chest's targets, left
+            ('switch', 3, 'ToyChest', 0xBC, 0, 0, 319, 399),
+            ('switch', 3, 'ToyChest', 0xBD, 0, 0, 319, 399),
+            ('switch', 3, 'ToyChest', 0xBE, 0, 0, 319, 399),
+            ('switch', 4, 'DisplayCase', 0xC0, 0, 0, 319, 399),       # HIT THE DISPLAY CASE!
+            ('switch', 5, 'PaintShop', 0xC3, 0, 0, 319, 399),
+            ('switch', 6, 'LeftOrbit', 0xC8, 0, 0, 319, 399),
+            ('switch', 7, 'LeftOutlane', 0xCC, 0, 0, 159, 399),
+            ('switch', 8, 'RightOutlane', 0xCC, 160, 0, 319, 399),
+        ],
+        named=[('ramp', 1, 'SkateboardRamp', 'C'), ('switch', 9, 'ToyExpress', 'C'), ('switch', 10, 'BallLock', 'C')],
+        messages=[
+            ('jackpot', 'JACKPOT  JACKPOT'), ('super_jackpot', 'SUPER JACKPOT! 50MIL'),
+            ('ramp1', 'SKATEBOARD RAMP'), ('switch9', 'TOY EXPRESS-2M'), ('switch10', 'BALL LOCKED'),
+            ('award', 'SKATEBOARD MILLIONS'), ('award', 'MULTIPLIER ADVANCE'), ('award', 'SUPERBALL'),
+        ],
+    ),
     'ep11': dict(                                      # Space Journey
         zones=[
             ('hole', 1, 'LockHole', 0xC4, 0, 0, 319, 399),            # centre right: BALL LOCKED
