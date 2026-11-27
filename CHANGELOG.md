@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 10's own feedback** (Pangaea): the cavern and its lock, its four
+  other holes, the side targets, the orbits, the bullseye, the outlanes, the
+  volcano loop, the eggs, the skill shot, the jackpot and its awards
+  (`$t10Cavern` ...). Tested by four hours of `--autoplay`.
 - **Table 9's own feedback** (Cyborgirl): the Tense Deck and CPU Hog holes,
   the ICE lanes, its lanes, targets and inlanes, the ice breaker, the
   implants, kernel panic and its awards (`$t9CpuHog` ...). Tested by four

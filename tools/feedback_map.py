@@ -85,6 +85,33 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep10': dict(                                      # Pangaea
+        zones=[
+            ('hole', 1, 'Cavern', 0xC7, 0, 0, 319, 399),              # top right: the lock
+            ('hole', 2, 'Stegosaurus', 0xCC, 0, 0, 139, 399),         # left
+            ('hole', 3, 'Allosaurus', 0xCC, 140, 0, 319, 399),        # right
+            ('hole', 4, 'LeftSaucer', 0xCD, 0, 0, 139, 399),          # top left
+            ('hole', 5, 'JackpotHole', 0xCD, 140, 0, 319, 399),       # centre
+            ('switch', 1, 'LeftTargets', 0xCB, 0, 0, 144, 399),       # the columns of lights down each side
+            ('switch', 2, 'RightTargets', 0xCB, 145, 0, 319, 399),
+            ('switch', 3, 'LeftOrbit', 0xCE, 0, 0, 139, 399),
+            ('switch', 4, 'RightOrbit', 0xCE, 140, 0, 319, 399),
+            ('switch', 5, 'Bullseye', 0xCF, 0, 0, 319, 219),          # right
+            ('switch', 6, 'LeftOutlane', 0xCF, 0, 220, 159, 399),
+            ('switch', 7, 'RightOutlane', 0xCF, 160, 220, 319, 399),
+            ('switch', 8, 'LeftLoop', 0xD0, 0, 0, 144, 399),          # the volcano loop's ends
+            ('switch', 9, 'RightLoop', 0xD0, 145, 0, 319, 399),
+        ],
+        named=[('switch', 10, 'VolcanoLoop', 'C'), ('switch', 11, 'BallLock', 'C'), ('switch', 12, 'Egg', 'C')],
+        messages=[
+            ('jackpot', 'JACKPOT  JACKPOT'), ('skill_shot', 'SKILL SHOT 2M'), ('switch10', 'VOLCANO LOOP 2M'),
+            ('switch11', 'BALL LOCKED'), ('switch12', 'PTERODACTYL EGG'), ('switch12', 'T-REX EGG - 700K'),
+            ('award', '  MILLION CAVERN'), ('award', 'STEGOSAURUS 1M'), ('award', 'ALLOSAURUS 2M'),
+            ('award', 'EARTHQUAKE 20M'), ('award', 'T-REX ATTACK 15M'), ('award', 'EGG NEST - 8M'),
+            ('award', 'VOLCANO ERUPTION 12M'), ('award', 'BULLSEYE MILLIONS'), ('award', 'MULTIPLIER ADVANCE'),
+            ('award', 'COLLECT T-REX BONUS'),
+        ],
+    ),
     'ep9': dict(                                       # Cyborgirl
         zones=[
             ('hole', 1, 'TenseDeck', 0xCB, 0, 0, 139, 399),           # bottom left

@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 9
+table 1's power-up hole and nothing on any other table. **Tables 1 to 10
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -352,6 +352,27 @@ reach.
 
 Four hours of `--autoplay` (129 games) fired every one of them but
 `t9IceBreaker` and `t9KernelPanic`.
+
+#### Table 10 (Pangaea)
+
+| Event | Is |
+|---|---|
+| `t10Cavern` | the cavern, top right: the ball lock |
+| `t10Stegosaurus`, `t10Allosaurus` | the holes left and right |
+| `t10LeftSaucer`, `t10JackpotHole` | the holes top left and centre |
+| `t10LeftTargets`, `t10RightTargets` | the columns of lights down each side |
+| `t10LeftOrbit`, `t10RightOrbit` | the orbits |
+| `t10Bullseye` | the bullseye, right |
+| `t10LeftOutlane`, `t10RightOutlane` | the outlanes |
+| `t10LeftLoop`, `t10RightLoop` | the volcano loop's ends |
+| `t10VolcanoLoop` | VOLCANO LOOP 2M |
+| `t10BallLock` | BALL LOCKED |
+| `t10Egg` | PTERODACTYL EGG, T-REX EGG |
+| `SkillShot`, `Jackpot` | SKILL SHOT 2M, JACKPOT  JACKPOT |
+| `Award` | MILLION CAVERN, STEGOSAURUS, ALLOSAURUS, EARTHQUAKE, T-REX ATTACK, EGG NEST, VOLCANO ERUPTION, BULLSEYE MILLIONS, MULTIPLIER ADVANCE, COLLECT T-REX BONUS |
+
+Four hours of `--autoplay` (172 games) fired every one of them but
+`SkillShot` and `Jackpot`.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.
