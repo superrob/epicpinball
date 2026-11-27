@@ -11,8 +11,10 @@
 // builds, %APPDATA%\VPinballX\ itself). On Windows, with neither the game's own
 // files nor VPX's, DirectOutput's C:\DirectOutput\Config is used: its ini files
 // are in it, not in a directoutputconfig/ of it, so it is read the way the
-// game's own are, as the "table file"'s folder. libdof reads no GlobalConfig
-// from there (only from <base>/directoutputconfig/), so it finds the boards
+// game's own are, as the "table file"'s folder. libdof reads a GlobalConfig
+// only from <base>/directoutputconfig/, so DirectOutput's is handed to it as a
+// copy there (global_for): its cabinet.xml has the boards libdof does not find
+// itself, such as LED strip controllers. With none, libdof finds the boards
 // itself, as it does with no GlobalConfig at all.
 #pragma once
 #include <algorithm>
@@ -128,10 +130,34 @@ inline fs::path vpx_preferences()
 inline constexpr const char *kDirectOutput = "C:\\DirectOutput\\Config";
 #endif
 
+// A GlobalConfig (its text, from folder dir) as libdof is to read it from a
+// folder of the helper's: {GlobalConfigDirectory} still dir, and the shapes
+// file named, as libdof would otherwise look for it beside the made rows.
+inline std::string global_for(std::string xml, const std::string &dir, const std::string &shapes)
+{
+    auto every = [&xml](const std::string &from, const std::string &to) {
+        for (size_t at = 0; (at = xml.find(from, at)) != std::string::npos; at += to.size()) xml.replace(at, from.size(), to);
+    };
+    every("{GlobalConfigDirectory}", dir);
+    every("{GlobalConfigDir}", dir);
+    // an empty one would be read before the one added
+    for (const char *empty : { "<ShapeDefinitionFilePattern />", "<ShapeDefinitionFilePattern/>",
+                               "<ShapeDefinitionFilePattern></ShapeDefinitionFilePattern>" })
+        every(empty, "");
+    const size_t end = xml.find("</GlobalConfig>");
+    if (!shapes.empty() && end != std::string::npos && xml.find("<ShapeDefinitionFilePattern>") == std::string::npos) {
+        std::string s;
+        for (char c : shapes) s += c == '&' ? "&amp;" : c == '<' ? "&lt;" : c == '>' ? "&gt;" : std::string(1, c);
+        xml.insert(end, "  <ShapeDefinitionFilePattern>" + s + "</ShapeDefinitionFilePattern>\n");
+    }
+    return xml;
+}
+
 struct Files {
     fs::path base;                  // for libdof: directoutputconfig/ is in it
     fs::path rows;                  // where the table rows are looked for
     fs::path table;                 // the "table file", when the game's own rows win; or empty
+    fs::path global;                // a GlobalConfig to hand libdof as a copy (DirectOutput's); or empty
     std::vector<int> numbers;       // of the ini files there
     std::vector<std::string> said;  // how it came to that
 };
@@ -159,8 +185,14 @@ inline Files find(const fs::path &save, const std::string &rom)
         r.rows = kDirectOutput;
         r.numbers = ini_numbers(r.rows);
         r.table = r.rows / rom;
-        r.said.push_back("DOF files: " + r.rows.string() + " (DirectOutput's; its GlobalConfig is not read,"
-                         " libdof finds the boards itself)");
+        std::error_code e;
+        if (fs::is_regular_file(r.rows / "GlobalConfig_B2SServer.xml", e)) {
+            r.global = r.rows / "GlobalConfig_B2SServer.xml";
+            r.said.push_back("DOF files: " + r.rows.string() + " (DirectOutput's, with its GlobalConfig_B2SServer.xml)");
+        } else {
+            r.said.push_back("DOF files: " + r.rows.string() + " (DirectOutput's; no GlobalConfig_B2SServer.xml,"
+                             " so libdof finds the boards itself)");
+        }
         return r;
     }
 #endif

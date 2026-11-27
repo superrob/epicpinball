@@ -104,9 +104,14 @@ On Windows nothing is needed: the Pico is a HID device any user may open.
    plugin does not need to be switched on.
 2. **Otherwise** `saves/directoutputconfig/`. On Windows, if that has no ini
    files either, **DirectOutput's** `C:\DirectOutput\Config\`: its ini files
-   are read from there, but not its GlobalConfig (libdof reads one only from
-   a `directoutputconfig` folder), so libdof finds the boards itself, as it
-   does when there is no GlobalConfig.
+   are read from there, and its `GlobalConfig_B2SServer.xml` with the
+   `Cabinet.xml` it names, so LED strip controllers and other boards libdof
+   does not find itself work. libdof reads a GlobalConfig only from a
+   `directoutputconfig` folder, so the helper hands it a copy in
+   `saves/dof/directoutput/`, made at every start, with
+   `{GlobalConfigDirectory}` still meaning DirectOutput's folder and its
+   `DirectOutputShapes.xml` named. Without that GlobalConfig, libdof finds the
+   boards itself, as it does when there is none.
 3. **The game's own rows:** `directoutputconfig*.ini` files in
    `saves/directoutputconfig/` take the place of VPinball's ini files, for
    this game only. Its `Cabinet.xml` and `GlobalConfig_B2SServer.xml` still
@@ -1115,8 +1120,14 @@ Without hardware, in a sandbox with no devices:
   `--test t1Lamp7` on its output and as `$t1Lamp7 Orange` on an RGB column,
   and from the game on table 1 lamps 1-15 on 15 outputs: a blinking lamp at
   the game's rate (0.29 s on, 0.29 s off), the lamps already lit the moment
-  the helper was ready, and every state of the outputs one the log had. Not
-  yet on a real cabinet;
+  the helper was ready, and every state of the outputs one the log had. On
+  a Windows cabinet's Pinscape Pico, from the game on table 1: its lamps on
+  the Start, Exit, door, Magnasave and flipper button lights, each light
+  following its lamp, all 16 at once on one lamp;
+- on a Windows cabinet with DirectOutput's folder: its GlobalConfig's
+  `Cabinet.xml` read, the WemosD1 LED strip controller in it connected on its
+  COM port (in about 1.2 s, which the helper now waits for), and table 1's
+  events on a row made from its header blinking the Back MX;
 - events by name, through libdof's master and the helper on ArtNet over
   loopback: `--test` with an event of every table, a table 1 feature
   (`t1PowerUpHole`, any case), the bank's `t1DropTargetsDown` and
@@ -1127,4 +1138,5 @@ Without hardware, in a sandbox with no devices:
 
 Not tested: tables 2 to 13 on a cabinet, other controllers and other
 cabinets' Config Tool headers, Flatpak and portable VPX, play on a
-cabinet's Windows (the events reaching its outputs), other releases of the game.
+cabinet's Windows with its coils (only lights were driven there), other
+releases of the game.

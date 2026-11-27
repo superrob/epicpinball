@@ -258,6 +258,13 @@ All notable changes to this project are documented here. The format follows
   and the settings tool's keys stay (it was written anew each time).
 
 ### Fixed
+- `--dof` on Windows with DirectOutput's folder did not read its
+  `GlobalConfig_B2SServer.xml`, so not its `Cabinet.xml` either, and LED strip
+  controllers (a WemosD1 here) stayed dark. The helper hands libdof a copy
+  where it reads one (`saves/dof/directoutput/`), and says it is ready, or
+  sends `--test`'s event, only once every board is connected (up to 10 s): a
+  serial LED controller takes a second or more, and an event before then was
+  lost on it.
 - **Levels sent again when the DOF helper is ready:** a flipper held, a ball
   in the lane or a lamp lit while the helper was starting reached its output
   only when it next changed.

@@ -67,6 +67,8 @@
 #include <cstdarg>
 #include <cstring>
 #include <iterator>
+#include <mutex>
+#include <set>
 #include <sstream>
 #include <thread>
 
@@ -87,6 +89,11 @@ std::string g_save;
 bool g_all_off;
 volatile sig_atomic_t g_quit;
 std::atomic<bool> g_pico_found{false};
+// The boards libdof's updater threads started on, those they got through to,
+// and how many gave up: a serial LED controller takes a second or more
+std::mutex g_boards_lock;
+std::set<std::string> g_started, g_connected;
+int g_gave_up;
 std::string g_bumpers = "LCR";        // the table's bumpers' sides, from the left
 autorow::Table g_table;               // its number, its own features' names and sides
 std::atomic<int> g_unread{0};          // settings libdof could not read, and skips
@@ -240,6 +247,17 @@ void dof_log(DOF_LogLevel level, const char *fmt, va_list ap)
     char line[1024];
     std::vsnprintf(line, sizeof line, fmt, ap);
     if (std::strstr(line, "Pinscape Pico discovery found unit #")) g_pico_found = true;
+    static const char kStarted[] = "Updater thread started for ", kConnected[] = "Updater thread connected to ";
+    if (const char *p = std::strstr(line, kStarted)) {
+        std::lock_guard<std::mutex> l(g_boards_lock);
+        g_started.insert(p + sizeof kStarted - 1);
+    } else if (const char *p2 = std::strstr(line, kConnected)) {
+        std::lock_guard<std::mutex> l(g_boards_lock);
+        g_connected.insert(p2 + sizeof kConnected - 1);
+    } else if (std::strstr(line, "Could not connect to controller")) {
+        std::lock_guard<std::mutex> l(g_boards_lock);
+        g_gave_up++;
+    }
     static const char *const trouble[] = {
         "not all bytes sent", "could not connect to device", "Could not send update", "Failed to send ArtNet",
     };
@@ -448,6 +466,24 @@ int lines(std::string &in, Sender &send)
     return -1;
 }
 
+// libdof's controllers connect on threads of their own, and an event sent
+// before a board is through is lost on it: a serial LED controller takes a
+// second or more. So "ready" (and --test's event) wait for them, 10 s at most.
+void wait_for_boards()
+{
+    std::this_thread::sleep_for(300ms);
+    auto waiting = [] {
+        std::lock_guard<std::mutex> l(g_boards_lock);
+        std::string w;
+        if (g_connected.size() + g_gave_up < g_started.size())
+            for (auto &b : g_started)
+                if (!g_connected.count(b)) w += (w.empty() ? "" : ", ") + b;
+        return w;
+    };
+    for (int i = 0; i < 100 && !waiting().empty() && !g_quit; i++) std::this_thread::sleep_for(100ms);
+    if (const std::string w = waiting(); !w.empty()) say("not connected after 10 s: " + w);
+}
+
 #ifdef _WIN32
 // stdin, read by a thread of its own: a ReadFile waits for the game's next
 // line, and the main thread must still see g_quit. It lives until the process
@@ -595,7 +631,23 @@ int run(int argc, char **argv)
     auto *cfg = DOF::Config::GetInstance();
     cfg->SetLogCallback(dof_log);
     cfg->SetLogLevel(DOF_LogLevel_ERROR);       // info and warnings come below this
-    cfg->SetBasePath((at.base.string() + "/").c_str());
+    // DirectOutput's GlobalConfig, and with it its cabinet.xml (LED strip
+    // controllers and other boards libdof does not find itself), as a copy
+    // where libdof reads one
+    fs::path base = at.base;
+    if (!at.global.empty()) {
+        std::ifstream in(at.global, std::ios::binary);
+        std::stringstream text;
+        text << in.rdbuf();
+        const fs::path shapes = at.rows / "DirectOutputShapes.xml", copy = work / "directoutput";
+        fs::create_directories(copy / locate::kDir, e);
+        std::ofstream o(copy / locate::kDir / "GlobalConfig_B2SServer.xml", std::ios::binary);
+        o << locate::global_for(text.str(), at.global.parent_path().string(),
+                                fs::is_regular_file(shapes, e) ? shapes.string() : "");
+        if (in && o.flush()) base = copy;
+        else say("cannot hand libdof " + at.global.string() + ": it finds the boards itself");
+    }
+    cfg->SetBasePath((base.string() + "/").c_str());
 
     arm(kStartS);
     auto *dof = new DOF::DOF();                 // this already looks for Pinscapes over HID
@@ -631,6 +683,7 @@ int run(int argc, char **argv)
     for (int s : { SIGTERM, SIGINT, SIGHUP }) sigaction(s, &sa, nullptr);
 #endif
 
+    wait_for_boards();
     Sender send(dof, g_table);
     int code = DONE;
     if (test.empty()) {
@@ -640,7 +693,6 @@ int run(int argc, char **argv)
         code = serve(send, out, parent);
 #endif
     } else {
-        std::this_thread::sleep_for(300ms);     // libdof's controllers connect on threads of their own
         const int ev = test_event;
         say(rom + ": $" + g_table.dof(ev) + ", bumpers " + g_bumpers);
         send.event(ev, true);
