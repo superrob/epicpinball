@@ -531,7 +531,7 @@ inline bool row_has(int ev, const std::string &bumpers, const Table &table)
     if (ev == kKickback) return !table.kickback.empty();
     if (ev == kTargetsDown) return !table.target.empty();
     if ((ev >= kTarget1 && ev <= kTarget3) || (ev >= kRollover1 && ev <= kRollover6) || ev == kBallHeld
-        || (ev >= kSwitch1 && ev <= kSwitch16)) return false;
+        || (ev >= kSwitch1 && ev <= kSwitch24)) return false;
     if (ev >= kHole1) return !table.empty();        // ball held, lanes, skill shot, jackpots, awards
     return true;
 }

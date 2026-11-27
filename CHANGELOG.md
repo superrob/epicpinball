@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 6's target banks:** each bank all down, as it resets, is an event
+  of its own (`$t6SwordTargetsDown`, `$t6BlueTargetsDown`,
+  `$t6LeftTargetsDown`), watched by the game's flags for it (`bankset` in the
+  map). A table may have 24 switch features now.
 - **SSF on every table's own board:** each table's holes (and table 1's,
   8's, 10's and 12's rubber posts, table 11's targets) now go to the exciters
   too, not only the sounds every table shares. Found by their samples: table
@@ -101,7 +105,7 @@ All notable changes to this project are documented here. The format follows
   lane, its locks, the top lanes, the skill shot, the jackpot and its awards
   (`$t2Cave`, `$t2SkyRamp` ...). Tested by four hours of `--autoplay`.
 - **For each table's own feedback:** a feature can be any switch the table
-  has (`switch1` to `switch16`: lanes, loops, locks), or have no switch at
+  has (`switch1` to `switch24`: lanes, loops, locks), or have no switch at
   all and be fired by the table's own scoreboard text ("BALL 1 LOCKED"); a
   ramp a table does not count fires on its switch. `--switches epN` in
   `tools/feedback_map.py` prints what each switch colour's code does, and for

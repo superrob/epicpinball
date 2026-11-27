@@ -319,7 +319,9 @@ FEATURES = {
             ('switch', 13, 'LeftInlane', 0xC9, 0, 0, 159, 399),
             ('switch', 14, 'RightInlane', 0xC9, 160, 0, 319, 399),
         ],
-        named=[('switch', 15, 'AppleFalls', 'C')],
+        named=[('switch', 15, 'AppleFalls', 'C'), ('switch', 16, 'SwordTargetsDown', 'R'),
+               ('switch', 17, 'BlueTargetsDown', 'R'), ('switch', 18, 'LeftTargetsDown', 'L')],
+        banks=[(0xF3, 'switch16'), (0xF6, 'switch17'), (0xFA, 'switch18')],    # all down, they reset
         messages=[
             ('jackpot', 'JACKPOT!!!'), ('switch15', 'AN APPLE FALLS'),
             ('award', 'CONSECUTIVE TARGETS- 5MIL'), ('award', 'FROG MILLIONS'), ('award', 'ANT MILLIONS'),
@@ -473,7 +475,7 @@ FEATURES = {
         ],
     ),
 }
-COUNTS = dict(hole=5, rollover=6, ramp=3, kickback=1, target=3, switch=16)   # the events made for them (src/feedback.h)
+COUNTS = dict(hole=5, rollover=6, ramp=3, kickback=1, target=3, switch=24)   # the events made for them (src/feedback.h)
 NAME = re.compile(r'[A-Za-z][A-Za-z0-9]{0,39}\Z')                 # a feature's, in a DOF row after t1
 
 
@@ -725,7 +727,8 @@ def features(img, f, v, art, data):
     collision map, and what its switch handler keeps for them."""
     rules = FEATURES[img]
     sw = f[v['switch_fn']][0]
-    out = dict(zones=[], named=[], timers=[], targets=[], bank=None, lanes=None, ramps=None, msg_fn=None, msgs=[])
+    out = dict(zones=[], named=[], timers=[], targets=[], bank=None, banksets=[], lanes=None, ramps=None, msg_fn=None,
+               msgs=[])
 
     # the handler's gate: on the ramp layer only some colours are handled, and
     # tilted only some others
@@ -805,6 +808,17 @@ def features(img, f, v, art, data):
         for n, (x, y, a) in enumerate(sorted(found), 1):
             out['targets'].append((a, n, side(x), rules['targets'][n - 1]))
         out['bank'] = rules['bank']
+
+    # banks of drop targets by their flags: the first target's colour, and the
+    # feature all of them down fires (as it resets)
+    for colour, kind in rules.get('banks', []):
+        m, _ = find(f, f'bank at colour {colour:02X}',
+                    rf'sub al, 0x{colour:X}\nmov ah, 0x0\nmov di, ax\ncmp byte ds:\[di\+{N}\], 0x1\nje {A}\n'
+                    rf'(?:.*\n){{0,12}}?cmp di, {N}\n', v['switch_fn'])
+        have = {f'{z[0]}{z[1]}' for z in out['zones']} | {f'{z[0]}{z[1]}' for z in out['named']}
+        if kind not in have:
+            raise Missing(f'bank at colour {colour:02X} fires {kind}, which is no feature of the table')
+        out['banksets'].append((num(m.group(1)), num(m.group(2)), re.sub(r'^([a-z]+)(\d+)$', r'\1_\2', kind)))
 
     if rules.get('lanes'):
         m, _ = find(f, 'lane lights', rf'mov byte ds:\[bx\+{N}\], 0x1\n((?:cmp byte ds:\[{A}\], 0x2\nje {A}\n)+)',
@@ -1000,6 +1014,7 @@ def text_of(img, r):
             out.append(f'bank {own["bank"]}')
         if own['lanes']:
             out.append('lanes %X %d' % own['lanes'])
+        out += [f'bankset {a:X} {n} {e}' for a, n, e in own['banksets']]
         if own['ramps'] is not None:
             out.append(f'ramps {own["ramps"]:X}')
         out += [f'msg {a:X} {k}' for a, k in own['msgs']]

@@ -347,7 +347,7 @@ static void autoplay(void)
     static uint8_t sc[5] = { 0x2A, 0x36, 0x39, 0x1C, 0x2C };
     static double still;             /* since when no ball has moved: then a nudge, Z and / in turn */
     static int last_xy, nudges;
-    static int menu;                 /* initials AAA, then Enter: PLAY GAME is first on the table's screen */
+    static int menu, gone;           /* initials ABC, then Enter: PLAY GAME is first on the table's screen */
     static const double hold[5] = { AUTO_FLIP_MS, AUTO_FLIP_MS, AUTO_LAUNCH_MS, 100.0, 100.0 };
     if (!g_opt.autoplay || driven()) return;
     const double t = pit_now() * 1000.0 / PIT_HZ;
@@ -355,12 +355,14 @@ static void autoplay(void)
     const WatchMap *m = watch_table(&ds, &cs);
     int want[5] = { 0, 0, 0, 0, 0 };
     if (!m) {                                        /* PINBALL's screen: initials, then PLAY GAME */
+        if (!gone) { gone = 1; again = t + 3000.0; }    /* once it has come */
         if (t >= again && until[3] == 0) {
-            sc[3] = menu++ % 4 < 3 ? 0x1E : 0x1C;
+            static const uint8_t keys[4] = { 0x1E, 0x30, 0x2E, 0x1C };    /* A B C Enter */
+            sc[3] = keys[menu++ % 4];
             want[3] = 1;
             again = t + 600.0;
         }
-    } else if (watch_game_over() == 1) {             /* over: the scores, until Space */
+    } else if ((menu = gone = 0), watch_game_over() == 1) {   /* over: the scores, until Space */
         if (t >= again) { want[2] = 1; again = t + 2500.0; }
     } else {
         again = t + 8000.0;

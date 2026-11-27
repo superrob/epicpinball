@@ -50,11 +50,13 @@
 - **`--table`**: Windows; a frontend's own start and exit keys.
 - **Nudging**: nudge buttons on a board that has them; tables 2-13 by
   hand on a cabinet; Windows.
-- **African Safari's overrun**: a ball reaching x = -1 overruns a sprite
-  buffer into the timer chain. Feedback stops for that table when it happens;
-  whether the DOS original does the same is not known.
-- **Saves**: high scores and `CONFIG.PIN` go to `saves\`; check that every
-  table's high-score entry round-trips.
+- **African Safari's overrun**: a left-edge collision can leave a ball at
+  x = -1 (the game clamps only below 1, unsigned), and its sprite is then drawn
+  over the table's saved timer vector: the next tick jumps to FFFF:0202, where
+  DOS has the interrupt table or the HMA, not code, so the original would run
+  garbage and crash or hang. The recomp has no code there, refuses the jump and
+  limps on; feedback stops for that table. Rare: 64 hours of `--autoplay` on
+  table 13 never met it. Fixing it would change the game (keep the ball at 0).
 
 ## Out of scope
 

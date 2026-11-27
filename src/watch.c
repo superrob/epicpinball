@@ -47,7 +47,7 @@ uint8_t g_watched[0x10000];
 #define HOLD_GAP_MS 150.0
 
 enum { W_NONE, W_KICK, W_PULL, W_PULL_HI, W_VY, W_ACTIVE, W_COUNT, W_EXTRA, W_METER, W_TILT, W_OVER,
-       W_TIMER, W_TARGET, W_LANES, W_RAMPS };
+       W_TIMER, W_TARGET, W_LANES, W_RAMPS, W_BANK };
 
 static int wanted;
 static WatchMap M;
@@ -208,6 +208,14 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         } else if (sscanf(line, "bank %40s", name) == 1 && !strncmp(line, "bank ", 5)) {
             if (*m->bank || !good_name(name)) { *why = "a bad bank"; return 0; }
             strcpy(m->bank, name);
+        } else if (sscanf(line, "bankset %x %u %15s", &a, &b, kind) == 3) {
+            int e = feedback_by_name(kind), k, n;
+            if (m->nbanksets == WATCH_BANKS || !a || a + b > 0xFFFF || b < 2 || b > 8 || !feature_of(e, &k, &n)) {
+                *why = "a bad bank of targets"; return 0;
+            }
+            m->bankset[m->nbanksets].at = (uint16_t)a;
+            m->bankset[m->nbanksets].n = (int)b;
+            m->bankset[m->nbanksets++].event = e;
         } else if (sscanf(line, "lanes %x %u", &a, &b) == 2) {
             if (!a || a > 0xFFF0 || b < 2 || b > 8) { *why = "bad lanes"; return 0; }
             m->lanes = (uint16_t)a; m->nlanes = (int)b;
@@ -316,11 +324,11 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         fits &= add(m, "bank=%s", m->bank);
     }
     if (!fits) { *why = "features too long"; return 0; }
-    for (int i = 0; i < m->nmsgs; i++) {               /* a text fires a feature the map has */
+    for (int i = 0; i < m->nmsgs + m->nbanksets; i++) {   /* a text, a bank, fires a feature the map has */
         int k, n, found = 0;
-        if (!feature_of(m->msg[i].event, &k, &n)) continue;
+        if (!feature_of(i < m->nmsgs ? m->msg[i].event : m->bankset[i - m->nmsgs].event, &k, &n)) continue;
         for (int j = 0; j < m->nzones && !found; j++) found = m->zone[j].kind == k && m->zone[j].n == n;
-        if (!found) { *why = "a message for a feature the map has not"; return 0; }
+        if (!found) { *why = "a message or bank for a feature the map has not"; return 0; }
     }
     for (int i = 0; i < nnames; i++)
         for (int j = i + 1; j < nnames; j++)
@@ -411,6 +419,8 @@ int watch_map_use(const WatchMap *m, uint16_t load_seg)
     for (int i = 0; i < M.ntimers; i++) watch(M.timer[i], W_TIMER);
     for (int i = 0; i < M.ntargets; i++) watch(M.target[i].at, W_TARGET);
     if (M.lanes) watch(M.lanes, W_LANES);
+    for (int i = 0; i < M.nbanksets; i++)
+        for (int j = 0; j < M.bankset[i].n; j++) watch((uint16_t)(M.bankset[i].at + j), W_BANK);
     if (M.ramps) watch(M.ramps, W_RAMPS);
     kicking = launched = release = started = known = idle = ready = multi = held = sw_on = 0;
     kick_t = sw_t = -1e18;
@@ -733,6 +743,15 @@ void watch_write_byte(uint32_t a, uint8_t v)
         for (int j = 0; j < M.ntargets; j++) all &= g_cpu.mem[DS + M.target[j].at] == 1;
         if (v == 1 && old != 1) emit((FbEvent)(FB_TARGET_1 + M.target[i].n - 1), 1, sw_x, sw_y, M.target[i].n, 0);
         else if (!v && all) emit(FB_TARGETS_DOWN, 1, sw_x, sw_y, 0, 0);       /* the bank resets */
+        break;
+    }
+    case W_BANK: {                   /* a bank all down, the first flag cleared: it resets */
+        for (int i = 0; i < M.nbanksets; i++) {
+            if (off < M.bankset[i].at || off >= M.bankset[i].at + M.bankset[i].n) continue;
+            int all = 1;
+            for (int j = 0; j < M.bankset[i].n; j++) all &= g_cpu.mem[DS + M.bankset[i].at + j] == 1;
+            if (!v && old == 1 && all) emit((FbEvent)M.bankset[i].event, 1, sw_x, sw_y, i, 0);
+        }
         break;
     }
     case W_LANES: {                  /* the first light put out with all of them lit */

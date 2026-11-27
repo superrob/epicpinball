@@ -163,6 +163,11 @@ score set to 1 (table 1 unless said):
 - the self-test (a whole game over to the second game in fake PINBALL
   memory, `hiscore.pin` written, the initials' rules); conformance 154/154.
 
+- **every table's high scores**, 1-13: twenty minutes of `--autoplay` from a
+  fresh save folder, then quit (Esc, Y): `hiscore.pin` had the table's own
+  five, new initials among them, and nothing changed in any other table's;
+  started again on it and quit, it was written back byte for byte.
+
 Not yet on a real cabinet's DMD, nor on Windows.
 
 On a real cabinet, with `--cabinet --dof --dmd-device --ssf` (before the

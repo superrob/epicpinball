@@ -164,6 +164,7 @@ so they have no `Jackpot`, `SkillShot` or `Award`.
 | a rollover | the ball rolls over it, every pass | instant |
 | a ramp | made, as the game counts it (or, on a table that counts none, its switch) | instant |
 | another switch, a lane, a loop, a lock | the ball rolls over it, or the scoreboard says it happened | instant |
+| a bank of targets (table 6) | all down, as it resets | instant |
 
 #### Table 1 (Super Android)
 
@@ -285,13 +286,16 @@ Four hours of `--autoplay` (153 games) fired every one of them.
 | `t6BlueTarget1` … `t6BlueTarget4` | the blue targets down the right, top first |
 | `t6LeftTarget1`, `t6LeftTarget2` | the targets on the left (the death blade hole) |
 | `t6LeftOutlane`, `t6RightOutlane`, `t6LeftInlane`, `t6RightInlane` | the lanes by the flippers |
+| `t6SwordTargetsDown`, `t6BlueTargetsDown`, `t6LeftTargetsDown` | each bank's targets all down: it resets |
 | `t6AppleFalls` | AN APPLE FALLS |
 | `Jackpot` | JACKPOT!!! |
 | `Award` | CONSECUTIVE TARGETS- 5MIL, FROG MILLIONS, ANT MILLIONS, BONUS WILL BE DOUBLED |
 
-Its targets are switches here, each hit: three banks of them would each need
-the game's flags watched. Four hours of `--autoplay` (169 games) fired every
-one of them but `Jackpot`.
+A target fires as its switch, each hit; its bank is watched by the game's
+flags for it (`bankset` in the map), which go down one by one and are cleared
+together. Four hours of `--autoplay` (160 games) fired every one of them but
+`Jackpot`: the blue bank reset 26 times, as many as AN APPLE FALLS, which the
+game says when it does.
 
 #### Table 7 (Deep Sea)
 

@@ -9,6 +9,7 @@
 #define WATCH_TIMERS 8
 #define WATCH_TARGETS 3
 #define WATCH_MSGS 128
+#define WATCH_BANKS 4
 
 /* A table's own features (FEATURES in tools/feedback_map.py), each with its
  * name: letters and digits, what a DOF row calls it after the table's number */
@@ -49,6 +50,10 @@ typedef struct {
     uint16_t timer[WATCH_TIMERS];                           /* holes' hold timers */
     WatchTarget target[WATCH_TARGETS];                      /* drop target flags */
     uint16_t lanes, ramps;                                  /* lane lights, ramp counter; 0: none */
+    /* banks of drop targets watched by their flags (table 6's three): all down,
+     * then reset, fires a feature of the table's */
+    int nbanksets;
+    struct { uint16_t at; int n, event; } bankset[WATCH_BANKS];
     uint16_t layer;                  /* 1 while the ball is on the ramps; 0: no gate known */
     int non_layer, ntilt_pass;
     uint8_t on_layer[8], tilt_pass[8];                      /* the colours handled there, and tilted */

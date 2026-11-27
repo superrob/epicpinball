@@ -404,6 +404,18 @@ static void test_feedback_map(void)
             snprintf(edited, sizeof edited, "%.*s%s%s", (int)(at - k_map), k_map, bad[i][1], at + strlen(bad[i][0]));
             assert(!watch_map_parse(edited, &m, &why));
         }
+        /* table 6: a bank of targets by its flags fires a feature the map has */
+        static char banks[sizeof k_map + 64];
+        const char *ln = strstr(k_map, "lanes 220 4\n");
+        snprintf(banks, sizeof banks, "%.*sbankset 240 3 switch_2\n%s", (int)(ln - k_map), k_map, ln);
+        assert(watch_map_parse(banks, &m, &why) && m.nbanksets == 1 && m.bankset[0].at == 0x240
+               && m.bankset[0].n == 3 && m.bankset[0].event == FB_SWITCH_1 + 1);
+        for (int bad = 0; bad < 3; bad++) {
+            static const char *const wrong[3] = { "bankset 240 3 switch_9\n", "bankset 240 1 switch_2\n",
+                                                  "bankset 240 3 jackpot\n" };
+            snprintf(banks, sizeof banks, "%.*s%s%s", (int)(ln - k_map), k_map, wrong[bad], ln);
+            assert(!watch_map_parse(banks, &m, &why));
+        }
         /* table 9: a second way to show a text */
         static char two[sizeof k_map + 32];
         const char *mf = strstr(k_map, "msg_fn ep1_msg\n");

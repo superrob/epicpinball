@@ -18,6 +18,7 @@ inline constexpr const char *kEvent[] = {
     "jackpot", "super_jackpot", "award",
     "switch_1", "switch_2", "switch_3", "switch_4", "switch_5", "switch_6", "switch_7", "switch_8",
     "switch_9", "switch_10", "switch_11", "switch_12", "switch_13", "switch_14", "switch_15", "switch_16",
+    "switch_17", "switch_18", "switch_19", "switch_20", "switch_21", "switch_22", "switch_23", "switch_24",
 };
 inline constexpr int kEvents = sizeof kEvent / sizeof *kEvent;
 enum : int {
@@ -28,10 +29,10 @@ enum : int {
     kTarget1, kTarget2, kTarget3, kTargetsDown,
     kRollover1, kRollover2, kRollover3, kRollover4, kRollover5, kRollover6,
     kLanesLit, kSkillShot, kRamp1, kRamp2, kRamp3, kJackpot, kSuperJackpot, kAward,
-    kSwitch1, kSwitch16 = kSwitch1 + 15,
+    kSwitch1, kSwitch24 = kSwitch1 + 23,
 };
-inline constexpr int kBumpers = 6, kHoles = 5, kTargets = 3, kRollovers = 6, kRamps = 3, kSwitches = 16;
-static_assert(sizeof kEvent / sizeof *kEvent == kSwitch16 + 1, "a name for every event");
+inline constexpr int kBumpers = 6, kHoles = 5, kTargets = 3, kRollovers = 6, kRamps = 3, kSwitches = 24;
+static_assert(sizeof kEvent / sizeof *kEvent == kSwitch24 + 1, "a name for every event");
 
 // What a DOF row calls them: $FlipperLeft, as a table without a ROM names its
 // events. The same on every table. A table's own features (an empty name
@@ -48,6 +49,7 @@ inline constexpr const char *kDofName[] = {
     "LanesLit", "SkillShot", "", "", "",
     "Jackpot", "SuperJackpot", "Award",
     "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "",
 };
 static_assert(sizeof kDofName / sizeof *kDofName == kEvents, "a DOF name for every event");
 

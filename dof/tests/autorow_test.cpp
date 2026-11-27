@@ -169,11 +169,11 @@ void features()
     // a table's other features: switch1 to switch16, numbered from 1, kept out of made rows
     const auto two = autorow::features(2, "switch1=BallLock:C switch2=RainbowLane:L hole1=TreasureHole:C");
     assert(two && two->dof(kSwitch1 + 1) == "t2RainbowLane" && two->dof(kSwitch1 + 2).empty());
-    assert(!autorow::features(2, "switch2=RainbowLane:L") && !autorow::features(2, "switch17=A:L")
+    assert(!autorow::features(2, "switch2=RainbowLane:L") && !autorow::features(2, "switch25=A:L")
            && !autorow::features(2, "switch01=A:L") && !autorow::features(2, "switch=A:L"));
     std::string sixteen;
-    for (int i = 1; i <= 16; i++) sixteen += "switch" + std::to_string(i) + "=S" + std::to_string(i) + ":C ";
-    assert(autorow::features(2, sixteen) && autorow::features(2, sixteen)->dof(kSwitch16) == "t2S16");
+    for (int i = 1; i <= 24; i++) sixteen += "switch" + std::to_string(i) + "=S" + std::to_string(i) + ":C ";
+    assert(autorow::features(2, sixteen) && autorow::features(2, sixteen)->dof(kSwitch24) == "t2S24");
     assert(!autorow::row_has(kSwitch1, "LCR", *two));
     assert(autorow::build({ "Beacon", "10 Bumper Middle Center" }, "LCR", *two).cells[1] == "$Bumper2/$t2TreasureHole");
     for (int e = 0; e < kEvents; e++) assert(is_feature(e) == !*kDofName[e]);
