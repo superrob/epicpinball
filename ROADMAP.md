@@ -37,9 +37,11 @@
   are untried.
 - **More cabinet feedback**: every table has its own events now, tried
   only by `--autoplay`: each on a real cabinet, and the jackpots, multiball
-  and later levels the autoplayer never reaches; the lamps on a real
-  cabinet, and names for them. Windows, and an entry in the DOF Config Tool's
-  database, which is the Config Tool's site to take.
+  and later levels the autoplayer never reaches; the lamps of tables 2-13 on
+  a real cabinet (table 1's follow on a Windows cabinet's button lights), and
+  names for them; on Windows, the coils (only lights were driven there); and
+  an entry in the DOF Config Tool's database, which is the Config Tool's site
+  to take.
 - **The DMD** (works on a real cabinet on table 1; every table's messages
   looked at, headless, docs/dmd.md): tables 2-13 on a real DMD; the
   jackpots, modes and later levels `--autoplay` does not reach; table 1's
