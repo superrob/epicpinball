@@ -17,9 +17,10 @@ All notable changes to this project are documented here. The format follows
   quality. PC Speaker plays the tables' effects on the speaker, without music,
   and No Sound is silent. The Gravis Ultrasound plays through a model of its
   GF1 (src/gus.c): 32 voices out of 1 MB of card memory, with their loops,
-  volume ramps and pan, the timers the driver keeps time by, DMA uploads and
-  the IRQs, at any port, IRQ and DMA SETUP offers (a second DMA controller,
-  channels 4-7, came with it). The Pro Audio Spectrum plays through a model
+  volume ramps and pan, the timers the driver keeps time by (its 320 us steps
+  make the music 0.8% fast, as on the card) and the IRQs, at any port, IRQ and
+  DMA SETUP offers. The driver pokes its samples into card memory; DMA uploads
+  and a second DMA controller (channels 4-7) are modelled but unused by it. The Pro Audio Spectrum plays through a model
   of its PCM (src/pas.c) -- 8-bit DMA at its own timer's rate, mono or
   stereo, at any of SETUP's four ports -- and the MVSOUND.SYS calls its driver
   makes for the card's DMA and IRQ.

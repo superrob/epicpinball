@@ -144,6 +144,7 @@ static struct { char name[13]; uint32_t start; long size; } fh_drv[MAXH];
  * driver there is: everything after lands where it does with GOG's Sound
  * Blaster, whatever card SETUP chose. The driver uses only what it asked for.
  * (PINBALL asks for its size / 16 + 2 paragraphs.) */
+#define SETUP_CHILD_SEG 0x4010         /* where SETUP's children load (dos_exec) */
 static long card_drv_size;            /* the card driver just opened, until the next allocation */
 static void join(char *out, size_t n, const char *dir, const char *name);
 
@@ -624,9 +625,19 @@ static void dos_exec(CPU *c)
      * a card that plays no music (PC speaker, none) there are no songs, and
      * DOS would put it lower. Up there it has the PSP and the top of memory
      * it always has. */
-    uint16_t want = images_lifted_at(base_name(name));
-    if (env && want > 0x10 && arena_alloc_at((uint16_t)(want - 0x10), &paras)) psp = (uint16_t)(want - 0x10);
-    else if (!env || !arena_alloc(paras, &psp)) { free(raw); fail(c, 8); return; }
+    uint16_t want = images_lifted_at(base_name(name)), dos_psp = 0;
+    /* SETUP's heap grows and shrinks with what was chosen before its
+     * Instructions run HELPME, so DOS's place for HELPME moves; its children
+     * go at 4000h, above anything SETUP takes, lifted there or not yet */
+    if (!want && g_opt.setup) want = SETUP_CHILD_SEG;
+    {   /* where DOS would put it: the first free run big enough, for the trace */
+        uint16_t probe;
+        if (env && arena_alloc(paras, &probe)) { dos_psp = probe; arena[arena_find(probe)] = arena[--narena]; arena_sort(); }
+    }
+    if (env && want > 0x10 && arena_alloc_at((uint16_t)(want - 0x10), &paras)) {
+        psp = (uint16_t)(want - 0x10);
+        if (psp != dos_psp) trace("[dos] %s goes where it was lifted, PSP %04X; DOS would have used %04X\n", name, psp, dos_psp);
+    } else if (!env || !arena_alloc(paras, &psp)) { free(raw); fail(c, 8); return; }
     arena[arena_find(env)].owner = psp; arena[arena_find(psp)].owner = psp;
 
     CPU saved = *c;

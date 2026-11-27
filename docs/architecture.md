@@ -51,7 +51,9 @@ the room of the largest card driver (`src/dos.c`): whatever card, the rest
 lands where it was lifted. A card that plays no music (PC speaker, none) has
 no songs below the table, and DOS would put the table lower: a program that
 was lifted to run higher goes there when that memory is free (`dos_exec`),
-with the PSP and top of memory it always has. And SETUP writes the card's settings (port, IRQ,
+with the PSP and top of memory it always has. Under `--setup`, SETUP's heap
+grows and shrinks with what was chosen, so its child (HELPME) loads at 4000h,
+above anything SETUP takes, and is lifted there. And SETUP writes the card's settings (port, IRQ,
 DMA, mixing rate) into the driver itself, 40h bytes at the offset its header
 gives at 30h: the check that a driver is the file that was lifted leaves
 those out (`src/images.c`, `tools/lift.py`).

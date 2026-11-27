@@ -3,10 +3,13 @@
  * driver (MDRV003R.MUS) uses it, written from Gravis's SDK documentation.
  *
  * The card plays samples out of its own memory (1 MB here), each of up to 32
- * voices with its own position, rate, volume and pan; the driver uploads the
- * module's samples by DMA, then starts and steers voices note by note, and
- * keeps time with the GF1's timers. So unlike the Sound Blaster, where the
- * driver mixes and the card only plays a stream, the mixing happens here.
+ * voices with its own position, rate, volume and pan; the driver pokes the
+ * module's samples into that memory a byte at a time (+107h), then starts and
+ * steers voices note by note, and keeps time with the GF1's timer 2 (62 steps
+ * of 320 us: 19.84 ms for a 20 ms tick, so the music runs 0.8% fast, as it
+ * would on the card). Unlike the Sound Blaster, where the driver mixes and the
+ * card only plays a stream, the mixing happens here. DMA uploads are modelled
+ * too, from the documentation, but this driver never makes one.
  *
  * Ports, from the base (220h-260h, SETUP's choice, in the driver's
  * settings): +0 mix control, +6 IRQ status, +8/+9 the AdLib-style timer
@@ -157,7 +160,11 @@ static void write_reg(void)
     case 0x0B: v->cur = addr_lo(v->cur, d); break;
     case 0x0C: v->pan = b & 15; break;
     case 0x0D: v->vctrl = (uint8_t)((v->vctrl & 0x80) | (b & 0x7F)); if (b & 2) v->vctrl |= 1; v->ramp_wait = 0; break;
-    case 0x0E: g.active = (b & 31) + 1; if (g.active < 14) g.active = 14; break;
+    case 0x0E:
+        g.active = (b & 31) + 1;
+        if (g.active < 14) g.active = 14;
+        trace("[gus] %d voices: %.0f frames a second\n", g.active, 617400.0 / g.active);
+        break;
     case 0x41: g.dma_ctrl = b; if (b & 1) dma_upload(); break;
     case 0x42: g.dma_addr = d; break;
     case 0x43: g.peek = (g.peek & 0xF0000) | d; break;
@@ -168,8 +175,13 @@ static void write_reg(void)
         if (!(b & 8)) g.t_fired[1] = 0;
         update_irq();
         break;
-    case 0x46: g.t_count[0] = b; break;
-    case 0x47: g.t_count[1] = b; break;
+    case 0x46: case 0x47: {
+        int t = g.reg - 0x46;
+        if (g.t_count[t] != b)
+            trace("[gus] timer %d: %d x %d us = %.3f ms\n", t + 1, 256 - b, t ? 320 : 80, (256 - b) * (t ? 0.32 : 0.08));
+        g.t_count[t] = b;
+        break;
+    }
     case 0x48: case 0x49: break;        /* recording */
     case 0x4C:
         if (!(b & 1)) {                 /* reset: every voice stopped, every IRQ gone */

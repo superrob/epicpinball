@@ -123,6 +123,10 @@ def setup_walks():
     for lang in range(4):                 # each language, then Instructions: HELPME, its every page
         w[f'lang{lang}'] = ['DOWN', 'ENTER'] + ['DOWN'] * lang + ['ENTER', 'DOWN', 'DOWN', 'ENTER',
                            'ENTER', 'PAGEDOWN', 'P', 'ESC', 'ESC', 'ENTER', 'DOWN', 'ENTER']
+    # Instructions after a card is set up: SETUP's heap is larger then, and
+    # HELPME must still load where it was lifted (src/dos.c, SETUP_CHILD_SEG)
+    w['card5_then_helpme'] = ['ENTER'] + ['DOWN'] * 5 + ['ENTER', 'ENTER', 'ENTER', 'UP', 'ENTER',
+                                                    'ENTER', 'ESC', 'ESC', 'ENTER', 'DOWN', 'ENTER']
     for doc in range(6):                  # HELPME's every entry, 1-5 and Exit
         w[f'helpme{doc}'] = ['DOWN', 'DOWN', 'ENTER'] + ['DOWN'] * doc + ['ENTER', 'PAGEDOWN', 'DOWN', 'UP',
                             'ESC', 'ESC', 'ENTER', 'DOWN', 'ENTER']
@@ -404,7 +408,7 @@ def scenario_setup(out):
     drv = open(os.path.join(save, 'MDRV004R.MUS'), 'rb').read() if os.path.exists(os.path.join(save, 'MDRV004R.MUS')) else b''
     at = struct.unpack_from('<I', drv, 0x30)[0] if len(drv) > 0x34 else 0
     c = drv[at:at + 0x40] if at else b''
-    o2, code2, log2 = go('helpme', w['helpme0'])
+    o2, code2, log2 = go('helpme', w['card5_then_helpme'])
     o3, code3, log3 = go('mono', w['card4'])
     music = 0.0
     if code3 == 0:
@@ -427,7 +431,7 @@ def scenario_setup(out):
         ('setup: the driver holds port 220h, IRQ 7, DMA 1, High (20,100 Hz)',
          len(c) == 0x40 and struct.unpack_from('<H', c, 0x19)[0] == 0x220 and c[0x1D] == 7 and c[0x2D] == 1
          and struct.unpack_from('<H', c, 0x31)[0] == 20100),
-        ('setup: Instructions run HELPME.EXE, and SETUP carries on after it',
+        ('setup: after a card, Instructions run HELPME.EXE, and SETUP carries on after it',
          code2 == 0 and not misses(log2) and 'helpme.exe exited, code 0' in log2),
         ('setup: a mono Sound Blaster set up there plays the menu music', code3 == 0 and music > 300),
         ('setup: a Gravis Ultrasound at 260h set up there plays the menu music',

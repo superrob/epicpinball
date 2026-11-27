@@ -199,7 +199,10 @@ runs, in Turbo Pascal. What each cost:
   driver is opened gets the room of the largest one (`src/dos.c`), so every
   card leaves the rest where it was lifted. With no music (PC speaker, none)
   PINBALL loads no songs, and table 1 went to `1F7E`, not `42CF`: a lifted
-  program is now EXEC'd where it was lifted when that memory is free.
+  program is now EXEC'd where it was lifted when that memory is free. HELPME
+  moved the same way with SETUP's heap: at `19D1` from the main menu, at
+  `1D51` after a card was chosen. SETUP's children now load at `4000h`, above
+  anything SETUP takes, so HELPME is lifted there.
 - **The Sound Blaster's mono mixer** was never lifted: GOG's setting is
   stereo. The driver picks its mixing routines out of tables
   (`mov ax, [bx+2217h]` ... `mov [0BC6h], ax` ... `call [0BC6h]`), which
