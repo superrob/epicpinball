@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// events.h - what the game reports (src/feedback.h), and the DOF numbers it goes out as.
+// events.h - what the game reports (src/feedback.h), and the DOF names it goes out as.
 #pragma once
 #include <string>
 
-// In the game's order, E101 on. People's rows are written in these numbers:
-// only add at the end. E105-E107 were renumbered once, from a cabinet's
-// sides (left, centre, right) to a table's bumpers.
+// The game's names, in its order (src/feedback.h): what it sends the helper,
+// one line an event. Only add at the end.
 inline constexpr const char *kEvent[] = {
     "flipper_left", "flipper_right", "sling_left", "sling_right",
     "bumper_1", "bumper_2", "bumper_3",
@@ -19,7 +18,6 @@ inline constexpr const char *kEvent[] = {
     "jackpot", "super_jackpot", "award",
 };
 inline constexpr int kEvents = sizeof kEvent / sizeof *kEvent;
-inline constexpr int kFirstE = 101;
 enum : int {
     kFlipperLeft, kFlipperRight, kSlingLeft, kSlingRight, kBumper1, kBumper2, kBumper3,
     kLaunch, kBallRelease, kDrain, kNudge, kTilt, kKnocker,
@@ -31,6 +29,26 @@ enum : int {
 };
 inline constexpr int kBumpers = 6, kHoles = 5, kTargets = 3, kRollovers = 6, kRamps = 3;
 static_assert(sizeof kEvent / sizeof *kEvent == kAward + 1, "a name for every event");
+
+// What a DOF row calls them: $FlipperLeft, as a table without a ROM names its
+// events. The same on every table. A table's own features, from kHole1 to
+// kRamp3, have names of its own instead, t1PowerUpHole (autorow::Table).
+inline constexpr const char *kDofName[] = {
+    "FlipperLeft", "FlipperRight", "SlingshotLeft", "SlingshotRight",
+    "Bumper1", "Bumper2", "Bumper3",
+    "Launch", "BallRelease", "Drain", "Nudge", "Tilt", "ExtraBall",
+    "BallReady", "Multiball", "GameStart", "GameOver",
+    "Bumper4", "Bumper5", "Bumper6",
+    "", "", "", "", "", "BallHeld", "",
+    "", "", "", "",
+    "", "", "", "", "", "",
+    "LanesLit", "SkillShot", "", "", "",
+    "Jackpot", "SuperJackpot", "Award",
+};
+static_assert(sizeof kDofName / sizeof *kDofName == kEvents, "a DOF name for every event");
+
+// A table's own feature, named by the table
+inline constexpr bool is_feature(int e) { return e >= kHole1 && e <= kRamp3 && *kDofName[e] == 0; }
 
 // Levels: on while it lasts. The rest only happen.
 inline constexpr bool is_level(int e)

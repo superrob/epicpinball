@@ -10,8 +10,8 @@
 #include <stdint.h>
 
 typedef enum {
-    /* In DOF rows E101, E102 ... in this order (dof/src/events.h): only add at
-     * the end. E105-E107 were renumbered once, from sides to bumpers. */
+    /* In this order in dof/src/events.h, which gives each its DOF name
+     * ($FlipperLeft; a table's own feature $t1PowerUpHole): only add at the end */
     FB_FLIPPER_LEFT, FB_FLIPPER_RIGHT,       /* levels: 1 while the flipper is up */
     FB_SLING_LEFT, FB_SLING_RIGHT,           /* pulses, unless said */
     FB_BUMPER_1, FB_BUMPER_2, FB_BUMPER_3,   /* a table's bumpers, left to right */
@@ -47,9 +47,10 @@ typedef struct { int x, y, a, b; } FbDetail;
 
 /* Who drives outputs (dof_pipe.c). Muted events never reach it. */
 typedef struct {
-    void (*table)(const char *name, const char *bumpers, const char *sides);
+    void (*table)(const char *name, const char *bumpers, const char *features);
                                              /* a table is up, its bumpers' sides ("LCR") and its
-                                              * own features' ("hole:LLCRR ..."); NULL: none is */
+                                              * own features' names and sides ("hole1=TestHole:L ...");
+                                              * NULL: none is */
     void (*event)(FbEvent e, int on);
     void (*all_off)(void);
 } FbSink;
@@ -60,7 +61,7 @@ int  feedback_by_name(const char *name);     /* -1 if none */
 int  feedback_log(const char *path);         /* 0: cannot write it */
 void feedback_sink(const FbSink *sink);
 
-void feedback_table(double ms, const char *name, const char *bumpers, const char *sides);  /* NULL: ended */
+void feedback_table(double ms, const char *name, const char *bumpers, const char *features);  /* NULL: ended */
 void feedback_mute(int muted);               /* the demo: logged, never felt */
 void feedback_event(double ms, FbEvent e, int on, FbDetail d);
 void feedback_all_off(void);                 /* the game is standing still */

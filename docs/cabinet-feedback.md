@@ -110,8 +110,8 @@ White=48,48,48
 
 [Config DOF]
 # One column per output, from 1 (an RGB column takes three).
-epicpinball,E101 50,E102 50,E103 50,E104 50
-epicpinball_ep07,E101 50,E102 50,E103 50 I32,E104 50 I32
+epicpinball,$FlipperLeft 50,$FlipperRight 50,$SlingshotLeft 50,$SlingshotRight 50
+epicpinball_ep07,$FlipperLeft 50,$FlipperRight 50,$SlingshotLeft 50 I32,$SlingshotRight 50 I32
 ```
 
 - **The file's number** is the DOF unit: 120 is Pinscape Pico unit 1, 121 is
@@ -119,61 +119,68 @@ epicpinball_ep07,E101 50,E102 50,E103 50 I32,E104 50 I32
 - **The table's name** is `epicpinball_ep01` to `epicpinball_ep13`. A table
   without a row of its own uses `epicpinball`. With neither, one is made from
   the file's header ([below](#no-row-one-is-made-from-the-header)).
-- **The events:**
+- **The events** have names, as a table without a ROM names its own: a row
+  writes them with a `$`, `$FlipperLeft`, in any case. `--test` takes the same
+  name without the `$`. These are the same on every table:
 
-| Number | `--test` name | When | Signal |
-|---|---|---|---|
-| E101, E102 | `flipper_left`, `flipper_right` | the flipper starts up (not the key: never while tilted). EP4's and EP12's extra flippers share their side | on while it is up |
-| E103, E104 | `sling_left`, `sling_right` | the slingshot kicks, by where the ball touched it. EP8 has none, EP9 only a left one | instant |
-| E105, E106, E107 | `bumper_1`, `bumper_2`, `bumper_3` | that bumper kicks: a table's bumpers are numbered from the left ([below](#the-bumpers)) | instant |
-| E108 | `launch` | the game launches the ball | instant |
-| E109 | `ball_release` | a ball arrives in the shooter lane for a new game or the next ball | instant |
-| E110 | `drain` | a ball is lost | instant |
-| E111, E112 | `nudge`, `tilt` | each one | instant |
-| E113 | `knocker` | an extra ball. The game has no replay or match, and EP1 and EP5 never give one | instant |
-| E114 | `ball_ready` | a ball waits in the shooter lane, as the plunger sees it: from its release until it leaves the lane, so a plunge too weak to get out keeps it on. Enigma: while no ball is up | on while it waits |
-| E115 | `multiball` | two balls or more rolling: each gone over 24 pixels in the last 5 seconds, so a ball parked in a lock or kickback, or waiting in the lane, does not count. A ball cradled on a flipper longer than that drops out until it moves | on while it lasts |
-| E116 | `game_start` | a game begins, with its first ball's release (Enigma: its first launch) | instant |
-| E117 | `game_over` | a game ends | instant |
-| E118, E119, E120 | `bumper_4`, `bumper_5`, `bumper_6` | as `bumper_1`; only table 5 has more than three | instant |
+| Event | When | Signal |
+|---|---|---|
+| `FlipperLeft`, `FlipperRight` | the flipper starts up (not the key: never while tilted). EP4's and EP12's extra flippers share their side | on while it is up |
+| `SlingshotLeft`, `SlingshotRight` | the slingshot kicks, by where the ball touched it. EP8 has none, EP9 only a left one | instant |
+| `Bumper1` … `Bumper6` | that bumper kicks: a table's bumpers are numbered from the left ([below](#the-bumpers)); only table 5 has more than three | instant |
+| `Launch` | the game launches the ball | instant |
+| `BallRelease` | a ball arrives in the shooter lane for a new game or the next ball | instant |
+| `Drain` | a ball is lost | instant |
+| `Nudge`, `Tilt` | each one | instant |
+| `ExtraBall` | an extra ball, for the knocker. The game has no replay or match, and EP1 and EP5 never give one | instant |
+| `BallReady` | a ball waits in the shooter lane, as the plunger sees it: from its release until it leaves the lane, so a plunge too weak to get out keeps it on. Enigma: while no ball is up | on while it waits |
+| `Multiball` | two balls or more rolling: each gone over 24 pixels in the last 5 seconds, so a ball parked in a lock or kickback, or waiting in the lane, does not count. A ball cradled on a flipper longer than that drops out until it moves | on while it lasts |
+| `GameStart` | a game begins, with its first ball's release (Enigma: its first launch) | instant |
+| `GameOver` | a game ends | instant |
 
-A table's own features come next, numbered left to right on the table, top first
-on a tie. **Only table 1 sends them so far** ([below](#table-1-super-android));
-on other tables they never fire.
+On a table with features of its own, also:
 
-| Number | `--test` name | When | Signal |
-|---|---|---|---|
-| E121-E125 | `hole_1` … `hole_5` | that hole kicks its ball out (also when multiball takes it) | instant |
-| E126 | `ball_held` | a hole holds a ball | on while it does |
-| E127 | `kickback` | the kickback fires | instant |
-| E128-E130 | `target_1` … `target_3` | a drop target goes down | instant |
-| E131 | `targets_down` | the bank's last one goes down and the bank resets | instant |
-| E132-E137 | `rollover_1` … `rollover_6` | the ball rolls over it, every pass | instant |
-| E138 | `lanes_lit` | a set of lanes complete, lit by the ball | instant |
-| E139 | `skill_shot` | a skill shot | instant |
-| E140-E142 | `ramp_1` … `ramp_3` | a ramp made, as the game counts it | instant |
-| E143 | `jackpot` | a jackpot | instant |
-| E144 | `super_jackpot` | a bigger one: double, super | instant |
-| E145 | `award` | a mode or progress award the scoreboard announces | instant |
+| Event | When | Signal |
+|---|---|---|
+| `BallHeld` | a hole holds a ball | on while it does |
+| `LanesLit` | a set of lanes complete, lit by the ball | instant |
+| `SkillShot` | a skill shot | instant |
+| `Jackpot` | a jackpot | instant |
+| `SuperJackpot` | a bigger one: double, super | instant |
+| `Award` | a mode or progress award the scoreboard announces | instant |
+
+A table's own holes, kickback, drop targets, rollovers and ramps are named by
+the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
+table 1's power-up hole and nothing on any other table. **Only table 1 has
+them so far** ([below](#table-1-super-android)).
+
+| Feature | When | Signal |
+|---|---|---|
+| a hole | it kicks its ball out (also when multiball takes it) | instant |
+| a kickback | it fires | instant |
+| a drop target | it goes down | instant |
+| a bank's targets all down (its name and `Down`) | the bank's last one goes down and the bank resets | instant |
+| a rollover | the ball rolls over it, every pass | instant |
+| a ramp | made, as the game counts it | instant |
 
 #### Table 1 (Super Android)
 
 | Event | Is |
 |---|---|
-| `hole_1` | the test hole, top left |
-| `hole_2` | the left hole (android millions), on the left side |
-| `hole_3` | the power-up hole, centre |
-| `hole_4` | the physical-systems hole, right |
-| `hole_5` | the right hole, at the end of the centre ramp |
-| `kickback` | the left outlane |
-| `target_1` … `target_3` | the drop targets 1, 2, 3 on the left |
-| `rollover_1` | the star rollover, left of centre |
-| `rollover_2` | the left lane (its jackpot) |
-| `rollover_3` … `rollover_6` | the four top lanes, left to right; all four lit is `lanes_lit` |
-| `ramp_1`, `ramp_2`, `ramp_3` | the left, centre and right ramps. The centre one also kicks out of `hole_5` |
-| `jackpot` | JACKPOT |
-| `super_jackpot` | DOUBLE JACKPOT, SUPER JACKPOT |
-| `award` | POWER UP, FULL POWER, I.Q. UPGRADE, BUMPER VALUE, COMPUTER LINK, the physical systems, BASIC IO / AI / AI2 / DATABASE INSTALLED, ANDROID IS ACTIVATED, VIRUS FLUSHED OUT, ANDROID MILLIONS, each arm, leg, head and torso, and each LEVEL 1 test |
+| `t1TestHole` | the test hole, top left |
+| `t1LeftHole` | the left hole (android millions), on the left side |
+| `t1PowerUpHole` | the power-up hole, centre |
+| `t1PhysicalSystemsHole` | the physical-systems hole, right |
+| `t1RightHole` | the right hole, at the end of the centre ramp |
+| `t1Kickback` | the left outlane |
+| `t1DropTarget1` … `t1DropTarget3` | the drop targets 1, 2, 3 on the left; all three down is `t1DropTargetsDown` |
+| `t1Star` | the star rollover, left of centre |
+| `t1LeftLane` | the left lane (its jackpot) |
+| `t1TopLane1` … `t1TopLane4` | the four top lanes, left to right; all four lit is `LanesLit` |
+| `t1LeftRamp`, `t1CentreRamp`, `t1RightRamp` | the ramps. The centre one also kicks out of `t1RightHole` |
+| `Jackpot` | JACKPOT |
+| `SuperJackpot` | DOUBLE JACKPOT, SUPER JACKPOT |
+| `Award` | POWER UP, FULL POWER, I.Q. UPGRADE, BUMPER VALUE, COMPUTER LINK, the physical systems, BASIC IO / AI / AI2 / DATABASE INSTALLED, ANDROID IS ACTIVATED, VIRUS FLUSHED OUT, ANDROID MILLIONS, each arm, leg, head and torso, and each LEVEL 1 test |
 
 They come from the game's own code: the switch handler it calls with the colour
 of the switch under the ball, what that code keeps (a hole's hold timer, the
@@ -184,8 +191,8 @@ RAMPS and LEFT LANES among them) over four hours of its demo. What the handler
 turns back is not sent either: tilted it handles only a few colours, and with
 the ball on a ramp's wire, over the top lanes, only the ramps' own.
 
-E105 to E107 meant the left, centre and right of the table until the per-bumper
-events came; on a table with three bumpers that is still what they are.
+The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
+the table's map; the game passes them to the helper with `--features`.
 
 #### The bumpers
 
@@ -208,12 +215,12 @@ An instant event is a 1 and at once a 0, so the row gives it its length:
 
 | Setting | What comes out |
 |---|---|
-| `E103` | libdof's default minimum, 60 ms |
-| `E103 50` | 50 ms; a hit during it starts the 50 ms again |
-| `E103 M1` | **nothing**: 1 ms is over before it is sent |
-| `E103 50 I32` | 50 ms at two thirds of full |
-| `E101 50` | a 50 ms pulse as the flipper starts up |
-| `E101` | on for as long as the flipper is up |
+| `$SlingshotLeft` | libdof's default minimum, 60 ms |
+| `$SlingshotLeft 50` | 50 ms; a hit during it starts the 50 ms again |
+| `$SlingshotLeft M1` | **nothing**: 1 ms is over before it is sent |
+| `$SlingshotLeft 50 I32` | 50 ms at two thirds of full |
+| `$FlipperLeft 50` | a 50 ms pulse as the flipper starts up |
+| `$FlipperLeft` | on for as long as the flipper is up |
 
 ### No row: one is made from the header
 
@@ -233,22 +240,22 @@ at every table start; nothing is written into the DOF folder. For the header
 above:
 
 ```ini
-epicpinball_ep07,E101,E102,E103,E104,0,ON,ON EpMain,E113
+epicpinball_ep07,$FlipperLeft,$FlipperRight,$SlingshotLeft,$SlingshotRight,0,ON,ON EpMain,$ExtraBall
 ```
 
 | Device | Gets |
 |---|---|
-| `Flipper Left`, `Flipper Right` | `E101`, `E102`: on while the flipper is up |
-| `Slingshot Left`, `Slingshot Right` | `E103`, `E104` |
-| `10 Bumper Back Left`, `Center`, `Right` | every bumper of the table on that side: on table 5, `E105/E106` on the left |
+| `Flipper Left`, `Flipper Right` | `$FlipperLeft`, `$FlipperRight`: on while the flipper is up |
+| `Slingshot Left`, `Slingshot Right` | `$SlingshotLeft`, `$SlingshotRight` |
+| `10 Bumper Back Left`, `Center`, `Right` | every bumper of the table on that side: on table 5, `$Bumper1/$Bumper2` on the left |
 | `10 Bumper Middle ...`, `8 Bumper Left`, `Center`, `Right` | the same, only where there is no such back-row device |
-| `10 Bumper Middle Right`, `8 Bumper Right` | also `E108`: the launch |
-| `Launch Button` | `E114`: lit while a ball waits in the lane |
-| `Knocker` | `E113`: an extra ball (not game over) |
-| `10 Bumper Middle Left`, `Center`, `Right` | also the table's own solenoids on that side: hole kick-outs, the kickback, the drop target bank resetting. On table 1, Middle Left gets `E121/E122/E127/E131`, Center `E123`, Right `E108/E124/E125` |
+| `10 Bumper Middle Right`, `8 Bumper Right` | also `$Launch` |
+| `Launch Button` | `$BallReady`: lit while a ball waits in the lane |
+| `Knocker` | `$ExtraBall` (not game over) |
+| `10 Bumper Middle Left`, `Center`, `Right` | also the table's own solenoids on that side: hole kick-outs, the kickback, the drop target bank resetting. On table 1, Middle Left gets `$t1TestHole/$t1LeftHole/$t1Kickback/$t1DropTargetsDown`, Center `$t1PowerUpHole`, Right `$Launch/$t1PhysicalSystemsHole/$t1RightHole` |
 | `8 Bumper Left`, `Center`, `Right` | the same, where there is no `10 Bumper Middle` device on that side |
-| `Beacon` | `E113 2000`; on a table with features of its own, jackpots too: `E113 2000/E143 2000/E144 2000` |
-| `Shaker` | `E111 300 I32/E112 600 I32` |
+| `Beacon` | `$ExtraBall 2000`; on a table with features of its own, jackpots too: `$ExtraBall 2000/$Jackpot 2000/$SuperJackpot 2000` |
+| `Shaker` | `$Nudge 300 I32/$Tilt 600 I32` |
 | `Start Button`, `Exit`, `Coin` | `ON` |
 | `RGB Flippers` | `ON EpMain` |
 | `5 Flasher ...`, `3 Flasher ...`, `Back MX` | colours for events: [flashers](#flashers) |
@@ -260,13 +267,13 @@ epicpinball_ep07,E101,E102,E103,E104,0,ON,ON EpMain,E113
 - **Ball release has no device,** and drain, tilt, multiball, game start and
   game over reach a made row only through flashers (below): write a row if you
   want them on something else.
-- **Not in made rows:** single drop targets, rollovers and `ball_held`. They
+- **Not in made rows:** single drop targets, rollovers and `BallHeld`. They
   are there for your own rows.
 - **The table's bumpers come from the game,** which tells the helper their
   sides when it starts it (`--bumpers LLCCRR` for table 5). A side the table
-  has no bumper on gets none. So do its own features' sides, by where each is
-  drawn in thirds of the table (`--sides "hole:LLCRR ramp:LRR kickback:L
-  target:LLL"` for table 1).
+  has no bumper on gets none. So do its own features' names and sides, by
+  where each is drawn in thirds of the table (`--features "hole1=TestHole:L
+  hole2=LeftHole:L ... bank=DropTargets"` for table 1).
 - **Only the header is read.** Intensities and times the Config Tool puts in
   other games' rows are not copied.
 - **The helper says** which file it used, how many outputs got something, and
@@ -289,20 +296,20 @@ cabinet, left to right:
 
 | Event | Spots | Effect |
 |---|---|---|
-| `multiball` E115 | all | *glow*, blinking while it lasts |
+| `Multiball` | all | *glow*, blinking while it lasts |
 | a bumper | the spots on its side: left two, centre, right two | *main*, 80 ms |
 | a hole kicking out, the kickback | the spots on its side | *feature*, 120 ms |
 | a ramp made | the spots on its side | *ramp*, 150 ms |
-| `skill_shot` E139 | all | *ramp*, three flashes |
-| `award` E145 | all | *feature*, three flashes |
-| `lanes_lit` E138 | all | *glow*, three flashes |
-| `jackpot` E143 | all | *jackpot*, three flashes |
-| `super_jackpot` E144 | all | *jackpot*, six flashes |
-| `knocker` E113 (extra ball) | all | *glow*, three flashes |
-| `game_start` E116 | all | *start*, three flashes |
-| `game_over` E117 | all | *over*, three flashes |
-| `drain` E110 | centre | *danger*, 300 ms |
-| `tilt` E112 | all | *danger*, 600 ms |
+| `SkillShot` | all | *ramp*, three flashes |
+| `Award` | all | *feature*, three flashes |
+| `LanesLit` | all | *glow*, three flashes |
+| `Jackpot` | all | *jackpot*, three flashes |
+| `SuperJackpot` | all | *jackpot*, six flashes |
+| `ExtraBall` | all | *glow*, three flashes |
+| `GameStart` | all | *start*, three flashes |
+| `GameOver` | all | *over*, three flashes |
+| `Drain` | centre | *danger*, 300 ms |
+| `Tilt` | all | *danger*, 600 ms |
 
 #### Colours
 
@@ -362,12 +369,12 @@ it carries no variables. The colours and times above stay; these change:
 | Event | On the Back MX |
 |---|---|
 | a bumper | its own circles: a side's bumpers share its spots from the left, so table 1's left bumper has the two left circles and table 5's have one each, but for the two in the centre |
-| `skill_shot` E139 | `SHPCirclePulse`, *ramp*, 600 ms, on all five |
-| `award` E145 | `SHPDiamondBoxPulse`, *feature*, 1 s, on all five |
-| `lanes_lit` E138 | `SHPFillLeftRight`, *glow*, 600 ms, across the whole width |
-| `jackpot` E143 | `SHPRoundAndRound`, *jackpot*, 1.2 s, on all five |
-| `super_jackpot` E144 | the same for 2.4 s, and the two strobe circles (`strblft`, `strbrgt`) flashing *glow* six times |
-| `knocker` E113 (extra ball) | `SHPCrossPulse`, *glow*, 900 ms, on all five |
+| `SkillShot` | `SHPCirclePulse`, *ramp*, 600 ms, on all five |
+| `Award` | `SHPDiamondBoxPulse`, *feature*, 1 s, on all five |
+| `LanesLit` | `SHPFillLeftRight`, *glow*, 600 ms, across the whole width |
+| `Jackpot` | `SHPRoundAndRound`, *jackpot*, 1.2 s, on all five |
+| `SuperJackpot` | the same for 2.4 s, and the two strobe circles (`strblft`, `strbrgt`) flashing *glow* six times |
+| `ExtraBall` | `SHPCrossPulse`, *glow*, 900 ms, on all five |
 
 Without the shapes file and its `.png`, a shape draws nothing, so the `Back MX`
 gets the bands instead, and the helper says `no DirectOutputShapes.xml and .png
@@ -382,8 +389,8 @@ the list drawing over higher:
 
 | Event | MX | Effect |
 |---|---|---|
-| `ball_ready` E114 | right | the bottom 15% breathes *main*, dark to full every two seconds, while a ball waits: `AT85 AH15 F500 BLINK 2000` |
-| `sling_left` E103, `sling_right` E104 | its side | *main*, rising up the side: `M50 MAX50 ADU AS300` |
+| `BallReady` | right | the bottom 15% breathes *main*, dark to full every two seconds, while a ball waits: `AT85 AH15 F500 BLINK 2000` |
+| `SlingshotLeft`, `SlingshotRight` | its side | *main*, rising up the side: `M50 MAX50 ADU AS300` |
 | a hole kicking out, the kickback | its side | *feature*, down the side: `75 ADD AS300` |
 | a ramp made | its side | *ramp*, down the side: `75 ADD AS300` |
 
@@ -402,16 +409,21 @@ between dim and about two thirds. `RGB Undercab Complex MX` stays 0.
 With the game closed:
 
 ```sh
-dof/build/epicpinball-dof --table ep5 --bumpers LLCCRR --test bumper_4
+dof/build/epicpinball-dof --table ep5 --bumpers LLCCRR --test Bumper4
 ```
 
 It sends that one event (a flipper or another level is held half a second),
 waits three seconds and switches off. `--bumpers` is the table's sides from the
 table [above](#the-bumpers); without it a made row assumes three, `LCR`. For
-table 1's own events, also give its features' sides:
+table 1's own events, also give its features, as the game does (from the
+`zone`, `target` and `bank` lines of `work/feedback/ep1.map`):
 
 ```sh
-dof/build/epicpinball-dof --table ep1 --bumpers LR --sides "hole:LLCRR ramp:LRR kickback:L target:LLL" --test hole_3
+dof/build/epicpinball-dof --table ep1 --bumpers LR --test t1PowerUpHole --features "hole1=TestHole:L \
+  hole2=LeftHole:L hole3=PowerUpHole:C hole4=PhysicalSystemsHole:R hole5=RightHole:R kickback1=Kickback:L \
+  rollover1=Star:L rollover2=LeftLane:L rollover3=TopLane1:C rollover4=TopLane2:C rollover5=TopLane3:R \
+  rollover6=TopLane4:R ramp1=LeftRamp:L ramp2=CentreRamp:R ramp3=RightRamp:R target1=DropTarget1:L \
+  target2=DropTarget2:L target3=DropTarget3:L bank=DropTargets"
 ```
 
 ### 6. Play
@@ -431,6 +443,9 @@ The demo and the menus send no events, though `ON` outputs (button lamps in
 a made row) stay lit whenever a table is up, the demo's included. A pause, a
 prompt and the settings dialog let go of held flippers. `--feedback-log FILE` lists every event with
 its time, marked `felt` or `muted`, and needs neither a board nor the helper.
+It uses the game's own names, `flipper_left`, `knocker`, `hole_3`, which the
+helper turns into the DOF names above (`dof/src/events.h`): `FlipperLeft`,
+`ExtraBall`, and table 1's third hole `t1PowerUpHole`.
 
 ## What to watch for in DOF
 
@@ -708,7 +723,14 @@ Without hardware, in a sandbox with no devices:
   path still differs with the millisecond of release, as it does from the
   keyboard;
 - 70 frames a second in cabinet mode with the helper, a hung helper, and a
-  sensor present and absent.
+  sensor present and absent;
+- events by name, through libdof's master and the helper on ArtNet over
+  loopback: `--test` with an event of every table, a table 1 feature
+  (`t1PowerUpHole`, any case), the bank's `t1DropTargetsDown` and
+  `ExtraBall`, each on its own output for its row's time, and an old `E101`
+  column left dark. A row made from a header on table 1, and from the game on
+  table 1, `Bumper1` and `t1TopLane1` lighting their outputs each time the
+  game sent them. Named events are not yet tried on the real cabinet.
 
 Not tested: tables 2 to 13 on a cabinet, other controllers and other
 cabinets' Config Tool headers, Flatpak and portable VPX, Windows (its halves

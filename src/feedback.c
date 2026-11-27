@@ -47,13 +47,13 @@ int feedback_log(const char *path)
 
 void feedback_sink(const FbSink *sink) { out = sink; }
 
-void feedback_table(double ms, const char *name, const char *bumpers, const char *sides)
+void feedback_table(double ms, const char *name, const char *bumpers, const char *features)
 {
     muted = 0;
     if (!name && *table) feedback_event(ms, FB_TABLE_END, 1, (FbDetail){ 0, 0, 0, 0 });
     if (out) {
         out->all_off();
-        out->table(name, name ? bumpers : NULL, name ? sides : NULL);
+        out->table(name, name ? bumpers : NULL, name ? features : NULL);
     }
     snprintf(table, sizeof table, "%s", name ? name : "");
     if (name) feedback_event(ms, FB_TABLE_START, 1, (FbDetail){ 0, 0, 0, 0 });

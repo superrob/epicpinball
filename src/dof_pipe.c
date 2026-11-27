@@ -53,7 +53,7 @@ static int lost;                     /* killed by us, or exited wrongly: switch 
 static int no_more;                  /* for the rest of the run */
 static char want[16];                /* the table that should have a helper */
 static char want_bumpers[8];         /* its bumpers' sides, "LCR" */
-static char want_sides[96];          /* its own features' sides, "hole:LLCRR ..." */
+static char want_features[1024];     /* its own features' names and sides, "hole1=TestHole:L ..." */
 static char in[128];
 static size_t in_len;
 static uint64_t since;
@@ -85,7 +85,7 @@ static int start(const char *arg, const char *table)
     char *argv[] = { program, (char *)"--save", save, (char *)arg, (char *)table, NULL, NULL, NULL, NULL, NULL };
     int n = 5;
     if (table && *want_bumpers) { argv[n++] = (char *)"--bumpers"; argv[n++] = want_bumpers; }
-    if (table && *want_sides) { argv[n++] = (char *)"--sides"; argv[n++] = want_sides; }
+    if (table && *want_features) { argv[n++] = (char *)"--features"; argv[n++] = want_features; }
     int err = posix_spawn(&child, program, &fa, &at, argv, environ);
     posix_spawn_file_actions_destroy(&fa);
     posix_spawnattr_destroy(&at);
@@ -222,12 +222,12 @@ void dof_tick(void)
     }
 }
 
-static void on_table(const char *name, const char *bumpers, const char *sides)
+static void on_table(const char *name, const char *bumpers, const char *features)
 {
     stop();
     snprintf(want, sizeof want, "%s", name ? name : "");
     snprintf(want_bumpers, sizeof want_bumpers, "%s", name && bumpers ? bumpers : "");
-    snprintf(want_sides, sizeof want_sides, "%s", name && sides ? sides : "");
+    snprintf(want_features, sizeof want_features, "%s", name && features ? features : "");
 }
 
 static void on_event(FbEvent e, int on)

@@ -4,16 +4,18 @@
 #pragma once
 #include "machine.h"
 
-#define WATCH_BUMPERS 6              /* E105-E107, E118-E120 */
+#define WATCH_BUMPERS 6              /* bumper_1-6 */
 #define WATCH_ZONES 24
 #define WATCH_TIMERS 8
 #define WATCH_TARGETS 3
 #define WATCH_MSGS 64
 
-/* A table's own features (FEATURES in tools/feedback_map.py) */
+/* A table's own features (FEATURES in tools/feedback_map.py), each with its
+ * name: letters and digits, what a DOF row calls it after the table's number */
+#define WATCH_NAME 40
 enum { WZ_HOLE, WZ_KICKBACK, WZ_ROLLOVER, WZ_RAMP, WZ_KINDS };
-typedef struct { int kind, n, colour, x0, y0, x1, y1; char side; } WatchZone;  /* the scanned ball's x, y */
-typedef struct { uint16_t at; int n; char side; } WatchTarget;
+typedef struct { int kind, n, colour, x0, y0, x1, y1; char side; char name[WATCH_NAME + 1]; } WatchZone;  /* the scanned ball's x, y */
+typedef struct { uint16_t at; int n; char side; char name[WATCH_NAME + 1]; } WatchTarget;
 typedef struct { uint16_t at; int event; } WatchMsg;
 
 /* One table, from work/feedback/epN.map (tools/feedback_map.py). Offsets are
@@ -49,7 +51,10 @@ typedef struct {
     int non_layer, ntilt_pass;
     uint8_t on_layer[8], tilt_pass[8];                      /* the colours handled there, and tilted */
     WatchMsg msg[WATCH_MSGS];        /* texts the message function shows */
-    char sides[96];                  /* for made rows: "hole:LLCRR ramp:LRR kickback:L target:LLL" */
+    char bank[WATCH_NAME + 1];       /* the drop targets' bank, "" with none */
+    /* for the DOF helper: each feature's name and side, and the bank's name,
+     * "hole1=TestHole:L ... target1=DropTarget1:L bank=DropTargets" */
+    char features[1024];
 } WatchMap;
 
 int  watch_map_parse(const char *text, WatchMap *m, const char **why);

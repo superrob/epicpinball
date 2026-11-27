@@ -30,8 +30,8 @@ GEN = os.path.join(ROOT, 'work', 'gen')
 DATA = os.path.join(ROOT, 'original')
 OUT = os.path.join(ROOT, 'work', 'feedback')
 TABLES = 13
-VERSION = 5
-MAX_BUMPERS = 6                 # E105-E107 and E118-E120
+VERSION = 6
+MAX_BUMPERS = 6                 # Bumper1-Bumper6
 RIM = 40                        # a small run this near a bumper is part of it
 
 N = r'0x([0-9A-F]+)'            # a number, kept
@@ -86,24 +86,25 @@ def effects(f, v):
 
 FEATURES = {
     'ep1': dict(                                       # Super Android
-        zones=[
-            ('hole', 1, 0xF5, 0, 0, 319, 399),          # test hole, top left
-            ('hole', 2, 0xF8, 0, 0, 50, 320),           # left hole
-            ('hole', 3, 0xF6, 0, 0, 219, 399),          # power-up hole
-            ('hole', 4, 0xF8, 145, 0, 319, 399),        # physical-systems hole
-            ('hole', 5, 0xF6, 220, 0, 319, 399),        # right hole, the centre ramp's end
-            ('kickback', 1, 0xF8, 0, 321, 50, 399),     # left outlane
-            ('rollover', 1, 0xF8, 51, 0, 144, 399),     # star
-            ('rollover', 2, 0xFB, 0, 0, 319, 399),      # left lane
-            ('rollover', 3, 0xFA, 0, 0, 179, 399),      # the top four lanes
-            ('rollover', 4, 0xFA, 180, 0, 209, 399),
-            ('rollover', 5, 0xFA, 210, 0, 242, 399),
-            ('rollover', 6, 0xFA, 243, 0, 319, 399),
-            ('ramp', 1, 0xF9, 0, 0, 74, 399),           # left ramp
-            ('ramp', 2, 0xF6, 220, 0, 319, 399),        # centre ramp, counted in the right hole
-            ('ramp', 3, 0xF9, 281, 0, 319, 399),        # right ramp
+        zones=[                                         # a DOF row calls them t1 and the name
+            ('hole', 1, 'TestHole', 0xF5, 0, 0, 319, 399),            # top left
+            ('hole', 2, 'LeftHole', 0xF8, 0, 0, 50, 320),
+            ('hole', 3, 'PowerUpHole', 0xF6, 0, 0, 219, 399),
+            ('hole', 4, 'PhysicalSystemsHole', 0xF8, 145, 0, 319, 399),
+            ('hole', 5, 'RightHole', 0xF6, 220, 0, 319, 399),         # the centre ramp's end
+            ('kickback', 1, 'Kickback', 0xF8, 0, 321, 50, 399),       # left outlane
+            ('rollover', 1, 'Star', 0xF8, 51, 0, 144, 399),
+            ('rollover', 2, 'LeftLane', 0xFB, 0, 0, 319, 399),
+            ('rollover', 3, 'TopLane1', 0xFA, 0, 0, 179, 399),        # the top four lanes
+            ('rollover', 4, 'TopLane2', 0xFA, 180, 0, 209, 399),
+            ('rollover', 5, 'TopLane3', 0xFA, 210, 0, 242, 399),
+            ('rollover', 6, 'TopLane4', 0xFA, 243, 0, 319, 399),
+            ('ramp', 1, 'LeftRamp', 0xF9, 0, 0, 74, 399),
+            ('ramp', 2, 'CentreRamp', 0xF6, 220, 0, 319, 399),        # counted in the right hole
+            ('ramp', 3, 'RightRamp', 0xF9, 281, 0, 319, 399),
         ],
-        targets=True,                                   # drop targets: F2-F4
+        targets=['DropTarget1', 'DropTarget2', 'DropTarget3'],   # F2-F4, left to right
+        bank='DropTargets',                             # all down: t1DropTargetsDown
         lanes=True,                                     # the top lanes' lights
         ramps='RAMPS ',                                 # the bonus line that counts them
         messages=[
@@ -126,7 +127,8 @@ FEATURES = {
         ],
     ),
 }
-COUNTS = dict(hole=5, rollover=6, ramp=3, kickback=1, target=3)   # E121-E145
+COUNTS = dict(hole=5, rollover=6, ramp=3, kickback=1, target=3)   # the events made for them (src/feedback.h)
+NAME = re.compile(r'[A-Za-z][A-Za-z0-9]{0,39}\Z')                 # a feature's, in a DOF row after t1
 
 
 class Missing(Exception):
@@ -377,7 +379,7 @@ def features(img, f, v, art, data):
     collision map, and what its switch handler keeps for them."""
     rules = FEATURES[img]
     sw = f[v['switch_fn']][0]
-    out = dict(zones=[], timers=[], targets=[], lanes=None, ramps=None, msg_fn=None, msgs=[])
+    out = dict(zones=[], timers=[], targets=[], bank=None, lanes=None, ramps=None, msg_fn=None, msgs=[])
 
     # the handler's gate: on the ramp layer only some colours are handled, and
     # tilted only some others
@@ -389,14 +391,18 @@ def features(img, f, v, art, data):
     colours = lambda t: [num(c) for c in re.findall(r'cmp al, 0x([0-9A-F]+)', t)]
     out['gate'] = (num(m.group(1)), colours(m.group(2)), colours(m.group(3)))
     seen = {}
-    for kind, n, colour, x0, y0, x1, y1 in rules['zones']:
+    # the bank's targets all down go out as its name and Down: that one too
+    names = [z[2] for z in rules['zones']] + list(rules.get('targets') or []) + [rules.get('bank', 'x') + 'Down']
+    if any(not NAME.match(x) for x in names) or len({x.lower() for x in names}) != len(names):
+        raise Missing(f'feature names: letters and digits, each once: {names}')
+    for kind, n, name, colour, x0, y0, x1, y1 in rules['zones']:
         regions = seen.setdefault(colour, kick_regions(art, (colour, colour), 2))
         # the scan looks at the pixels under the ball from its top left
         inside = [r for r in regions if x0 <= r[1] - 4 <= x1 and y0 <= r[2] - 4 <= y1]
         if not inside:
             raise Missing(f'{kind} {n}: colour {colour:02X} is not drawn there')
         x = sum(r[0] * r[1] for r in inside) // sum(r[0] for r in inside)
-        out['zones'].append((kind, n, colour, x0, y0, x1, y1, side(x)))
+        out['zones'].append((kind, n, colour, x0, y0, x1, y1, side(x), name))
     for colour, regions in seen.items():
         for r in regions:
             if not any(z[2] == colour and z[3] <= r[1] - 4 <= z[5] and z[4] <= r[2] - 4 <= z[6]
@@ -429,8 +435,11 @@ def features(img, f, v, art, data):
             found.append((r[1], r[2], flags + i))
         if count > COUNTS['target']:
             raise Missing(f'{count} drop targets: events are made for {COUNTS["target"]}')
+        if count != len(rules['targets']) or 'bank' not in rules:
+            raise Missing(f'{count} drop targets, {len(rules["targets"])} names and a bank\'s')
         for n, (x, y, a) in enumerate(sorted(found), 1):
-            out['targets'].append((a, n, side(x)))
+            out['targets'].append((a, n, side(x), rules['targets'][n - 1]))
+        out['bank'] = rules['bank']
 
     if rules.get('lanes'):
         m, _ = find(f, 'lane lights', rf'mov byte ds:\[bx\+{N}\], 0x1\n((?:cmp byte ds:\[{A}\], 0x2\nje {A}\n)+)',
@@ -601,7 +610,7 @@ def text_of(img, r):
         if k in ('flipper_fn', 'main_fn', 'drain_fn'):
             continue
         out.append(f'{k} {x}' if k.endswith('_fn') else f'{k} {x:X}')
-    out += [f'bumper {x} {y} {slot}' for x, y, slot in r['bumpers']]       # left to right: E105 on
+    out += [f'bumper {x} {y} {slot}' for x, y, slot in r['bumpers']]       # left to right: bumper_1 on
     out.append('board ' + ' '.join(f'{e:X}' for e in BOARD_EFFECTS + BOARD_MORE.get(img, [])))
     own = r['own']
     if own:
@@ -611,9 +620,11 @@ def text_of(img, r):
         out.append('tilt_pass ' + ' '.join(f'{c:X}' for c in tilted))
         if own['msg_fn']:
             out.append(f'msg_fn {own["msg_fn"]}')
-        out += [f'zone {k} {n} {c:X} {x0} {y0} {x1} {y1} {s}' for k, n, c, x0, y0, x1, y1, s in own['zones']]
+        out += [f'zone {k} {n} {c:X} {x0} {y0} {x1} {y1} {s} {name}' for k, n, c, x0, y0, x1, y1, s, name in own['zones']]
         out += [f'timer {a:X}' for a in own['timers']]
-        out += [f'target {a:X} {n} {s}' for a, n, s in own['targets']]
+        out += [f'target {a:X} {n} {s} {name}' for a, n, s, name in own['targets']]
+        if own['bank']:
+            out.append(f'bank {own["bank"]}')
         if own['lanes']:
             out.append('lanes %X %d' % own['lanes'])
         if own['ramps'] is not None:
@@ -754,7 +765,7 @@ def main():
             print('  bumpers: ' + ', '.join(f'{x},{y}={"LCR"[s]}' for x, y, s in r['bumpers']))
             if r['own']:
                 o = r['own']
-                print('  zones: ' + ', '.join(f'{k}_{n}={c:X}{s}' for k, n, c, *_, s in o['zones']))
+                print('  zones: ' + ', '.join(f'{k}_{n}={c:X}{s}' for k, n, c, *_, s, _ in o['zones']))
                 print(f'  timers {[hex(t) for t in o["timers"]]} targets {o["targets"]} lanes {o["lanes"]} '
                       f'ramps {o["ramps"]} messages {len(o["msgs"])} through {o["msg_fn"]}')
     print(f'feedback map: {len(found)} tables in work/feedback/')

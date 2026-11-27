@@ -1,0 +1,32 @@
+DOF::DataReceive(name, value): a named table element, from outside.
+
+libdof finds $Name triggers in a row and keeps named table elements
+(Pinball::ReceiveData(const std::string&, int)), but its public class only
+took a type letter and a number. A game without a ROM, whose events have
+names, could not send them. The C# DOF has Pinball.ReceiveData(name, value).
+
+--- a/include/DOF/DOF.h
++++ b/include/DOF/DOF.h
+@@ -67,6 +67,7 @@
+ 
+    void Init(const char* tableFilename, const char* romName);
+    void DataReceive(char type, int number, int value);
++   void DataReceive(const char* name, int value);
+    void Finish();
+ 
+    std::vector<std::string> GetLedControlRomNames(const char* tableFilename);
+--- a/src/DOF.cpp
++++ b/src/DOF.cpp
+@@ -58,6 +58,12 @@
+ 
+ void DOF::DataReceive(char type, int number, int value) { m_pinball->ReceiveData(type, number, value); }
+ 
++void DOF::DataReceive(const char* name, int value)
++{
++   if (name)
++      m_pinball->ReceiveData(std::string(name), value);
++}
++
+ void DOF::Finish()
+ {
+    try

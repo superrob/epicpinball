@@ -1043,8 +1043,8 @@ static void page_dmd_dof()
     if (!built) { ImGui::TextColored({ 1, 0.6f, 0.2f, 1 }, "The DOF helper is not built: dof/build.sh (docs/cabinet-feedback.md)."); return; }
     ImGui::TextWrapped("Each fires one event through table 1's row for a moment, with the DOF files the game uses "
                        "(the first line of the output says where they are).");
-    static const char *const ev[] = { "flipper_left", "flipper_right", "sling_left", "sling_right", "bumper_1", "bumper_2",
-                                      "bumper_3", "launch", "ball_release", "knocker", "drain", "nudge", "tilt", "game_start" };
+    static const char *const ev[] = { "FlipperLeft", "FlipperRight", "SlingshotLeft", "SlingshotRight", "Bumper1", "Bumper2",
+                                      "Bumper3", "Launch", "BallRelease", "ExtraBall", "Drain", "Nudge", "Tilt", "GameStart" };   /* $Name in a row */
     for (size_t i = 0; i < sizeof ev / sizeof ev[0]; i++) {
         if (i % 4) ImGui::SameLine();
         ImGui::BeginDisabled(g_dof_running);

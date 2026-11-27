@@ -22,6 +22,8 @@
 #include "nudge.h"
 #include "feedback.h"
 #include "plunger.h"
+#include <ctype.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdlib.h>
 
@@ -111,6 +113,33 @@ static const struct { const char *key; size_t at; } fields[] = {
 #undef FIELD
 #define NFIELDS (int)(sizeof fields / sizeof fields[0])
 
+/* A feature's name: a letter, then letters and digits */
+static int good_name(const char *s)
+{
+    if (!isalpha((unsigned char)*s) || strlen(s) > WATCH_NAME) return 0;
+    for (; *s; s++) if (!isalnum((unsigned char)*s)) return 0;
+    return 1;
+}
+
+static int same_name(const char *a, const char *b)
+{
+    for (; *a && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++) {}
+    return tolower((unsigned char)*a) == tolower((unsigned char)*b);
+}
+
+/* Appended to m->features, a space between; 0 once it is full */
+static int add(WatchMap *m, const char *fmt, ...)
+{
+    const size_t at = strlen(m->features);
+    if (at && at + 1 < sizeof m->features) m->features[at] = ' ', m->features[at + 1] = 0;
+    const size_t from = strlen(m->features);
+    va_list ap;
+    va_start(ap, fmt);
+    const int n = vsnprintf(m->features + from, sizeof m->features - from, fmt, ap);
+    va_end(ap);
+    return n >= 0 && from + (size_t)n < sizeof m->features;
+}
+
 int watch_map_parse(const char *text, WatchMap *m, const char **why)
 {
     uint64_t got = 0;
@@ -124,7 +153,7 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         p += n;
         if (*p) p++;
         unsigned a, b, x, y, slot, c, x1, y1;
-        char kind[16], s;
+        char kind[16], s, name[WATCH_NAME + 1];
         if (!strcmp(line, "end")) ended = 1;
         else if (sscanf(line, "epicpinball-feedback %u", &a) == 1) version = (int)a;
         else if (sscanf(line, "image %7s %u %x", m->name, &a, &b) == 3) { m->size = a; m->fnv = b; image = 1; }
@@ -133,22 +162,27 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
             m->bumper[m->nbumpers].x = (int)x;
             m->bumper[m->nbumpers].y = (int)y;
             m->bumper[m->nbumpers++].slot = (int)slot;
-        } else if (sscanf(line, "zone %15s %u %x %u %u %u %u %c", kind, &a, &c, &x, &y, &x1, &y1, &s) == 8) {
+        } else if (sscanf(line, "zone %15s %u %x %u %u %u %u %c %40s", kind, &a, &c, &x, &y, &x1, &y1, &s, name) == 9) {
             static const char *const kinds[WZ_KINDS] = { "hole", "kickback", "rollover", "ramp" };
             static const int most[WZ_KINDS] = { FB_HOLES, 1, FB_ROLLOVERS, FB_RAMPS };
             int k = 0;
             while (k < WZ_KINDS && strcmp(kinds[k], kind)) k++;
             if (m->nzones == WATCH_ZONES || k == WZ_KINDS || a < 1 || (int)a > most[k] || c < 0xAA || c > 0xFF
-                || x > x1 || y > y1 || x1 >= 320 || y1 >= 400 || !strchr("LCR", s)) { *why = "a bad zone"; return 0; }
-            m->zone[m->nzones++] = (WatchZone){ k, (int)a, (int)c, (int)x, (int)y, (int)x1, (int)y1, s };
+                || x > x1 || y > y1 || x1 >= 320 || y1 >= 400 || !strchr("LCR", s) || !good_name(name)) { *why = "a bad zone"; return 0; }
+            m->zone[m->nzones] = (WatchZone){ k, (int)a, (int)c, (int)x, (int)y, (int)x1, (int)y1, s, "" };
+            strcpy(m->zone[m->nzones++].name, name);
         } else if (sscanf(line, "timer %x", &a) == 1 && !strncmp(line, "timer ", 6)) {
             if (m->ntimers == WATCH_TIMERS || a > 0xFFFF) { *why = "a bad timer"; return 0; }
             m->timer[m->ntimers++] = (uint16_t)a;
-        } else if (sscanf(line, "target %x %u %c", &a, &b, &s) == 3) {
-            if (m->ntargets == WATCH_TARGETS || a > 0xFFFF || b < 1 || b > WATCH_TARGETS || !strchr("LCR", s)) {
+        } else if (sscanf(line, "target %x %u %c %40s", &a, &b, &s, name) == 4) {
+            if (m->ntargets == WATCH_TARGETS || a > 0xFFFF || b < 1 || b > WATCH_TARGETS || !strchr("LCR", s) || !good_name(name)) {
                 *why = "a bad target"; return 0;
             }
-            m->target[m->ntargets++] = (WatchTarget){ (uint16_t)a, (int)b, s };
+            m->target[m->ntargets] = (WatchTarget){ (uint16_t)a, (int)b, s, "" };
+            strcpy(m->target[m->ntargets++].name, name);
+        } else if (sscanf(line, "bank %40s", name) == 1 && !strncmp(line, "bank ", 5)) {
+            if (*m->bank || !good_name(name)) { *why = "a bad bank"; return 0; }
+            strcpy(m->bank, name);
         } else if (sscanf(line, "lanes %x %u", &a, &b) == 2) {
             if (!a || a > 0xFFF0 || b < 2 || b > 8) { *why = "bad lanes"; return 0; }
             m->lanes = (uint16_t)a; m->nlanes = (int)b;
@@ -216,29 +250,49 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
     if (!m->nbumpers) strcpy(m->layout, "LCR");    /* Enigma's three, stamped as it runs */
     for (int i = 1; i < m->nbumpers; i++)
         if (m->bumper[i].x < m->bumper[i - 1].x) { *why = "bumpers not left to right"; return 0; }
-    /* for made rows: each numbered feature's side, by its number */
-    static const char *const kinds[] = { "hole", "ramp", "kickback" };
-    static const int kind_of[] = { WZ_HOLE, WZ_RAMP, WZ_KICKBACK };
-    size_t at = 0;
-    for (int k = 0; k < 3; k++) {
-        char side[8] = { 0 };
+    /* for the DOF helper: each feature's name and side, by kind and number */
+    static const char *const kinds[WZ_KINDS] = { "hole", "kickback", "rollover", "ramp" };
+    int fits = 1;
+    const char *names[64];
+    int nnames = 0;
+    for (int k = 0; k < WZ_KINDS; k++) {
         int top = 0;
         for (int i = 0; i < m->nzones; i++)
-            if (m->zone[i].kind == kind_of[k]) {
-                if (side[m->zone[i].n - 1] && side[m->zone[i].n - 1] != m->zone[i].side) { *why = "a feature on two sides"; return 0; }
-                side[m->zone[i].n - 1] = m->zone[i].side;
-                if (m->zone[i].n > top) top = m->zone[i].n;
+            if (m->zone[i].kind == k && m->zone[i].n > top) top = m->zone[i].n;
+        for (int n = 1; n <= top; n++) {
+            const WatchZone *first = NULL;
+            for (int i = 0; i < m->nzones; i++) {
+                const WatchZone *z = &m->zone[i];
+                if (z->kind != k || z->n != n) continue;
+                if (!first) first = z;
+                else if (z->side != first->side) { *why = "a feature on two sides"; return 0; }
+                else if (strcmp(z->name, first->name)) { *why = "a feature with two names"; return 0; }
             }
-        for (int i = 0; i < top; i++) if (!side[i]) { *why = "a feature's number missing"; return 0; }
-        if (top) at += (size_t)snprintf(m->sides + at, sizeof m->sides - at, "%s%s:%s", at ? " " : "", kinds[k], side);
+            if (!first) { *why = "a feature's number missing"; return 0; }
+            names[nnames++] = first->name;
+            fits &= add(m, "%s%d=%s:%c", kinds[k], n, first->name, first->side);
+        }
     }
-    if (m->ntargets) {
-        char side[WATCH_TARGETS + 1] = { 0 };
-        for (int i = 0; i < m->ntargets; i++) side[m->target[i].n - 1] = m->target[i].side;
-        if ((int)strlen(side) != m->ntargets) { *why = "a target's number missing"; return 0; }
-        snprintf(m->sides + at, sizeof m->sides - at, "%starget:%s", at ? " " : "", side);
+    for (int n = 1; n <= m->ntargets; n++) {
+        const WatchTarget *t = NULL;
+        for (int i = 0; i < m->ntargets; i++)
+            if (m->target[i].n == n) t = &m->target[i];
+        if (!t) { *why = "a target's number missing"; return 0; }
+        names[nnames++] = t->name;
+        fits &= add(m, "target%d=%s:%c", n, t->name, t->side);
     }
-    if (version != 5) *why = "another version's map";
+    if (!*m->bank != !m->ntargets) { *why = "drop targets and their bank: both or neither"; return 0; }
+    char bank_down[WATCH_NAME + 8];                  /* what the helper sends for it */
+    if (*m->bank) {
+        snprintf(bank_down, sizeof bank_down, "%sDown", m->bank);
+        names[nnames++] = bank_down;
+        fits &= add(m, "bank=%s", m->bank);
+    }
+    if (!fits) { *why = "features too long"; return 0; }
+    for (int i = 0; i < nnames; i++)
+        for (int j = i + 1; j < nnames; j++)
+            if (same_name(names[i], names[j])) { *why = "a feature's name used twice"; return 0; }
+    if (version != 6) *why = "another version's map";
     else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || got != (1ull << NFIELDS) - 1)
         *why = "incomplete";
     else if (m->nmsgs && !*m->msg_fn) *why = "messages, but no message function";
@@ -335,7 +389,7 @@ int watch_map_use(const WatchMap *m, uint16_t load_seg)
     flipper[0] = flipper[1] = 0;
     last_step = now_ms();
     ss0 = g_cpu.ss; sp0 = g_cpu.sp;                /* as load_exe left them */
-    feedback_table(now_ms(), M.name, M.layout, M.sides);
+    feedback_table(now_ms(), M.name, M.layout, M.features);
     g_watch_ds = DS;
     g_watch_on = 1;
     return 1;

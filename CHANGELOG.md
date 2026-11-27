@@ -19,7 +19,8 @@ All notable changes to this project are documented here. The format follows
   run. The menus and the scoreboard keep their shape. Conformance 154.
 - **`--dof`**, cabinet feedback (Linux): flippers, slingshots, bumpers,
   launch, ball release, drain, nudge, tilt and the extra ball's knocker go to
-  libdof as events E101 to E120 of tables `epicpinball_ep01` to `ep13`:
+  libdof as named events (`$FlipperLeft`, `$Bumper2`, `$ExtraBall`) of
+  tables `epicpinball_ep01` to `ep13`:
   each bumper its own (table 5 has six), a ball waiting in the lane,
   multiball, game start and game over among them,
   through a helper in `dof/` (GPLv3, built only by `dof/build.sh`; the game
@@ -33,7 +34,8 @@ All notable changes to this project are documented here. The format follows
   **no output limits**: they are the controller's. Tested on a real cabinet
   with a Pinscape Pico, an LED strip and a Config Tool export, on table 1
   only: `docs/cabinet-feedback.md`.
-- **Table 1's own feedback**, E121 to E145: its five holes kicking out and
+- **Table 1's own feedback**, named by the table (`$t1PowerUpHole`,
+  `$t1LeftRamp`, `$t1DropTargetsDown`), and `$Jackpot` and the like: its five holes kicking out and
   holding a ball, the kickback, drop targets and their bank, rollovers, the
   top lanes complete, the skill shot, three ramps, jackpots and awards. Read
   from the switch handler every table has, what it keeps and the scoreboard's
@@ -145,6 +147,21 @@ All notable changes to this project are documented here. The format follows
   (Deep Sea's aqua and coral, Pot of Gold's gold and clover green, ...),
   named by role in the made file (`EpMain`, `EpFeature`, `EpRamp`, ...).
   Drain and tilt stay red.
+- **DOF events are names, not E numbers.** `E101` to `E145` could not be
+  read without a list, nor a table's own feature told from an event of every
+  table: rows now say `$FlipperLeft`, `$SlingshotLeft 50`, `$Bumper1`,
+  `$ExtraBall`, and a table's own holes, ramps, lanes and targets carry its
+  number, `$t1PowerUpHole`. Their names are in `FEATURES` in
+  `tools/feedback_map.py`, so the feedback maps are version 6 (run
+  `tools/feedback_map.py`, which `build-linux.sh` does), and the helper takes
+  `--features` for `--sides`. `--test` takes the new names. Rows with E
+  numbers no longer fire: write the names, or delete the row to have one
+  made again.
+- libdof is pinned at its master of 26 November 2026 (0.5.4), for its fix of
+  named elements, which never fired before it, and with a patch of ours that
+  sends one: `DOF::DataReceive(name, value)`. Its own Pinscape Pico bound
+  replaces ours. `dof/build.sh` fetches a new pin by itself, and the libraries
+  it builds once are not built again for it.
 - `epicpinball.ini` is updated in place, a setting at a time, so its comments
   and the settings tool's keys stay (it was written anew each time).
 

@@ -17,6 +17,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <optional>
@@ -95,10 +96,19 @@ inline std::optional<std::vector<std::string>> header_of(const std::string &path
     return header(f);
 }
 
-// A table's own features, numbered as its events, with the side of the
-// cabinet each is on: "hole:LLCRR ramp:LRR kickback:L target:LLL" (--sides)
-struct Sides {
-    std::string hole, ramp, kickback, target;
+// The table a row is for: its number, and its own features, each with its
+// name and the side of the cabinet it is on, as the game passes them
+// (--features, src/watch.c):
+//
+//   hole1=TestHole:L hole2=LeftHole:L kickback1=Kickback:L rollover1=Star:L
+//   ramp1=LeftRamp:L target1=DropTarget1:L bank=DropTargets
+//
+// A feature goes out as the table's number and its name, t1TestHole; the
+// bank's targets all down as t1DropTargetsDown.
+struct Table {
+    int number = 0;                         // 1-13; 0: none, so no features
+    std::string hole, ramp, kickback, target;   // the sides, by number: "LLCRR"
+    std::string name[kEvents];              // the features' own names
     bool empty() const { return hole.empty() && ramp.empty() && kickback.empty() && target.empty(); }
     // a bank of targets resets where most of them are
     char bank() const
@@ -109,25 +119,74 @@ struct Sides {
             if (std::count(target.begin(), target.end(), c) > std::count(target.begin(), target.end(), best)) best = c;
         return best;
     }
+    // What a row calls the event, without its $: "" if it has none here
+    std::string dof(int ev) const
+    {
+        if (ev < 0 || ev >= kEvents) return "";
+        if (*kDofName[ev]) return kDofName[ev];
+        return number && !name[ev].empty() ? "t" + std::to_string(number) + name[ev] : "";
+    }
 };
 
-inline std::optional<Sides> sides(const std::string &text)
+// --features for table `number`. Nothing if it is not that: a kind this does
+// not know, a number past its events, numbers of a kind not 1, 2, 3 ..., a
+// name not letters and digits or used twice.
+inline std::optional<Table> features(int number, const std::string &text)
 {
-    Sides s;
+    Table t;
+    t.number = number;
+    static const struct { const char *kind; int first, most; std::string Table::*sides; } kinds[] = {
+        { "hole", kHole1, kHoles, &Table::hole }, { "kickback", kKickback, 1, &Table::kickback },
+        { "rollover", kRollover1, kRollovers, nullptr }, { "ramp", kRamp1, kRamps, &Table::ramp },
+        { "target", kTarget1, kTargets, &Table::target },
+    };
+    char side[kEvents] = {};
+    std::string bank;
+    auto good = [](const std::string &n) {
+        return !n.empty() && n.size() <= 40 && std::isalpha((unsigned char)n[0])
+               && std::all_of(n.begin(), n.end(), [](char c) { return std::isalnum((unsigned char)c); });
+    };
     size_t at = 0;
     while (at < text.size()) {
-        const size_t end = std::min(text.find(' ', at), text.size()), colon = text.find(':', at);
-        if (colon == std::string::npos || colon > end) return std::nullopt;
-        const std::string key = text.substr(at, colon - at), v = text.substr(colon + 1, end - colon - 1);
-        std::string *to = key == "hole" ? &s.hole : key == "ramp" ? &s.ramp : key == "kickback" ? &s.kickback
-                        : key == "target" ? &s.target : nullptr;
-        const size_t most = key == "hole" ? kHoles : key == "ramp" ? kRamps : key == "kickback" ? 1 : kTargets;
-        if (!to || !to->empty() || v.empty() || v.size() > most || v.find_first_not_of("LCR") != std::string::npos)
-            return std::nullopt;
-        *to = v;
+        size_t end = text.find(' ', at);
+        if (end == std::string::npos) end = text.size();
+        const std::string w = text.substr(at, end - at);
         at = end + 1;
+        if (w.empty()) continue;
+        const size_t eq = w.find('=');
+        if (eq == std::string::npos) return std::nullopt;
+        const std::string key = w.substr(0, eq), v = w.substr(eq + 1);
+        if (key == "bank") {
+            if (!bank.empty() || !good(v)) return std::nullopt;
+            bank = v;
+            continue;
+        }
+        const size_t colon = v.find(':');
+        if (colon == std::string::npos || colon + 2 != v.size() || !std::strchr("LCR", v[colon + 1])) return std::nullopt;
+        const std::string name = v.substr(0, colon);
+        int ev = -1;
+        for (auto &k : kinds) {
+            const size_t len = std::strlen(k.kind);
+            if (key.compare(0, len, k.kind) || key.size() != len + 1 || key[len] < '1' || key[len] > '0' + k.most) continue;
+            ev = k.first + key[len] - '1';
+        }
+        if (ev < 0 || !good(name) || side[ev]) return std::nullopt;
+        side[ev] = v[colon + 1];
+        t.name[ev] = name;
     }
-    return s;
+    for (auto &k : kinds) {
+        std::string s;
+        for (int i = 0; i < k.most && side[k.first + i]; i++) s += side[k.first + i];
+        for (int i = (int)s.size(); i < k.most; i++)
+            if (side[k.first + i]) return std::nullopt;                  // a number missing
+        if (k.sides) t.*k.sides = s;
+    }
+    if (!bank.empty() != !t.target.empty()) return std::nullopt;         // a bank is its targets
+    if (!bank.empty()) t.name[kTargetsDown] = bank + "Down";
+    for (int a = 0; a < kEvents; a++)
+        for (int b = a + 1; b < kEvents; b++)
+            if (!t.name[a].empty() && lower(t.name[a]) == lower(t.name[b])) return std::nullopt;
+    return t;
 }
 
 struct Row {
@@ -141,7 +200,7 @@ struct Row {
 
 namespace detail {
 
-inline std::string e(int ev) { return "E" + std::to_string(kFirstE + ev); }
+inline std::string e(const Table &t, int ev) { return "$" + t.dof(ev); }
 
 struct Rule {
     std::string cell;
@@ -150,10 +209,10 @@ struct Rule {
 };
 
 // The cell for several events on one device
-inline std::string cell_of(const std::vector<int> &events)
+inline std::string cell_of(const Table &t, const std::vector<int> &events)
 {
     std::string c;
-    for (int ev : events) c += (c.empty() ? "" : "/") + e(ev);
+    for (int ev : events) c += (c.empty() ? "" : "/") + e(t, ev);
     return c;
 }
 
@@ -236,7 +295,7 @@ inline bool on_side_mx(const std::vector<std::string> &names, char side)
 }
 
 inline void flashers(std::map<std::string, Rule> &r, const std::vector<std::string> &names, const std::string &bumpers,
-                     const Sides &sides, bool shapes)
+                     const Table &table, bool shapes)
 {
     struct Device { const char *name; std::vector<int> spots; bool mx; };
     static const std::vector<Device> devices = {
@@ -260,7 +319,7 @@ inline void flashers(std::map<std::string, Rule> &r, const std::vector<std::stri
         std::vector<std::string> settings;
         std::vector<int> events;
         auto put = [&](int ev, const std::string &s) {
-            settings.push_back(e(ev) + " " + s);
+            settings.push_back(e(table, ev) + " " + s);
             if (std::find(events.begin(), events.end(), ev) == events.end()) events.push_back(ev);
         };
         // a flash on some spots; on the Back MX as their band or circles
@@ -284,10 +343,10 @@ inline void flashers(std::map<std::string, Rule> &r, const std::vector<std::stri
         add(kMultiball, "EpGlow Blink 200", all);
         for (size_t i = 0; i < bumpers.size() && i < (size_t)kBumpers; i++)
             add(bumper_event((int)i), "EpMain 80", round ? bumper_spots(bumpers, i) : side_spots(bumpers[i]));
-        for (size_t i = 0; i < sides.hole.size(); i++) feature(kHole1 + (int)i, "EpFeature 120", sides.hole[i]);
-        if (!sides.kickback.empty()) feature(kKickback, "EpFeature 120", sides.kickback[0]);
-        for (size_t i = 0; i < sides.ramp.size(); i++) feature(kRamp1 + (int)i, "EpRamp 150", sides.ramp[i]);
-        if (!sides.empty()) {        // a table with features of its own: its awards
+        for (size_t i = 0; i < table.hole.size(); i++) feature(kHole1 + (int)i, "EpFeature 120", table.hole[i]);
+        if (!table.kickback.empty()) feature(kKickback, "EpFeature 120", table.kickback[0]);
+        for (size_t i = 0; i < table.ramp.size(); i++) feature(kRamp1 + (int)i, "EpRamp 150", table.ramp[i]);
+        if (!table.empty()) {        // a table with features of its own: its awards
             award(kSkillShot, "EpRamp 450 3", "EpRamp 600", "CirclePulse");
             award(kAward, "EpFeature 450 3", "EpFeature 1000", "DiamondBoxPulse");
             if (round) put(kLanesLit, "EpGlow 600 AL0 AT0 AW100 AH100 SHPFillLeftRight");
@@ -316,7 +375,7 @@ inline void flashers(std::map<std::string, Rule> &r, const std::vector<std::stri
 //   hole kick-out, kickback   feature, down its side
 //   ramp made   ramp, down its side, the ball coming back off it
 // A centre feature runs down both.
-inline void side_mx(std::map<std::string, Rule> &r, const std::vector<std::string> &names, const Sides &sides)
+inline void side_mx(std::map<std::string, Rule> &r, const std::vector<std::string> &names, const Table &table)
 {
     for (const char *name : { "left mx", "right mx" }) {
         if (!named(names, name)) continue;
@@ -325,16 +384,16 @@ inline void side_mx(std::map<std::string, Rule> &r, const std::vector<std::strin
         std::vector<std::string> settings;
         std::vector<int> events;
         auto put = [&](int ev, const std::string &s) {
-            settings.push_back(e(ev) + " " + s);
+            settings.push_back(e(table, ev) + " " + s);
             events.push_back(ev);
         };
         if (me == 'R') put(kBallReady, "EpMain AL0 AW100 AT85 AH15 F500 BLINK 2000");
         put(me == 'L' ? kSlingLeft : kSlingRight, "EpMain M50 MAX50 AT0 AH100 ADU AS300");
-        for (size_t i = 0; i < sides.hole.size(); i++)
-            if (mine(sides.hole[i])) put(kHole1 + (int)i, "EpFeature 75 AT0 AH100 ADD AS300");
-        if (!sides.kickback.empty() && mine(sides.kickback[0])) put(kKickback, "EpFeature 75 AT0 AH100 ADD AS300");
-        for (size_t i = 0; i < sides.ramp.size(); i++)
-            if (mine(sides.ramp[i])) put(kRamp1 + (int)i, "EpRamp 75 AT0 AH100 ADD AS300");
+        for (size_t i = 0; i < table.hole.size(); i++)
+            if (mine(table.hole[i])) put(kHole1 + (int)i, "EpFeature 75 AT0 AH100 ADD AS300");
+        if (!table.kickback.empty() && mine(table.kickback[0])) put(kKickback, "EpFeature 75 AT0 AH100 ADD AS300");
+        for (size_t i = 0; i < table.ramp.size(); i++)
+            if (mine(table.ramp[i])) put(kRamp1 + (int)i, "EpRamp 75 AT0 AH100 ADD AS300");
         std::string cell;
         for (auto &s : settings) cell += (cell.empty() ? "" : "/") + s;
         r[name] = { cell, true, events };
@@ -345,9 +404,9 @@ inline void side_mx(std::map<std::string, Rule> &r, const std::vector<std::strin
 // appendix 5), in lower case. Anything not here is 0: the "ZB Launch Ball"
 // output above all, which turns a Pinscape plunger into a launch button.
 // `bumpers` is the table's: a side, L C or R, for each bumper from the left;
-// `sides` its own features'.
+// `table` the table: its number, its own features' names and sides.
 inline std::map<std::string, Rule> rules(const std::vector<std::string> &names, const std::string &bumpers,
-                                         const Sides &sides = {}, bool shapes = false)
+                                         const Table &table = {}, bool shapes = false)
 {
     auto has = [&](const std::string &n) {
         for (auto &x : names)
@@ -355,16 +414,16 @@ inline std::map<std::string, Rule> rules(const std::vector<std::string> &names, 
         return false;
     };
     std::map<std::string, Rule> r = {
-        { "flipper left", { e(kFlipperLeft), false, { kFlipperLeft } } },
-        { "flipper right", { e(kFlipperRight), false, { kFlipperRight } } },
-        { "slingshot left", { e(kSlingLeft), false, { kSlingLeft } } },
-        { "slingshot right", { e(kSlingRight), false, { kSlingRight } } },
-        { "knocker", { e(kKnocker), false, { kKnocker } } },                      /* an extra ball only, not game over */
-        { "beacon", sides.empty() ? Rule{ e(kKnocker) + " 2000", false, { kKnocker } }
-                                  : Rule{ e(kKnocker) + " 2000/" + e(kJackpot) + " 2000/" + e(kSuperJackpot) + " 2000",
+        { "flipper left", { e(table, kFlipperLeft), false, { kFlipperLeft } } },
+        { "flipper right", { e(table, kFlipperRight), false, { kFlipperRight } } },
+        { "slingshot left", { e(table, kSlingLeft), false, { kSlingLeft } } },
+        { "slingshot right", { e(table, kSlingRight), false, { kSlingRight } } },
+        { "knocker", { e(table, kKnocker), false, { kKnocker } } },                      /* an extra ball only, not game over */
+        { "beacon", table.empty() ? Rule{ e(table, kKnocker) + " 2000", false, { kKnocker } }
+                                  : Rule{ e(table, kKnocker) + " 2000/" + e(table, kJackpot) + " 2000/" + e(table, kSuperJackpot) + " 2000",
                                           false, { kKnocker, kJackpot, kSuperJackpot } } },
-        { "shaker", { e(kNudge) + " 300 I32/" + e(kTilt) + " 600 I32", false, { kNudge, kTilt } } },
-        { "launch button", { e(kBallReady), false, { kBallReady } } },
+        { "shaker", { e(table, kNudge) + " 300 I32/" + e(table, kTilt) + " 600 I32", false, { kNudge, kTilt } } },
+        { "launch button", { e(table, kBallReady), false, { kBallReady } } },
         { "start button", { "ON", false, {} } },
         { "exit", { "ON", false, {} } },
         { "coin", { "ON", false, {} } },
@@ -393,10 +452,10 @@ inline std::map<std::string, Rule> rules(const std::vector<std::string> &names, 
     for (int s = 0; s < 3; s++) {
         const char me = "LCR"[s];
         std::vector<int> mine;
-        for (size_t i = 0; i < sides.hole.size(); i++)
-            if (sides.hole[i] == me) mine.push_back(kHole1 + (int)i);
-        if (!sides.kickback.empty() && sides.kickback[0] == me) mine.push_back(kKickback);
-        if (sides.bank() == me) mine.push_back(kTargetsDown);
+        for (size_t i = 0; i < table.hole.size(); i++)
+            if (table.hole[i] == me) mine.push_back(kHole1 + (int)i);
+        if (!table.kickback.empty() && table.kickback[0] == me) mine.push_back(kKickback);
+        if (table.bank() == me) mine.push_back(kTargetsDown);
         if (mine.empty()) continue;
         for (std::string n : { std::string("10 bumper middle "), std::string("8 bumper ") }) {
             n += side[s];
@@ -408,20 +467,20 @@ inline std::map<std::string, Rule> rules(const std::vector<std::string> &names, 
     }
     for (const char *n : { "10 bumper middle right", "8 bumper right" })
         if (has(n)) on[n].insert(on[n].begin(), kLaunch);
-    for (auto &[name, events] : on) r[name] = { cell_of(events), false, events };
-    flashers(r, names, bumpers, sides, shapes);
-    side_mx(r, names, sides);
+    for (auto &[name, events] : on) r[name] = { cell_of(table, events), false, events };
+    flashers(r, names, bumpers, table, shapes);
+    side_mx(r, names, table);
     return r;
 }
 
 } // namespace detail
 
 // `shapes`: the DOF folder has DirectOutputShapes.xml, so the Back MX may use them
-inline Row build(const std::vector<std::string> &names, const std::string &bumpers = "LCR", const Sides &sides = {},
+inline Row build(const std::vector<std::string> &names, const std::string &bumpers = "LCR", const Table &table = {},
                  bool shapes = false)
 {
     Row row;
-    const auto rules = detail::rules(names, bumpers, sides, shapes);
+    const auto rules = detail::rules(names, bumpers, table, shapes);
     const size_t n = names.size();
     for (size_t i = 0; i < n; i++) {
         const auto it = rules.find(lower(names[i]));
@@ -460,34 +519,35 @@ inline Row build(const std::vector<std::string> &names, const std::string &bumpe
 // Whether a made row could carry an event on this table: a bumper or feature
 // it does not have is no loss, and neither are a single drop target, a
 // rollover or a ball held, which made rows leave to the player's own
-inline bool row_has(int ev, const std::string &bumpers, const Sides &sides)
+inline bool row_has(int ev, const std::string &bumpers, const Table &table)
 {
     for (int b = (int)bumpers.size(); b < kBumpers; b++)
         if (ev == bumper_event(b)) return false;
-    if (ev >= kHole1 && ev <= kHole5) return ev - kHole1 < (int)sides.hole.size();
-    if (ev >= kRamp1 && ev <= kRamp3) return ev - kRamp1 < (int)sides.ramp.size();
-    if (ev == kKickback) return !sides.kickback.empty();
-    if (ev == kTargetsDown) return !sides.target.empty();
+    if (ev >= kHole1 && ev <= kHole5) return ev - kHole1 < (int)table.hole.size();
+    if (ev >= kRamp1 && ev <= kRamp3) return ev - kRamp1 < (int)table.ramp.size();
+    if (ev == kKickback) return !table.kickback.empty();
+    if (ev == kTargetsDown) return !table.target.empty();
     if ((ev >= kTarget1 && ev <= kTarget3) || (ev >= kRollover1 && ev <= kRollover6) || ev == kBallHeld) return false;
-    if (ev >= kHole1) return !sides.empty();        // ball held, lanes, skill shot, jackpots, awards
+    if (ev >= kHole1) return !table.empty();        // ball held, lanes, skill shot, jackpots, awards
     return true;
 }
 
-// Event names for a message, a run of numbered ones as one: "hole_1-5"
-inline std::string listed(const std::vector<int> &events)
+// Events by their DOF names for a message, a run of numbered ones as one:
+// "Bumper4-6"
+inline std::string listed(const std::vector<int> &events, const Table &t = {})
 {
-    auto base = [](int ev) {
-        const std::string n = kEvent[ev];
-        const size_t u = n.rfind('_');
-        return u != std::string::npos && std::isdigit((unsigned char)n[u + 1]) ? n.substr(0, u + 1) : std::string();
+    auto base = [&](int ev) {
+        const std::string n = t.dof(ev);
+        const size_t d = n.find_last_not_of("0123456789");
+        return d != std::string::npos && d + 1 < n.size() ? n.substr(0, d + 1) : std::string();
     };
     std::string out;
     for (size_t i = 0; i < events.size(); ) {
         size_t j = i;
         const std::string b = base(events[i]);
         while (!b.empty() && j + 1 < events.size() && base(events[j + 1]) == b && events[j + 1] == events[j] + 1) j++;
-        out += (out.empty() ? "" : ", ") + std::string(kEvent[events[i]]);
-        if (j > i) out += "-" + std::string(kEvent[events[j]]).substr(b.size());
+        out += (out.empty() ? "" : ", ") + t.dof(events[i]);
+        if (j > i) out += "-" + t.dof(events[j]).substr(b.size());
         i = j + 1;
     }
     return out;

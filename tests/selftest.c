@@ -329,7 +329,7 @@ static void test_images(void)
 /* ---- cabinet feedback and the plunger ---- */
 
 static const char k_map[] =
-    "epicpinball-feedback 5\nimage ep1 16 69691905\n"
+    "epicpinball-feedback 6\nimage ep1 16 69691905\n"
     "ds 10\ncs 2000\nactive 100\nx 110\ny 120\nvx 130\nvy 140\nslots 5\n"
     "flip_l 150\nflip_r 152\nup_l 154\nup_r 155\ntilt 160\nmeter 161\ncooldown 162\ndemo 163\n"
     "extra 164\nover 165\ncount 166\ndrain_y 18F\nkick 167\nweak_y 180\nsling_line C7\nmap 170\n"
@@ -337,11 +337,12 @@ static const char k_map[] =
     "lane_off 0\nlane_x 118\nlane_y DC\nover_pull 0\nscan_x 190\nscan_y 192\nnudge_gate 16A\ngate_lo 4\ngate_hi 2A\n"
     "step_fn ep1_step\nkicker_fn ep1_kick\nswitch_fn ep1_sw\nbumper 100 60 0\nbumper 200 60 2\n"
     "msg_fn ep1_msg\nlayer 240\non_layer F9 F8 F1\ntilt_pass F0 F6\n"
-    "zone hole 1 F5 0 0 319 399 L\nzone hole 2 F6 0 0 219 399 C\nzone hole 3 F6 220 0 319 399 R\n"
-    "zone kickback 1 F8 0 321 50 399 L\n"
-    "zone rollover 1 FA 0 0 179 399 C\nzone rollover 2 FA 180 0 319 399 R\n"
-    "zone ramp 1 F9 0 0 74 399 L\nzone ramp 2 F6 220 0 319 399 R\n"
-    "timer 200\ntimer 201\ntarget 210 1 L\ntarget 211 2 L\ntarget 212 3 L\nlanes 220 4\nramps 230\n"
+    "zone hole 1 F5 0 0 319 399 L TestHole\nzone hole 2 F6 0 0 219 399 C PowerUpHole\n"
+    "zone hole 3 F6 220 0 319 399 R RightHole\nzone kickback 1 F8 0 321 50 399 L Kickback\n"
+    "zone rollover 1 FA 0 0 179 399 C TopLane1\nzone rollover 2 FA 180 0 319 399 R TopLane2\n"
+    "zone ramp 1 F9 0 0 74 399 L LeftRamp\nzone ramp 2 F6 220 0 319 399 R CentreRamp\n"
+    "timer 200\ntimer 201\ntarget 210 1 L DropTarget1\ntarget 211 2 L DropTarget2\ntarget 212 3 L DropTarget3\n"
+    "bank DropTargets\nlanes 220 4\nramps 230\n"
     "msg 300 jackpot\nmsg 310 award\nend\n";
 
 static void test_feedback_map(void)
@@ -353,8 +354,10 @@ static void test_feedback_map(void)
     assert(watch_map_parse(k_map, &m, &why));
     assert(!strcmp(m.name, "ep1") && m.size == 16 && m.fnv == 0x69691905u && m.pull_max == 708 && m.nbumpers == 2);
     assert(!strcmp(m.layout, "LR"));
-    /* a table's own features: the zone a switch is, and every side for made rows */
-    assert(!strcmp(m.sides, "hole:LCR ramp:LR kickback:L target:LLL"));
+    /* a table's own features: the zone a switch is, and each one's name and side for DOF */
+    assert(!strcmp(m.features, "hole1=TestHole:L hole2=PowerUpHole:C hole3=RightHole:R kickback1=Kickback:L "
+                               "rollover1=TopLane1:C rollover2=TopLane2:R ramp1=LeftRamp:L ramp2=CentreRamp:R "
+                               "target1=DropTarget1:L target2=DropTarget2:L target3=DropTarget3:L bank=DropTargets"));
     assert(watch_zone(&m, WZ_HOLE, 0xF6, 219, 50) == 1 && watch_zone(&m, WZ_HOLE, 0xF6, 220, 50) == 2);
     assert(watch_zone(&m, WZ_RAMP, 0xF6, 220, 50) == 7 && watch_zone(&m, WZ_RAMP, 0xF6, 219, 50) < 0);
     assert(watch_zone(&m, WZ_KICKBACK, 0xF8, 30, 320) < 0 && watch_zone(&m, WZ_KICKBACK, 0xF8, 30, 321) == 3);
@@ -362,7 +365,7 @@ static void test_feedback_map(void)
     assert(watch_kick_event(&m, 90, 70) == FB_BUMPER_1 && watch_kick_event(&m, 210, 70) == FB_BUMPER_2);
     assert(watch_kick_event(&m, 40, 300) == FB_SLING_LEFT && watch_kick_event(&m, 280, 300) == FB_SLING_RIGHT);
     {
-        WatchMap six = m;                                 /* table 5's six: E105-E107, then E118-E120 */
+        WatchMap six = m;                                 /* table 5's six: bumper_1-6 */
         const int xs[6] = { 28, 47, 100, 188, 240, 266 }, sides[6] = { 0, 0, 1, 1, 2, 2 };
         six.nbumpers = 6;
         for (int i = 0; i < 6; i++) { six.bumper[i].x = xs[i]; six.bumper[i].y = 150; six.bumper[i].slot = sides[i]; }
@@ -379,8 +382,31 @@ static void test_feedback_map(void)
         assert(!watch_map_parse(cut, &m, &why));
     }
     memcpy(cut, k_map, sizeof k_map);
-    strstr(cut, "feedback 5")[9] = '4';                   /* another version */
+    strstr(cut, "feedback 6")[9] = '5';                   /* another version */
     assert(!watch_map_parse(cut, &m, &why));
+    {
+        /* names: letters and digits, each once on a table, one for a feature,
+         * and drop targets with their bank */
+        static const char *const bad[][2] = {
+            { "C PowerUpHole", "C Power-Up" }, { "L LeftRamp", "L 1Ramp" }, { "R RightHole", "R TestHole" },
+            { "R CentreRamp", "R righthole" }, { "L DropTarget2", "L DropTargetsDown" }, { "bank DropTargets\n", "" },
+            { "L TestHole", "L" },
+        };
+        for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+            static char edited[sizeof k_map + 32];
+            const char *at = strstr(k_map, bad[i][0]);
+            assert(at);
+            snprintf(edited, sizeof edited, "%.*s%s%s", (int)(at - k_map), k_map, bad[i][1], at + strlen(bad[i][0]));
+            assert(!watch_map_parse(edited, &m, &why));
+        }
+        /* a feature drawn twice: one name */
+        static char twice[sizeof k_map + 64];
+        const char *at = strstr(k_map, "zone kickback");
+        snprintf(twice, sizeof twice, "%.*szone hole 1 F5 0 0 10 10 L TestHole\n%s", (int)(at - k_map), k_map, at);
+        assert(watch_map_parse(twice, &m, &why));
+        snprintf(twice, sizeof twice, "%.*szone hole 1 F5 0 0 10 10 L OtherHole\n%s", (int)(at - k_map), k_map, at);
+        assert(!watch_map_parse(twice, &m, &why));
+    }
     memcpy(cut, k_map, sizeof k_map);
     strstr(cut, "bumper 200")[7] = '0';                   /* not left to right */
     assert(!watch_map_parse(cut, &m, &why));
@@ -405,7 +431,7 @@ static void test_feedback_map(void)
 }
 
 static int seen[FB_OUTPUTS];
-static void seen_table(const char *name, const char *bumpers, const char *sides) { (void)name; (void)bumpers; (void)sides; }
+static void seen_table(const char *name, const char *bumpers, const char *features) { (void)name; (void)bumpers; (void)features; }
 static int level[FB_OUTPUTS];
 static void seen_event(FbEvent e, int on) { seen[e] += on; level[e] = on; }
 static void seen_off(void) { }
@@ -1049,7 +1075,7 @@ static void test_dof_pipe(void)
 
     real_clock = 1;
     assert(dof_open(path, dir));
-    feedback_table(0, "ep1", "LR", "hole:LLCRR kickback:L");
+    feedback_table(0, "ep1", "LR", "hole1=TestHole:L kickback1=Kickback:L");
     pump(300);
     feedback_event(1, FB_FLIPPER_LEFT, 1, (FbDetail){ 0 });
     pump(1200);                                           /* held, and nothing said: no fault, and no off */
@@ -1081,8 +1107,9 @@ static void test_dof_pipe(void)
     size_t n = fread(got, 1, sizeof got - 1, f);
     fclose(f);
     got[n] = 0;
-    assert(strstr(got, "--table ep1 --bumpers LR --sides hole:LLCRR kickback:L") && strstr(got, "--save") && !strstr(got, "knocker"));
-    assert(strstr(got, "--table ep2 --bumpers LCR\n"));           /* no features: no --sides */
+    assert(strstr(got, "--table ep1 --bumpers LR --features hole1=TestHole:L kickback1=Kickback:L") && strstr(got, "--save")
+           && !strstr(got, "knocker"));
+    assert(strstr(got, "--table ep2 --bumpers LCR\n"));           /* no features: no --features */
     const char *up = strstr(got, "e flipper_left 1"), *drain = strstr(got, "e drain 1");
     assert(up && drain && up < drain);
     const char *off = strstr(drain, "o  \n");             /* the mute's, after the drain */

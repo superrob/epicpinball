@@ -19,15 +19,15 @@ dof/build/helper/autorow_test
 
 | | |
 |---|---|
-| `src/main.cpp` | the pipe protocol, the event numbers, a watchdog for a hung start or finish |
+| `src/main.cpp` | the pipe protocol, events to libdof by name, a watchdog for a hung start or finish |
 | `src/locate.h` | whose DOF files: VPinball's, or the game's own. No libdof in it |
-| `src/autorow.h` | a row made from a Config Tool file's device header, when there is none. No libdof in it |
-| `src/events.h` | the events and their DOF numbers |
+| `src/autorow.h` | a row made from a Config Tool file's device header, when there is none; a table's own features' names (`--features`). No libdof in it |
+| `src/events.h` | the events and their DOF names (`$FlipperLeft`) |
 | `tests/autorow_test.cpp` | those rows, from made-up headers |
 | `patches/` | what is changed in libdof |
 | `example/` | rows to start from |
 
-Pinned: libdof `3d0ad20` (0.5.4) with the libusb, hidapi, libftdi and
+Pinned: libdof `49b6947` (0.5.4, master of 26 November 2026) with the libusb, hidapi, libftdi and
 libserialport commits its own `platforms/config.sh` pins. They keep their own
 licences and are downloaded, not included.
 
@@ -37,6 +37,9 @@ What that libdof makes the helper do:
   gets a process for each table;
 - it takes a row whose name the table's merely begins with, so the helper
   wants the exact row or `epicpinball`, and the names have their zero;
-- with a Pico of more than 128 outputs it read past its value buffer and
-  sent what it found to the ports above. `patches/pico-output-bound.patch`
-  stops the loop at the buffer.
+- it reads `$Name` in a row as a named table element, but its `DOF` class
+  takes only a type letter and a number. `patches/named-data-receive.patch`
+  adds `DataReceive(name, value)`, which the helper sends every event with;
+- before `839624f` a named element lost its name and never fired, and with a
+  Pico of more than 128 outputs it read past its value buffer: both fixed
+  upstream, so the pin is at least that.

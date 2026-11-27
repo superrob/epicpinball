@@ -24,9 +24,17 @@ for t in g++ cmake autoreconf libtoolize patch curl sha256sum; do
 done
 mkdir -p "$S/dl" "$L"
 
-# name owner/repo commit sha256
+# name owner/repo commit sha256. A new commit for a name replaces its archive
+# and its tree, and what was built from them.
 fetch() {
     tgz=$S/dl/$1.tar.gz
+    if [ "$(cat "$S/dl/$1.commit" 2>/dev/null)" != "$3" ]; then
+        # an archive from before this was kept is kept if it is the pinned one
+        if [ -f "$S/dl/$1.commit" ] || ! echo "$4  $tgz" | sha256sum -c --quiet - 2> /dev/null; then
+            rm -rf "$tgz" "$S/$1" "$S/.$1"-*
+        fi
+        echo "$3" > "$S/dl/$1.commit"
+    fi
     if [ ! -f "$tgz" ]; then
         echo "fetching $2 $3"
         curl -fsSL --max-time 180 -o "$tgz.part" "https://codeload.github.com/$2/tar.gz/$3"
@@ -42,8 +50,8 @@ fetch() {
         mv "$t" "$S/$1"
     fi
 }
-fetch libdof vpinball/libdof 3d0ad20a4be185aaa3d426e1abff01f9639a2f62 \
-    5fb82f9b46a6e55768dc1254fb9d9e9c2d30374486ce1686317eaa4408b1fb40
+fetch libdof vpinball/libdof 49b69470f0f940743cf9294cc982440e3bfb3fb5 \
+    267a2cb08c377234580a482871b4b7a15c5e7f332fd5827185b6cec8598988ee
 fetch libusb libusb/libusb 15a7ebb4d426c5ce196684347d2b7cafad862626 \
     4ae78a9c6c540a3ccd7153c77e24947fa2ba50d845714bbbfccf8783832ed704
 fetch libserialport sigrokproject/libserialport 21b3dfe5f68c205be4086469335fd2fc2ce11ed2 \
@@ -63,20 +71,14 @@ mkdir -p "$R"
 # What libdof's platforms/linux/x64/external.sh does, minus its downloads
 if [ ! -f "$S/.libusb-built" ]; then
     ( cd "$S/libusb" && NOCONFIGURE=1 ./autogen.sh && ./configure --enable-shared && make -j"$J" )
-    cp "$S/libusb/libusb/libusb.h" "$T/include/libusb-1.0/"
-    cp -a "$S"/libusb/libusb/.libs/libusb-1.0.so "$S"/libusb/libusb/.libs/libusb-1.0.so.* "$R/"
     touch "$S/.libusb-built"
 fi
 if [ ! -f "$S/.libserialport-built" ]; then
     ( cd "$S/libserialport" && ./autogen.sh && ./configure && make -j"$J" )
-    cp "$S/libserialport/libserialport.h" "$T/include/"
-    cp -a "$S"/libserialport/.libs/libserialport.so "$S"/libserialport/.libs/libserialport.so.* "$R/"
     touch "$S/.libserialport-built"
 fi
 if [ ! -f "$S/.hidapi-built" ]; then
     ( cd "$S/hidapi" && cmake -DHIDAPI_WITH_LIBUSB=OFF -DCMAKE_BUILD_TYPE=Release -B build && cmake --build build -j "$J" )
-    cp -r "$S/hidapi/hidapi" "$T/include/"
-    cp -a "$S"/hidapi/build/src/linux/libhidapi-hidraw.so "$S"/hidapi/build/src/linux/libhidapi-hidraw.so.* "$R/"
     touch "$S/.hidapi-built"
 fi
 if [ ! -f "$S/.libftdi-built" ]; then
@@ -87,18 +89,26 @@ if [ ! -f "$S/.libftdi-built" ]; then
             -DCMAKE_INSTALL_RPATH='$$ORIGIN' -DCMAKE_BUILD_WITH_INSTALL_RPATH=TRUE \
             -DCMAKE_BUILD_TYPE=Release -B build &&
       cmake --build build -j "$J" )
-    cp "$S/libftdi/src/ftdi.h" "$T/include/libftdi1/"
-    cp -a "$S"/libftdi/build/src/libftdi1.so "$S"/libftdi/build/src/libftdi1.so.* "$R/"
     touch "$S/.libftdi-built"
 fi
-# Named by what is in the patch, so a tree built without it is built again
-PATCH=$HERE/patches/pico-output-bound.patch
-SUM=$(sha256sum "$PATCH" | cut -c1-16)
+# Into libdof's tree each time: a new libdof comes without them
+cp "$S/libusb/libusb/libusb.h" "$T/include/libusb-1.0/"
+cp -a "$S"/libusb/libusb/.libs/libusb-1.0.so "$S"/libusb/libusb/.libs/libusb-1.0.so.* "$R/"
+cp "$S/libserialport/libserialport.h" "$T/include/"
+cp -a "$S"/libserialport/.libs/libserialport.so "$S"/libserialport/.libs/libserialport.so.* "$R/"
+cp -r "$S/hidapi/hidapi" "$T/include/"
+cp -a "$S"/hidapi/build/src/linux/libhidapi-hidraw.so "$S"/hidapi/build/src/linux/libhidapi-hidraw.so.* "$R/"
+cp "$S/libftdi/src/ftdi.h" "$T/include/libftdi1/"
+cp -a "$S"/libftdi/build/src/libftdi1.so "$S"/libftdi/build/src/libftdi1.so.* "$R/"
+# Named by what is in the patches, so a tree built without them is built again
+SUM=$(cat "$HERE"/patches/*.patch | sha256sum | cut -c1-16)
 if [ ! -f "$S/.libdof-patched-$SUM" ]; then
-    patch -d "$S/libdof" -p1 --forward --batch --fuzz=0 --reject-file=- < "$PATCH" || {
-        echo "dof/build.sh: $PATCH does not apply to $S/libdof: delete that folder and $S/.libdof-*, and run again" >&2
-        exit 1
-    }
+    for PATCH in "$HERE"/patches/*.patch; do
+        patch -d "$S/libdof" -p1 --forward --batch --fuzz=0 --reject-file=- < "$PATCH" || {
+            echo "dof/build.sh: $PATCH does not apply to $S/libdof: delete that folder and $S/.libdof-*, and run again" >&2
+            exit 1
+        }
+    done
     touch "$S/.libdof-patched-$SUM"
 fi
 if [ ! -f "$S/.libdof-built-$SUM" ]; then
