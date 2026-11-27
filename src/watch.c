@@ -248,7 +248,8 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         else if (!strcmp(key, "step_fn")) snprintf(m->step_fn, sizeof m->step_fn, "%s", val);
         else if (!strcmp(key, "kicker_fn")) snprintf(m->kicker_fn, sizeof m->kicker_fn, "%s", val);
         else if (!strcmp(key, "switch_fn")) snprintf(m->switch_fn, sizeof m->switch_fn, "%s", val);
-        else if (!strcmp(key, "msg_fn")) snprintf(m->msg_fn, sizeof m->msg_fn, "%s", val);
+        else if (!strcmp(key, "msg_fn") && !*m->msg_fn) snprintf(m->msg_fn, sizeof m->msg_fn, "%s", val);
+        else if (!strcmp(key, "msg_fn")) snprintf(m->msg_fn2, sizeof m->msg_fn2, "%s", val);
         else if (!strcmp(key, "effect_fn")) snprintf(m->effect_fn, sizeof m->effect_fn, "%s", val);
         else if (!strcmp(key, "sfx_on")) {
             char *e;
@@ -632,7 +633,7 @@ void watch_enter(CPU *cpu, const char *fn)
             else if (z->kind == WZ_KICKBACK) emit(FB_KICKBACK, 1, sw_x, sw_y, sw_colour, 0);
             else if (z->kind == WZ_RAMP && !M.ramps) emit((FbEvent)(FB_RAMP_1 + z->n - 1), 1, sw_x, sw_y, sw_colour, 0);
         }
-    } else if (*M.msg_fn && !strcmp(fn, M.msg_fn)) {
+    } else if ((*M.msg_fn && !strcmp(fn, M.msg_fn)) || (*M.msg_fn2 && !strcmp(fn, M.msg_fn2))) {
         if (!sound()) return;
         for (int i = 0; i < M.nmsgs; i++)
             if (M.msg[i].at == cpu->bx) { emit((FbEvent)M.msg[i].event, 1, 0, 0, cpu->bx, 0); break; }

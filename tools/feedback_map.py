@@ -85,6 +85,35 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep9': dict(                                       # Cyborgirl
+        zones=[
+            ('hole', 1, 'TenseDeck', 0xCB, 0, 0, 139, 399),           # bottom left
+            ('hole', 2, 'CpuHog', 0xCB, 140, 0, 319, 399),            # right
+            ('rollover', 1, 'LaneI', 0xC6, 0, 0, 173, 99),            # ICE, the top lanes
+            ('rollover', 2, 'LaneC', 0xC6, 174, 0, 201, 99),
+            ('rollover', 3, 'LaneE', 0xC6, 202, 0, 319, 99),
+            ('switch', 1, 'Reboot', 0xC6, 0, 100, 319, 399),          # sync and reboot, right
+            ('switch', 2, 'CentreLane', 0xC7, 0, 0, 184, 399),
+            ('switch', 3, 'RightLane', 0xC7, 185, 0, 319, 399),
+            ('switch', 4, 'IslandLeft', 0xC8, 0, 0, 150, 399),        # under the bumpers' island
+            ('switch', 5, 'IslandRight', 0xC8, 151, 0, 319, 399),
+            ('switch', 6, 'LeftUpperTarget', 0xC9, 0, 0, 144, 399),   # MULTIPLIER ADVANCE, KERNEL PANIC!
+            ('switch', 7, 'RightUpperTarget', 0xC9, 145, 0, 319, 399),
+            ('switch', 8, 'LeftLowerTarget', 0xCA, 0, 0, 144, 399),
+            ('switch', 9, 'RightLowerTarget', 0xCA, 145, 0, 319, 399),
+            ('switch', 10, 'LeftInlane', 0xCC, 0, 0, 144, 399),
+            ('switch', 11, 'RightInlane', 0xCC, 145, 0, 319, 399),
+            ('switch', 12, 'IceBreaker', 0xCD, 0, 0, 319, 399),
+            ('switch', 13, 'ImplantLane', 0xC0, 0, 0, 319, 399),      # into the cybernetic implants
+            ('switch', 13, 'ImplantLane', 0xC5, 0, 0, 319, 399),
+        ],
+        named=[('switch', 14, 'Implant', 'L'), ('switch', 15, 'KernelPanic', 'C')],
+        messages=[
+            ('switch14', 'CYBERNETIC IMPLANT'), ('switch15', 'KERNEL PANIC!'),
+            ('award', 'SUPER IMPLANT'), ('award', 'MULTIPLIER ADVANCE'), ('award', 'CPU MAXED OUT'),
+            ('award', 'SUPER TENSE DECK'),
+        ],
+    ),
     'ep8': dict(                                       # Enigma: its levels draw their own switches
         stamped=[0xE3, 0xE7, 0xE8],
         zones=[
@@ -217,7 +246,7 @@ FEATURES = {
         messages=[
             ('jackpot', 'JACKPOT!!'), ('super_jackpot', 'DOUBLE JACKPOT'),
             ('ramp1', 'ONTO THE RACE TRACK'), ('switch13', 'BALL 1 LOCKED'),
-            ('award', 'ALL GREEN LIGHTS - 5M'), ('award', 'REFUELED-15M'),
+            ('award', 'ALL GREEN LIGHTS - 5M'), ('award', 'MPH MULTIPLIER INCREASE'), ('award', 'REFUELED-15M'),
             ('award', 'NEW TIRES-10M'), ('award', 'TUNE UP-5M'), ('award', 'MYSTERY BONUS'), ('award', 'PIT STOP'),
         ],
     ),
@@ -681,11 +710,13 @@ def features(img, f, v, art, data):
                 out['msgs'].append((at, event))
                 for _, (body, _) in f.items():
                     called |= set(re.findall(rf'lea bx, word ds:\[0x{at:X}\]\n(?:mov (?:ax|di), {A}\n){{0,2}}call (ep\d+_[0-9A-F]+)\n', body))
-        if len(called) != 1:
+        # one way to show a text, or two (table 9 has a second)
+        if not 1 <= len(called) <= 2:
             raise Missing(f'message function: {sorted(called) or "none"}')
-        out['msg_fn'] = called.pop()
-        if not f[out['msg_fn']][1]:
-            raise Missing(f'{out["msg_fn"]} has no RECOMP_ENTER, so its calls cannot be seen')
+        out['msg_fn'] = sorted(called)
+        for fn in out['msg_fn']:
+            if not f[fn][1]:
+                raise Missing(f'{fn} has no RECOMP_ENTER, so its calls cannot be seen')
     return out
 
 
@@ -836,8 +867,7 @@ def text_of(img, r):
         out.append(f'layer {layer:X}')
         out.append('on_layer ' + ' '.join(f'{c:X}' for c in on_layer))
         out.append('tilt_pass ' + ' '.join(f'{c:X}' for c in tilted))
-        if own['msg_fn']:
-            out.append(f'msg_fn {own["msg_fn"]}')
+        out += [f'msg_fn {fn}' for fn in own['msg_fn'] or []]
         out += [f'zone {k} {n} {c:X} {x0} {y0} {x1} {y1} {s} {name}' for k, n, c, x0, y0, x1, y1, s, name in own['zones']]
         out += [f'feature {k} {n} {s} {name}' for k, n, s, name in own['named']]
         out += [f'timer {a:X}' for a in own['timers']]

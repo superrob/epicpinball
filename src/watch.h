@@ -34,7 +34,7 @@ typedef struct {
     uint16_t pull, pull_inc, pull_max, pull_shift, ctrl, space;
     uint16_t lane_off, lane_x, lane_y, over_pull;
     uint16_t scan_x, scan_y;         /* the ball the switch handler is looking at */
-    char step_fn[24], kicker_fn[24], switch_fn[24], msg_fn[24];
+    char step_fn[24], kicker_fn[24], switch_fn[24], msg_fn[24], msg_fn2[24];   /* a second way to show a text: table 9 */
     /* SSF (ssf.c): the table's effect function, the sound driver's voice
      * setup, volume, stop and stop of a class, and the board's effects */
     char effect_fn[24], sfx_setup_fn[24], sfx_volume_fn[24], sfx_stop_fn[24], sfx_stop_class_fn[24];

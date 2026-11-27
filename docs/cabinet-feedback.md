@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 8
+table 1's power-up hole and nothing on any other table. **Tables 1 to 9
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -248,7 +248,7 @@ Four hours of `--autoplay` (58 games) fired every one of them.
 | `t4LeftGreenLane`, `t4RightGreenLane` | the lanes by the slingshots: GO - GREEN LIGHT |
 | `t4BallLock` | BALL 1 LOCKED |
 | `Jackpot`, `SuperJackpot` | JACKPOT!!, DOUBLE JACKPOT |
-| `Award` | ALL GREEN LIGHTS - 5M, REFUELED-15M, NEW TIRES-10M, TUNE UP-5M, MYSTERY BONUS, PIT STOP |
+| `Award` | ALL GREEN LIGHTS - 5M, MPH MULTIPLIER INCREASE, REFUELED-15M, NEW TIRES-10M, TUNE UP-5M, MYSTERY BONUS, PIT STOP |
 
 Four hours of `--autoplay` (56 games) fired every one of them but the
 jackpots.
@@ -331,6 +331,27 @@ are its scoreboard's.
 Eight hours of `--autoplay` (224 games) fired every one of them but
 `t8Spring`, `t8EnigmaComes` and `SuperJackpot`, from levels it did not
 reach.
+
+#### Table 9 (Cyborgirl)
+
+| Event | Is |
+|---|---|
+| `t9TenseDeck` | the hole bottom left |
+| `t9CpuHog` | the hole on the right |
+| `t9LaneI`, `t9LaneC`, `t9LaneE` | ICE, the top lanes |
+| `t9Reboot` | sync and reboot, right |
+| `t9CentreLane`, `t9RightLane` | the lanes under the top lanes |
+| `t9IslandLeft`, `t9IslandRight` | the switches under the bumpers' island |
+| `t9LeftUpperTarget`, `t9LeftLowerTarget`, `t9RightUpperTarget`, `t9RightLowerTarget` | the side targets: MULTIPLIER ADVANCE, KERNEL PANIC! |
+| `t9LeftInlane`, `t9RightInlane` | the inlanes |
+| `t9IceBreaker` | the ice breaker, left |
+| `t9ImplantLane` | the lanes into the cybernetic implants, top left |
+| `t9Implant` | CYBERNETIC IMPLANT |
+| `t9KernelPanic` | KERNEL PANIC! |
+| `Award` | SUPER IMPLANT, MULTIPLIER ADVANCE, CPU MAXED OUT, SUPER TENSE DECK |
+
+Four hours of `--autoplay` (129 games) fired every one of them but
+`t9IceBreaker` and `t9KernelPanic`.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.

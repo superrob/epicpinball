@@ -404,6 +404,11 @@ static void test_feedback_map(void)
             snprintf(edited, sizeof edited, "%.*s%s%s", (int)(at - k_map), k_map, bad[i][1], at + strlen(bad[i][0]));
             assert(!watch_map_parse(edited, &m, &why));
         }
+        /* table 9: a second way to show a text */
+        static char two[sizeof k_map + 32];
+        const char *mf = strstr(k_map, "msg_fn ep1_msg\n");
+        snprintf(two, sizeof two, "%.*smsg_fn ep1_msg2\n%s", (int)(mf - k_map), k_map, mf);
+        assert(watch_map_parse(two, &m, &why) && !strcmp(m.msg_fn, "ep1_msg2") && !strcmp(m.msg_fn2, "ep1_msg"));
         /* Enigma: nothing passes on its wires */
         static char wires[sizeof k_map];
         const char *on = strstr(k_map, "on_layer F9 F8 F1");
