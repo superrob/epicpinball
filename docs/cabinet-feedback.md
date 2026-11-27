@@ -1144,5 +1144,5 @@ Without hardware, in a sandbox with no devices:
 
 Not tested: tables 2 to 13 on a cabinet's coils or played by hand, other
 controllers and other cabinets' Config Tool headers, Flatpak and portable
-VPX, play on a cabinet's Windows with its coils (only lights were driven
-there), other releases of the game.
+VPX, other releases of the game. (Play on a Windows cabinet, coils
+included, was tried by hand and works.)

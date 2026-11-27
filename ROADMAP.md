@@ -14,8 +14,9 @@
   window; F7-F12, the menu and the pad were not pressed by a test.
 - **Cabinet feedback on every table.** `--dof` and the analog plunger work on
   a real cabinet on table 1; tables 2 to 13 have lit a Windows cabinet's LED
-  strips, button lights and DMD on `--autoplay`, but not yet driven its coils
-  or been played by hand (docs/cabinet-feedback.md).
+  strips, button lights and DMD on `--autoplay`; the coils work there in
+  play, but tables 2 to 13 have not each been played by hand
+  (docs/cabinet-feedback.md).
 - **A netlab recipe**, so builds and conformance run on the farm like the other
   recomps (repo rules, section 8). Needs the MSVC build to run on the clang-cl
   builder, or an MSVC builder.
@@ -30,8 +31,6 @@
   SB16 covers everyone today.
 - **Gamepad**: `controller.ini`, GOG's mapping by default, untested on hardware.
   Rumble on the flippers and bumpers would be the remaster's next touch.
-- **Cabinet mode on Windows**: run on one cabinet, with its DMD, DOF and
-  SSF, on table 1, left alone; not yet played there.
 - **Cabinet mode on more cabinets**: it works on one real cabinet under KDE,
   on table 1, with the scoreboard placed on the second display, and is tested
   on virtual displays. wlroots compositors and SDL2 proper (not sdl2-compat)
@@ -39,20 +38,18 @@
 - **More cabinet feedback**: every table has its own events now, tried
   only by `--autoplay`: each on a real cabinet, and the jackpots, multiball
   and later levels the autoplayer never reaches; names for the lamps (every
-  table's follow a Windows cabinet's button lights); on Windows, the coils
-  (only lights were driven there); and
-  an entry in the DOF Config Tool's database, which is the Config Tool's site
-  to take.
+  table's follow a Windows cabinet's button lights); and an entry in the DOF
+  Config Tool's database, which is the Config Tool's site to take.
 - **The DMD** (works on a real cabinet on table 1; every table's messages
   looked at, headless, docs/dmd.md; every table's on a Windows cabinet's
   ZeDMD on `--autoplay`): the jackpots, modes and later levels `--autoplay`
   does not reach; table 1's 66x13 picture in the bar.
 - **SSF** (works on a real cabinet's exciters): each table's own board
   effects beyond slots 0-6 by ear on a cabinet (they were chosen by sample
-  and by when they play: docs/ssf.md); Windows.
+  and by when they play: docs/ssf.md).
 - **`--table`**: a frontend's own start and exit keys.
 - **Nudging**: nudge buttons on a board that has them; tables 2-13 by
-  hand on a cabinet; Windows.
+  hand on a cabinet.
 
 ## Out of scope
 
