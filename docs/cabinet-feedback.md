@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 5
+table 1's power-up hole and nothing on any other table. **Tables 1 to 6
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -269,6 +269,28 @@ It shows no texts of its own, so it has no `Jackpot`, `SkillShot` or
 | `t5RightOrbit` | the orbit by the scarf, top right |
 
 Four hours of `--autoplay` (153 games) fired every one of them.
+
+#### Table 6 (Jungle Pinball)
+
+| Event | Is |
+|---|---|
+| `t6StarHole` | the hole by the star, top left |
+| `t6SwordHole` | the hole by the swords, top right |
+| `t6NestHole` | the nest, right: FROG and ANT millions |
+| `t6LeftRamp`, `t6RightRamp` | the vine ramps |
+| `t6TopLane1` … `t6TopLane4` | the top lanes, left to right |
+| `t6SerpentPath` | the serpent's path, top left |
+| `t6SwordTarget1` … `t6SwordTarget3` | the targets under the nest, I I I |
+| `t6BlueTarget1` … `t6BlueTarget4` | the blue targets down the right, top first |
+| `t6LeftTarget1`, `t6LeftTarget2` | the targets on the left (the death blade hole) |
+| `t6LeftOutlane`, `t6RightOutlane`, `t6LeftInlane`, `t6RightInlane` | the lanes by the flippers |
+| `t6AppleFalls` | AN APPLE FALLS |
+| `Jackpot` | JACKPOT!!! |
+| `Award` | CONSECUTIVE TARGETS- 5MIL, FROG MILLIONS, ANT MILLIONS, BONUS WILL BE DOUBLED |
+
+Its targets are switches here, each hit: three banks of them would each need
+the game's flags watched. Four hours of `--autoplay` (169 games) fired every
+one of them but `Jackpot`.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.

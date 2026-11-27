@@ -85,6 +85,40 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep6': dict(                                       # Jungle Pinball
+        stamped=[0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF, 0xF2, 0xFC, 0xFE],
+        zones=[
+            ('hole', 1, 'StarHole', 0xF2, 0, 0, 319, 399),            # top left, by the star
+            ('hole', 2, 'SwordHole', 0xFC, 0, 0, 319, 399),           # top right, by the swords
+            ('hole', 3, 'NestHole', 0xFD, 0, 0, 319, 399),            # right: FROG and ANT millions
+            ('ramp', 1, 'LeftRamp', 0xCA, 0, 0, 159, 399),            # the vines, left
+            ('ramp', 2, 'RightRamp', 0xCB, 160, 0, 319, 399),
+            ('rollover', 1, 'TopLane1', 0xCF, 0, 0, 319, 399),        # the top lanes, left to right
+            ('rollover', 2, 'TopLane2', 0xCE, 0, 0, 319, 399),
+            ('rollover', 3, 'TopLane3', 0xCD, 0, 0, 319, 399),
+            ('rollover', 4, 'TopLane4', 0xCC, 0, 0, 319, 399),
+            ('switch', 1, 'SerpentPath', 0xFE, 0, 0, 319, 399),       # the snake, top left
+            ('switch', 2, 'SwordTarget1', 0xF3, 0, 0, 319, 399),      # I I I, under the nest
+            ('switch', 3, 'SwordTarget2', 0xF4, 0, 0, 319, 399),
+            ('switch', 4, 'SwordTarget3', 0xF5, 0, 0, 319, 399),
+            ('switch', 5, 'BlueTarget1', 0xF6, 0, 0, 319, 399),       # down the right, top first
+            ('switch', 6, 'BlueTarget2', 0xF7, 0, 0, 319, 399),
+            ('switch', 7, 'BlueTarget3', 0xF8, 0, 0, 319, 399),
+            ('switch', 8, 'BlueTarget4', 0xF9, 0, 0, 319, 399),
+            ('switch', 9, 'LeftTarget1', 0xFA, 0, 0, 319, 399),       # light the death blade hole
+            ('switch', 10, 'LeftTarget2', 0xFB, 0, 0, 319, 399),
+            ('switch', 11, 'LeftOutlane', 0xC8, 0, 0, 159, 399),
+            ('switch', 12, 'RightOutlane', 0xC8, 160, 0, 319, 399),
+            ('switch', 13, 'LeftInlane', 0xC9, 0, 0, 159, 399),
+            ('switch', 14, 'RightInlane', 0xC9, 160, 0, 319, 399),
+        ],
+        named=[('switch', 15, 'AppleFalls', 'C')],
+        messages=[
+            ('jackpot', 'JACKPOT!!!'), ('switch15', 'AN APPLE FALLS'),
+            ('award', 'CONSECUTIVE TARGETS- 5MIL'), ('award', 'FROG MILLIONS'), ('award', 'ANT MILLIONS'),
+            ('award', 'BONUS WILL BE DOUBLED'),
+        ],
+    ),
     'ep5': dict(                                       # Magic: no scoreboard texts of its own
         stamped=[0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xFB, 0xFC],     # drawn as it runs
         zones=[

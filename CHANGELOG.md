@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 6's own feedback** (Jungle Pinball): the star, sword and nest
+  holes, the vine ramps, the top lanes, the serpent path, its targets, the
+  lanes by the flippers, a falling apple, the jackpot and its awards
+  (`$t6NestHole` ...). Tested by four hours of `--autoplay`.
 - **Table 5's own feedback** (Magic): the top hole, the MAGIC lanes, the
   left lane, its targets, the outlanes and the right orbit (`$t5TopHole`
   ...); it has no texts, so no jackpot or awards. Tested by four hours of
