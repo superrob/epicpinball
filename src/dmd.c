@@ -16,6 +16,7 @@
 #include "watch.h"
 #include "ssf.h"
 #include "autostart.h"
+#include "guard.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +28,7 @@ static int wanted;
 /* RECOMP_ENTER lands here while either is on */
 void seam_enter(CPU *cpu, const char *fn)
 {
+    if (g_guard_on) guard_enter(cpu, fn);
     if (g_watch_on) watch_enter(cpu, fn);
     if (g_dmd_on) dmd_enter(cpu, fn);
     if (g_ssf_on) ssf_enter(cpu, fn);

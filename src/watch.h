@@ -35,6 +35,8 @@ typedef struct {
     uint16_t pull, pull_inc, pull_max, pull_shift, ctrl, space;
     uint16_t lane_off, lane_x, lane_y, over_pull;
     uint16_t scan_x, scan_y;         /* the ball the switch handler is looking at */
+    uint16_t x_min;                  /* where the game keeps a ball's x off the left edge (guard.c) */
+    char guard_fn[24];               /* what the step calls after its balls' loop: guard.c's moment */
     char step_fn[24], kicker_fn[24], switch_fn[24], msg_fn[24], msg_fn2[24];   /* a second way to show a text: table 9 */
     /* SSF (ssf.c): the table's effect function, the sound driver's voice
      * setup, volume, stop and stop of a class, and the board's effects */

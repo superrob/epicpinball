@@ -30,7 +30,7 @@ GEN = os.path.join(ROOT, 'work', 'gen')
 DATA = os.path.join(ROOT, 'original')
 OUT = os.path.join(ROOT, 'work', 'feedback')
 TABLES = 13
-VERSION = 6
+VERSION = 7
 MAX_BUMPERS = 6                 # Bumper1-Bumper6
 RIM = 40                        # a small run this near a bumper is part of it
 
@@ -595,6 +595,23 @@ def physics_and_kicker(f, v):
         raise Missing('ball position and velocity')
     v['vx'], v['vy'] = num(vel[0]), num(vel[1])
     v['x'], v['y'] = num(pos[0]), num(pos[1])
+
+    # The game keeps a ball's x off the left edge (below 1: 1, or 0 on table 5),
+    # but a collision after that can still push it to -1. Before a ball is drawn,
+    # the main loop saves the screen under it (AX x, BX y): from x / 4 with
+    # x = -1 its byte count wraps to some 49,000, and `rep movsb` copies them
+    # over the table's data, its saved timer vector too (African Safari).
+    # guard.c puts x back as the game's clamp would, as that function begins.
+    m, _ = find(f, 'x clamp', rf'cmp word ds:\[di\+0x{v["x"]:X}\], 0x1\njge {A}\nmov word ds:\[di\+0x{v["x"]:X}\], {N}\n',
+                v['step_fn'])
+    v['x_min'] = num(m.group(1))
+    m, _ = find(f, 'the save under a ball', rf'mov ax, word ds:\[di\+0x{v["x"]:X}\]\nmov bx, word ds:\[di\+0x{v["y"]:X}\]\n'
+                rf'(?:.*\n){{0,16}}?call (ep\d+_[0-9A-F]+)\n')
+    v['guard_fn'] = m.group(1)
+    if 'shr si, 0x2\n' not in f[v['guard_fn']][0] or 'rep movsb\n' not in f[v['guard_fn']][0]:
+        raise Missing(f'{v["guard_fn"]}: not the save under a ball')
+    if not f[v['guard_fn']][1]:
+        raise Missing(f'{v["guard_fn"]} has no RECOMP_ENTER, so its calls cannot be seen')
 
     kick = v['kicker_fn']
     m, _ = find(f, 'kick strength', rf'mov (a[lh]), byte ds:\[{A}\]\nmov byte ds:\[{N}\], \1\n', kick)
