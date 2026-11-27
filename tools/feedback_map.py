@@ -85,6 +85,38 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep2': dict(                                       # Pot of Gold
+        zones=[
+            ('hole', 1, 'TreasureHole', 0xB1, 85, 121, 319, 188),     # centre, under the bumpers
+            ('hole', 2, 'Cave', 0xB1, 0, 121, 84, 399),               # far left: the locks
+            ('switch', 1, 'TopLeprechaun', 0xB2, 0, 0, 144, 170),     # top left of the rainbow
+            ('switch', 2, 'RainbowRight', 0xB2, 145, 0, 319, 170),    # the rainbow lane's right end
+            ('switch', 3, 'CaveLane', 0xB2, 0, 171, 85, 399),         # into the cave
+            ('switch', 4, 'RightLeprechaun', 0xB2, 86, 171, 319, 399),
+            ('rollover', 1, 'LeftCloverLane', 0xB3, 0, 200, 149, 399),  # a lane, two switches
+            ('rollover', 1, 'LeftCloverLane', 0xB4, 0, 0, 149, 399),
+            ('rollover', 2, 'RightCloverLane', 0xB3, 150, 200, 319, 399),
+            ('rollover', 2, 'RightCloverLane', 0xB4, 150, 0, 319, 399),
+        ],
+        quiet=[(0xB3, 150, 0, 319, 199)],               # the right ramp's gate: no code of its own
+        named=[                                         # fired by the scoreboard
+            ('ramp', 1, 'SkyRamp', 'C'),                # the crossing ramps
+            ('switch', 5, 'RainbowLane', 'C'),          # both ends of the rainbow
+            ('switch', 6, 'BallLock', 'L'),
+            ('switch', 7, 'LeprechaunCaught', 'C'),
+            ('switch', 8, 'RabbitFoot', 'L'),
+        ],
+        lanes=True,                                     # the top lanes' lights
+        messages=[
+            ('jackpot', 'JACKPOT!!!'), ('skill_shot', 'SKILL SHOT'),
+            ('ramp1', 'SKY RAMP'), ('switch5', 'RAINBOW LANE'),
+            ('switch6', 'BALL 1 LOCKED'), ('switch6', 'BALL 2 LOCKED'),
+            ('switch7', 'YOU CAUGHT A LEPRECHAUN!'),
+            ('switch8', 'FOUND RABBIT FOOT'), ('switch8', 'RABBIT FOOT FOUND IN CAVE'),
+            ('award', 'LEPRECHAUN BONUS'), ('award', 'LUCKY RABBIT FOOT'), ('award', 'TREASURE - 300K'),
+            ('award', '4 LEAF CLOVER BONUS'), ('award', 'LEPRECHAUNS - SHOOT TREASURE'),
+        ],
+    ),
     'ep1': dict(                                       # Super Android
         zones=[                                         # a DOF row calls them t1 and the name
             ('hole', 1, 'TestHole', 0xF5, 0, 0, 319, 399),            # top left
@@ -425,9 +457,13 @@ def features(img, f, v, art, data):
         if len(numbers) != len(set(numbers)) or any(x > count for x in numbers) or numbers != list(range(1, len(numbers) + 1)):
             raise Missing(f'{kind}: numbered {numbers}, one name each, from 1, and events are made for {count}')
 
-    # the holes' hold timers: set when a ball is caught, counted down to its kick
-    for t, _ in re.findall(rf'cmp byte ds:\[{N}\], 0x0\njne {A}\n(?:.*\n){{0,16}}?mov byte ds:\[0x\1\], (0x[0-9A-F]+)\n', sw):
-        if f'dec byte ds:[0x{t}]\n' in sw and num(t) not in out['timers']:
+    # the holes' hold timers: set when a ball is caught, counted down to its
+    # kick. A byte, or a word whose hold is under 256, so its low byte tells it.
+    for size, t, hold in re.findall(rf'cmp (byte|word) ds:\[{N}\], 0x0\njne {A}\n(?:.*\n){{0,16}}?'
+                                    rf'mov \1 ds:\[0x\2\], (0x[0-9A-F]+)\n', sw):
+        if f'dec {size} ds:[0x{t}]\n' in sw and num(t) not in out['timers']:
+            if num(hold) > 0xFF:
+                raise Missing(f'hold timer {t}: {hold} is more than its low byte')
             out['timers'].append(num(t))
     holes = [z for z in out['zones'] if z[0] == 'hole']
     if holes and not out['timers']:
@@ -456,9 +492,11 @@ def features(img, f, v, art, data):
     if rules.get('lanes'):
         m, _ = find(f, 'lane lights', rf'mov byte ds:\[bx\+{N}\], 0x1\n((?:cmp byte ds:\[{A}\], 0x2\nje {A}\n)+)',
                     v['switch_fn'])
-        out['lanes'] = (num(m.group(1)), m.group(2).count('cmp'))
-        if f'cmp byte ds:[0x{out["lanes"][0]:X}], 0x2' not in m.group(2):
-            raise Missing('lane lights: not the first one tested')
+        # the lights tested all lit (table 2 sets them through a copy of its own)
+        tested = [num(a) for a in re.findall(r'cmp byte ds:\[0x([0-9A-F]+)\]', m.group(2))]
+        if tested != list(range(tested[0], tested[0] + len(tested))):
+            raise Missing('lane lights: not tested in a row')
+        out['lanes'] = (tested[0], len(tested))
 
     if rules.get('ramps'):
         line = strings(data, rules['ramps'], whole=False)

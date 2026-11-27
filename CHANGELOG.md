@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 2's own feedback** (Pot of Gold): its treasure hole and cave, the
+  Sky Ramp, the clover lanes, the cave lane, the leprechauns and the rainbow
+  lane, its locks, the top lanes, the skill shot, the jackpot and its awards
+  (`$t2Cave`, `$t2SkyRamp` ...). Tested by four hours of `--autoplay`.
 - **For each table's own feedback:** a feature can be any switch the table
   has (`switch1` to `switch16`: lanes, loops, locks), or have no switch at
   all and be fired by the table's own scoreboard text ("BALL 1 LOCKED"); a

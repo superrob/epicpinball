@@ -151,8 +151,8 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Only table 1 has
-them so far** ([below](#table-1-super-android)).
+table 1's power-up hole and nothing on any other table. **Tables 1 and 2
+have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
 |---|---|---|
@@ -191,6 +191,28 @@ game's own counts (its bonus screen's TESTS, POWER UPS, PHYS. SYS. HOLES,
 RAMPS and LEFT LANES among them) over four hours of its demo. What the handler
 turns back is not sent either: tilted it handles only a few colours, and with
 the ball on a ramp's wire, over the top lanes, only the ramps' own.
+
+#### Table 2 (Pot of Gold)
+
+| Event | Is |
+|---|---|
+| `t2TreasureHole` | the treasure hole, centre, under the bumpers |
+| `t2Cave` | the cave, far left: where the balls are locked |
+| `t2SkyRamp` | the crossing ramps made, as the scoreboard says SKY RAMP |
+| `t2LeftCloverLane`, `t2RightCloverLane` | the lanes down each side (the 4 leaf clover) |
+| `t2CaveLane` | the lane into the cave |
+| `t2TopLeprechaun`, `t2RightLeprechaun` | the leprechauns' switches, at the top left and on the right |
+| `t2RainbowRight` | the rainbow lane's right end |
+| `t2RainbowLane` | both ends of the rainbow lane made: RAINBOW LANE |
+| `t2BallLock` | BALL 1 LOCKED, BALL 2 LOCKED |
+| `t2LeprechaunCaught` | YOU CAUGHT A LEPRECHAUN! |
+| `t2RabbitFoot` | FOUND RABBIT FOOT, RABBIT FOOT FOUND IN CAVE |
+| `SkillShot`, `Jackpot` | SKILL SHOT, JACKPOT!!! |
+| `LanesLit` | the four top lanes lit |
+| `Award` | LEPRECHAUN BONUS, LUCKY RABBIT FOOT, TREASURE - 300K, 4 LEAF CLOVER BONUS, LEPRECHAUNS - SHOOT TREASURE |
+
+Four hours of `--autoplay` (111 games) fired every one of them but
+`Jackpot`: the locks came, multiball did not.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.
