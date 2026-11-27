@@ -43,6 +43,11 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 7's own feedback** (Deep Sea): the eel nest, the wreck, the reef
+  and the air tanks, the ramps, the seahorse lanes, the stingray, the lanes
+  by the flippers, the loops, the treasure targets, a diver entering, the
+  skill shot, the jackpot and its awards (`$t7SunkenShip` ...). Tested by
+  four hours of `--autoplay`.
 - **Table 6's own feedback** (Jungle Pinball): the star, sword and nest
   holes, the vine ramps, the top lanes, the serpent path, its targets, the
   lanes by the flippers, a falling apple, the jackpot and its awards

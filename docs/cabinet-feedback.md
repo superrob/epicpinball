@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 6
+table 1's power-up hole and nothing on any other table. **Tables 1 to 7
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -291,6 +291,26 @@ Four hours of `--autoplay` (153 games) fired every one of them.
 Its targets are switches here, each hit: three banks of them would each need
 the game's flags watched. Four hours of `--autoplay` (169 games) fired every
 one of them but `Jackpot`.
+
+#### Table 7 (Deep Sea)
+
+| Event | Is |
+|---|---|
+| `t7EelNest`, `t7SunkenShip` | the holes left, by the eel, and right, the wreck |
+| `t7ReefHole` | the hole in the reef, centre |
+| `t7AirTanks` | the hole on the right that fills the air tanks |
+| `t7LeftRamp`, `t7RightRamp` | the ramps made: 1 OF 3 RAMPS ... |
+| `t7Seahorse1` … `t7Seahorse4` | the top lanes, left to right: the skill shot |
+| `t7Stingray` | the stingray, top left |
+| `t7LeftInlane`, `t7RightInlane`, `t7LeftOutlane`, `t7RightOutlane` | the lanes by the flippers |
+| `t7TopLoop`, `t7RightOrbit` | the loop at the top, the orbit on the right |
+| `t7TreasureTarget1` … `t7TreasureTarget4` | 1M ADDED TO TREASURE, left first |
+| `t7DiverEnters` | ANOTHER DIVER ENTERS |
+| `SkillShot`, `Jackpot` | SKILL SHOT, JACKPOT! |
+| `Award` | ALL RAMPS COMPLETE, SUNKEN SHIP GOLD FOUND, SECRET TREASURE, STINGRAY, MYSTERY HOLE FOUND, REFILL OF AIR, SHARK LEAVES |
+
+Four hours of `--autoplay` (120 games) fired every one of them but
+`Jackpot`.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.

@@ -85,6 +85,38 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep7': dict(                                       # Deep Sea
+        zones=[
+            ('hole', 1, 'EelNest', 0xDA, 0, 0, 144, 399),             # left, by the eel
+            ('hole', 2, 'SunkenShip', 0xDA, 145, 0, 319, 399),        # right, the wreck
+            ('hole', 3, 'ReefHole', 0xDD, 0, 0, 319, 399),            # centre, in the reef
+            ('hole', 4, 'AirTanks', 0xE0, 0, 0, 319, 399),            # right: filling the air tanks
+            ('ramp', 1, 'LeftRamp', 0xDC, 0, 0, 139, 399),            # their ends: 1 OF 3 RAMPS
+            ('ramp', 2, 'RightRamp', 0xDC, 140, 0, 319, 399),
+            ('rollover', 1, 'Seahorse1', 0xE1, 0, 0, 176, 399),       # the top lanes: the skill shot
+            ('rollover', 2, 'Seahorse2', 0xE1, 177, 0, 198, 399),
+            ('rollover', 3, 'Seahorse3', 0xE1, 199, 0, 219, 399),
+            ('rollover', 4, 'Seahorse4', 0xE1, 220, 0, 319, 399),
+            ('switch', 1, 'Stingray', 0xDE, 0, 0, 319, 199),          # top left
+            ('switch', 2, 'LeftInlane', 0xDE, 0, 200, 159, 399),
+            ('switch', 3, 'RightInlane', 0xDE, 160, 200, 319, 399),
+            ('switch', 4, 'LeftOutlane', 0xDF, 0, 0, 159, 399),
+            ('switch', 5, 'RightOutlane', 0xDF, 160, 0, 319, 399),
+            ('switch', 6, 'TopLoop', 0xDB, 0, 0, 199, 399),
+            ('switch', 7, 'RightOrbit', 0xDB, 200, 0, 319, 399),
+            ('switch', 8, 'TreasureTarget1', 0xE2, 0, 0, 40, 399),    # 1M ADDED TO TREASURE, left first
+            ('switch', 9, 'TreasureTarget2', 0xE2, 41, 0, 58, 399),
+            ('switch', 10, 'TreasureTarget3', 0xE2, 59, 0, 119, 399),
+            ('switch', 11, 'TreasureTarget4', 0xE2, 120, 0, 319, 399),
+        ],
+        named=[('switch', 12, 'DiverEnters', 'C')],     # ANOTHER DIVER ENTERS
+        messages=[
+            ('jackpot', 'JACKPOT!'), ('skill_shot', 'SKILL SHOT'), ('switch12', 'ANOTHER DIVER ENTERS'),
+            ('award', 'ALL RAMPS COMPLETE-7M'), ('award', 'SUNKEN SHIP GOLD FOUND - 8M'),
+            ('award', 'SECRET TREASURE - 15M'), ('award', 'STINGRAY - 5,000,000'),
+            ('award', 'MYSTERY HOLE FOUND - 10M'), ('award', 'REFILL OF AIR - 8M'), ('award', 'SHARK LEAVES - 10M'),
+        ],
+    ),
     'ep6': dict(                                       # Jungle Pinball
         stamped=[0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF, 0xF2, 0xFC, 0xFE],
         zones=[
