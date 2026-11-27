@@ -17,6 +17,7 @@
 #include "dmd.h"
 #include "ssf.h"
 #include "autostart.h"
+#include "guard.h"
 #include <setjmp.h>
 #include <stdarg.h>
 #include <time.h>
@@ -525,6 +526,7 @@ static void dos_exec(CPU *c)
     exec_jmp = &jb;
     if (!setjmp(jb)) {
         void (*fn)(CPU *) = images_lookup(c->cs, c->ip);
+        guard_table_begin(images_at((uint16_t)(psp + 0x10)), (uint16_t)(psp + 0x10));
         watch_table_begin(images_at((uint16_t)(psp + 0x10)), (uint16_t)(psp + 0x10));
         dmd_table_begin(images_at((uint16_t)(psp + 0x10)), (uint16_t)(psp + 0x10));
         ssf_table_begin();
@@ -537,6 +539,7 @@ static void dos_exec(CPU *c)
     if (g_auto_on) autostart_exec_done();           /* --table: quit or game over, the watcher can tell */
     ssf_table_end();
     watch_table_end();                 /* every way out of a table comes here */
+    guard_table_end();
     dmd_table_end();
     { void machine_unwound(void); machine_unwound(); }
     trace("[dos] %s exited, code %d\n", name, last_exit_code);

@@ -238,6 +238,15 @@ All notable changes to this project are documented here. The format follows
   and the settings tool's keys stay (it was written anew each time).
 
 ### Fixed
+- **A ball pushed off the left edge no longer wrecks the table** (seen on
+  African Safari, in the game's own code on every table): after the game's
+  clamp, a collision can still leave a ball at x = -1, and the save of the
+  screen under it then copied some 49,000 bytes over the table's data, its
+  timer vector too; the original would crash or hang there. `src/guard.c` puts
+  such a ball back where the game's clamp puts it, as that save begins, always
+  (the table's feedback map says where: version 7). Nothing changes while x is
+  0 or more. Forced in a test: without it the table broke after a game; with
+  it, play went on.
 - Windows, found on a cabinet: setup stopped at the Visual Studio Build Tools
   (winget was given `--override` and the installer's options as one
   argument), and once they were in, setup, `dmd\build.ps1` and

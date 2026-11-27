@@ -108,7 +108,7 @@ static const struct { const char *key; size_t at; } fields[] = {
     FIELD(drain_y), FIELD(kick), FIELD(weak_y), FIELD(sling_line), FIELD(map),
     FIELD(pull), FIELD(pull_inc), FIELD(pull_max), FIELD(pull_shift), FIELD(ctrl), FIELD(space),
     FIELD(lane_off), FIELD(lane_x), FIELD(lane_y), FIELD(over_pull), FIELD(scan_x), FIELD(scan_y),
-    FIELD(nudge_gate), FIELD(gate_lo), FIELD(gate_hi),
+    FIELD(nudge_gate), FIELD(gate_lo), FIELD(gate_hi), FIELD(x_min),
 };
 #undef FIELD
 #define NFIELDS (int)(sizeof fields / sizeof fields[0])
@@ -273,6 +273,7 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         else if (!strcmp(key, "msg_fn") && !*m->msg_fn) snprintf(m->msg_fn, sizeof m->msg_fn, "%s", val);
         else if (!strcmp(key, "msg_fn")) snprintf(m->msg_fn2, sizeof m->msg_fn2, "%s", val);
         else if (!strcmp(key, "effect_fn")) snprintf(m->effect_fn, sizeof m->effect_fn, "%s", val);
+        else if (!strcmp(key, "guard_fn")) snprintf(m->guard_fn, sizeof m->guard_fn, "%s", val);
         else if (!strcmp(key, "sfx_on")) {
             char *e;
             unsigned long v = strtoul(val, &e, 16);
@@ -347,8 +348,9 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
     for (int i = 0; i < nnames; i++)
         for (int j = i + 1; j < nnames; j++)
             if (same_name(names[i], names[j])) { *why = "a feature's name used twice"; return 0; }
-    if (version != 6) *why = "another version's map";
-    else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || got != (1ull << NFIELDS) - 1)
+    if (version != 7) *why = "another version's map";
+    else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || !*m->guard_fn
+             || got != (1ull << NFIELDS) - 1)
         *why = "incomplete";
     else if (m->nmsgs && !*m->msg_fn) *why = "messages, but no message function";
     else if (m->nzones && (!m->layer || !m->ntilt_pass)) *why = "zones, but no gate";   /* none may pass on the layer */

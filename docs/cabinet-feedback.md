@@ -972,7 +972,8 @@ signatures are proven on GOG 1.01 only.
 | `the helper stopped (signal 11)` | a Cabinet.xml libdof cannot read, or a file matching `TableConfigFilePatterns` |
 | `the helper stopped`, `did not start` | feedback is off until the table is started again; the lines before say why |
 | `no work/feedback/epN.map`, `... of another copy` | `python3 tools/feedback_map.py` |
-| `the table's stack has left its bounds` | a fault in the game, seen on African Safari: feedback and the plunger stop for that table until it is started again |
+| `the table's stack has left its bounds` | a fault in the game, seen on African Safari before `src/guard.c` kept it from happening: feedback and the plunger stop for that table until it is started again |
+| `[guard] a ball at x = -1 ...: put back at 1` | that fault, kept from happening: a ball pushed off the left edge is put back before it is drawn, and the table plays on |
 | no joysticks listed | Linux: your user must be able to read `/dev/input` |
 | `no device called ...` on Windows | Windows names the board itself: copy its name or GUID from `--joysticks` |
 | the plunger is ignored | let it rest first; check `rest` and `pulled` with `--joysticks` |

@@ -18,6 +18,7 @@
 #include "ssf.h"
 #include "autostart.h"
 #include "arcade.h"
+#include "guard.h"
 #include "nudge.h"
 #include "ini.h"
 #include "keys.h"
@@ -329,13 +330,13 @@ static void test_images(void)
 /* ---- cabinet feedback and the plunger ---- */
 
 static const char k_map[] =
-    "epicpinball-feedback 6\nimage ep1 16 69691905\n"
+    "epicpinball-feedback 7\nimage ep1 16 69691905\n"
     "ds 10\ncs 2000\nactive 100\nx 110\ny 120\nvx 130\nvy 140\nslots 5\n"
     "flip_l 150\nflip_r 152\nup_l 154\nup_r 155\ntilt 160\nmeter 161\ncooldown 162\ndemo 163\n"
     "extra 164\nover 165\ncount 166\ndrain_y 18F\nkick 167\nweak_y 180\nsling_line C7\nmap 170\n"
     "pull 180\npull_inc C\npull_max 2C4\npull_shift 5\nctrl 297\nspace 296\n"
     "lane_off 0\nlane_x 118\nlane_y DC\nover_pull 0\nscan_x 190\nscan_y 192\nnudge_gate 16A\ngate_lo 4\ngate_hi 2A\n"
-    "step_fn ep1_step\nkicker_fn ep1_kick\nswitch_fn ep1_sw\nbumper 100 60 0\nbumper 200 60 2\n"
+    "step_fn ep1_step\nkicker_fn ep1_kick\nswitch_fn ep1_sw\nguard_fn ep1_guard\nx_min 1\nbumper 100 60 0\nbumper 200 60 2\n"
     "msg_fn ep1_msg\nlayer 240\non_layer F9 F8 F1\ntilt_pass F0 F6\n"
     "zone hole 1 F5 0 0 319 399 L TestHole\nzone hole 2 F6 0 0 219 399 C PowerUpHole\n"
     "zone hole 3 F6 220 0 319 399 R RightHole\nzone kickback 1 F8 0 321 50 399 L Kickback\n"
@@ -394,7 +395,7 @@ static void test_feedback_map(void)
         assert(!watch_map_parse(cut, &m, &why));
     }
     memcpy(cut, k_map, sizeof k_map);
-    strstr(cut, "feedback 6")[9] = '5';                   /* another version */
+    strstr(cut, "feedback 7")[9] = '6';                   /* another version */
     assert(!watch_map_parse(cut, &m, &why));
     {
         /* names: letters and digits, each once on a table, one for a feature,
@@ -412,6 +413,26 @@ static void test_feedback_map(void)
             snprintf(edited, sizeof edited, "%.*s%s%s", (int)(at - k_map), k_map, bad[i][1], at + strlen(bad[i][0]));
             assert(!watch_map_parse(edited, &m, &why));
         }
+        /* the guard: as the save under a ball begins (AX its x, DI its slot), an x
+         * below 0 is put back where the game's clamp puts it; x = 0, another call: left */
+        WatchMap g;
+        assert(watch_map_parse(k_map, &g, &why) && !strcmp(g.guard_fn, "ep1_guard") && g.x_min == 1);
+        const uint16_t seg = 0x2000;
+        const uint32_t gds = (uint32_t)(seg + g.ds) * 16;
+        uint8_t *mem = g_cpu.mem;
+        CPU c = g_cpu;
+        mem[gds + g.x + 2] = 0xFF; mem[gds + g.x + 3] = 0xFF;                       /* ball 1 at -1 */
+        assert(guard_use(&g, seg));
+        c.ax = 0xFFFF; c.di = 2;
+        guard_enter(&c, "ep1_step");
+        assert(c.ax == 0xFFFF && mem[gds + g.x + 2] == 0xFF);
+        guard_enter(&c, "ep1_guard");
+        assert(c.ax == 1 && mem[gds + g.x + 2] == 1 && mem[gds + g.x + 3] == 0);
+        c.ax = 0;
+        guard_enter(&c, "ep1_guard");
+        assert(c.ax == 0);
+        guard_table_end();
+        assert(!g_guard_on);
         /* table 6: a bank of targets by its flags fires a feature the map has */
         static char banks[sizeof k_map + 64];
         const char *ln = strstr(k_map, "lanes 220 4\n");
