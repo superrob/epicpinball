@@ -410,6 +410,11 @@ def scenario_setup(out):
     if code3 == 0:
         run(o3, MENU_MS / 1000, None, {})
         music = wav_rms(os.path.join(o3, 'audio.wav'))
+    o4, code4, log4 = go('gravis', w['card2_menu0_last'])     # the Gravis at port 260h
+    gus, glog = 0.0, ''
+    if code4 == 0:
+        glog = run(o4, MENU_MS / 1000, None, {})[1]
+        gus = wav_rms(os.path.join(o4, 'audio.wav'))
     return [
         ('setup: a Sound Blaster 16 saved, clean exit, no misses', code == 0 and not misses(log) and os.path.exists(inf)),
         ("setup: its SOUNDCRD.INF is GOG's, byte for byte",
@@ -420,6 +425,8 @@ def scenario_setup(out):
         ('setup: Instructions run HELPME.EXE, and SETUP carries on after it',
          code2 == 0 and not misses(log2) and 'helpme.exe exited, code 0' in log2),
         ('setup: a mono Sound Blaster set up there plays the menu music', code3 == 0 and music > 300),
+        ('setup: a Gravis Ultrasound at 260h set up there plays the menu music',
+         code4 == 0 and gus > 300 and '[gus] port 260' in glog and not misses(glog)),
     ]
 
 

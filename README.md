@@ -42,7 +42,7 @@ conformance harness passes 154/154 on Linux.**
 | Windowed play at real speed | ✅ |
 | Linux, natively (gcc, SDL2) | ✅ played on a real Linux desktop and a cabinet; 154/154 conformance on Arch (133/133 on Debian 13, before cabinet mode) |
 | Gamepad (XInput, `controller.ini`, GOG's DOSBox mapping by default) | implemented, untested on a real pad |
-| `SETUP.EXE`, the sound-card menu (`--setup`, or the settings tool's *Choose with SETUP*), and its Instructions (`HELPME.EXE`) | ✅ lifted: every menu and language headless, its `SOUNDCRD.INF` and driver settings as the original writes them; the Sound Blaster (mono, Pro, 16, clone, any port, IRQ, DMA and quality), PC Speaker (the tables' effects on it, no music) and No Sound play; Gravis Ultrasound and Pro Audio Spectrum not yet. At PINBALL's start its `-cd` check is still answered, not run |
+| `SETUP.EXE`, the sound-card menu (`--setup`, or the settings tool's *Choose with SETUP*), and its Instructions (`HELPME.EXE`) | ✅ lifted: every menu and language headless, its `SOUNDCRD.INF` and driver settings as the original writes them; the Sound Blaster (mono, Pro, 16, clone, any port, IRQ, DMA and quality), PC Speaker (the tables' effects on it, no music) and No Sound play; Gravis Ultrasound (a GF1 model: its voices, card memory, timers and IRQs, at any port, IRQ and DMA) plays too; the Pro Audio Spectrum not yet. At PINBALL's start its `-cd` check is still answered, not run |
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, played by hand | ✅ |
 | Cabinet mode, `--cabinet` (Linux and Windows) | ✅ on a real cabinet, Linux (table 1) and Windows (played), and on virtual displays |

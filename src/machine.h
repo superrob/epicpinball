@@ -133,6 +133,16 @@ int  audio_port_in(uint16_t port, uint8_t *v);
 int  audio_port_out(uint16_t port, uint8_t v);
 void audio_speaker(int gate, uint16_t divisor);
 void audio_driver(const char *file, const uint8_t *d, uint32_t len);   /* a MASI driver was loaded */
+int  audio_dma_read8(int ch, uint8_t *b);       /* a byte through DMA channel 0-3; 0 if it is not running */
+int  audio_dma_read16(int ch, uint16_t *w);     /* a word through channel 4-7 */
+/* gus.c: a Gravis Ultrasound, when its driver is loaded */
+void gus_configure(int on, uint16_t base, int irq, int dma);
+int  gus_port_in(uint16_t port, uint8_t *v);
+int  gus_port_out(uint16_t port, uint8_t v);
+void gus_sample(int *l, int *r);
+int  gus_irq_pending(void);
+int  gus_irq_line(void);
+void gus_irq_ack(void);
 void audio_shutdown(void);
 
 /* host.c: window or offscreen, input, presentation, recording */

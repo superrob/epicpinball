@@ -15,7 +15,11 @@ All notable changes to this project are documented here. The format follows
   takes its port, IRQ and DMA from those settings (it was fixed at 220h, IRQ 7,
   DMA 1), and every Sound Blaster setting plays: mono, Pro, 16, clone, and every
   quality. PC Speaker plays the tables' effects on the speaker, without music,
-  and No Sound is silent. Gravis Ultrasound and Pro Audio Spectrum come next.
+  and No Sound is silent. The Gravis Ultrasound plays through a model of its
+  GF1 (src/gus.c): 32 voices out of 1 MB of card memory, with their loops,
+  volume ramps and pan, the timers the driver keeps time by, DMA uploads and
+  the IRQs, at any port, IRQ and DMA SETUP offers (a second DMA controller,
+  channels 4-7, came with it). The Pro Audio Spectrum comes next.
 - **`--cabinet`**, for virtual pinball machines (Linux): two windows without
   decorations. The playfield fills a display with the whole table, never the
   scoreboard, and F6 turns it a quarter at a time, menus and all. The

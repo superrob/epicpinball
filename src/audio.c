@@ -19,12 +19,52 @@ static uint64_t rendered;             /* samples so far */
 
 /* ---- 8237 DMA ------------------------------------------------------------ */
 
-static struct { uint16_t base_addr, base_count, addr, count; uint8_t page, mode, masked; } dma[4];
-static int dma_ff;
-static const uint16_t dma_page_port[4] = { 0x87, 0x83, 0x81, 0x82 };
+/* Channels 0-3 move bytes; 4-7, the second controller (C0h-DFh), words. A
+ * Gravis Ultrasound's default is channel 5. */
+static struct { uint16_t base_addr, base_count, addr, count; uint8_t page, mode, masked; } dma[8];
+static int dma_ff, dma_ff2;
+static const uint16_t dma_page_port[8] = { 0x87, 0x83, 0x81, 0x82, 0x8F, 0x8B, 0x89, 0x8A };
+
+static int dma2_port_out(uint16_t port, uint8_t v)
+{
+    if (port < 0xC0 || port > 0xDF || (port & 1)) return 0;
+    unsigned r = (port - 0xC0) >> 1;                   /* the controller's registers, one per even port */
+    if (r < 8) {
+        int ch = 4 + (r >> 1);
+        uint16_t *b = (r & 1) ? &dma[ch].base_count : &dma[ch].base_addr;
+        *b = dma_ff2 ? (uint16_t)((*b & 0xFF) | v << 8) : (uint16_t)((*b & 0xFF00) | v);
+        dma_ff2 ^= 1;
+        if (r & 1) dma[ch].count = dma[ch].base_count; else dma[ch].addr = dma[ch].base_addr;
+        return 1;
+    }
+    switch (r) {
+    case 0xA: dma[4 + (v & 3)].masked = (v >> 2) & 1; return 1;
+    case 0xB: dma[4 + (v & 3)].mode = v; return 1;
+    case 0xC: dma_ff2 = 0; return 1;
+    case 0xD: dma_ff2 = 0; for (int i = 4; i < 8; i++) dma[i].masked = 1; return 1;
+    case 0xF: for (int i = 0; i < 4; i++) dma[4 + i].masked = (v >> i) & 1; return 1;
+    }
+    return 1;
+}
+
+static int dma2_port_in(uint16_t port, uint8_t *v)
+{
+    if (port < 0xC0 || port > 0xDF || (port & 1)) return 0;
+    unsigned r = (port - 0xC0) >> 1;
+    if (r < 8) {
+        int ch = 4 + (r >> 1);
+        uint16_t w = (r & 1) ? dma[ch].count : dma[ch].addr;
+        *v = dma_ff2 ? (uint8_t)(w >> 8) : (uint8_t)w;
+        dma_ff2 ^= 1;
+        return 1;
+    }
+    *v = 0;
+    return 1;
+}
 
 static int dma_port_out(uint16_t port, uint8_t v)
 {
+    if (dma2_port_out(port, v)) return 1;
     if (port < 8) {
         int ch = port >> 1;
         uint16_t *b = (port & 1) ? &dma[ch].base_count : &dma[ch].base_addr;
@@ -45,12 +85,13 @@ static int dma_port_out(uint16_t port, uint8_t v)
     case 0x0D: dma_ff = 0; for (int i = 0; i < 4; i++) dma[i].masked = 1; return 1;
     case 0x0F: for (int i = 0; i < 4; i++) dma[i].masked = (v >> i) & 1; return 1;
     }
-    for (int i = 0; i < 4; i++) if (port == dma_page_port[i]) { dma[i].page = v; return 1; }
+    for (int i = 0; i < 8; i++) if (port == dma_page_port[i]) { dma[i].page = v; return 1; }
     return 0;
 }
 
 static int dma_port_in(uint16_t port, uint8_t *v)
 {
+    if (dma2_port_in(port, v)) return 1;
     if (port < 8) {
         int ch = port >> 1;
         uint16_t w = (port & 1) ? dma[ch].count : dma[ch].addr;
@@ -60,6 +101,21 @@ static int dma_port_in(uint16_t port, uint8_t *v)
     }
     if (port == 0x08) { *v = 0; return 1; }
     return 0;
+}
+
+/* one word through a 16-bit channel (4-7): it addresses words, within
+ * 128 KB pages; returns 0 if the channel is not running */
+int audio_dma_read16(int ch, uint16_t *w)
+{
+    if (ch < 4 || ch > 7 || dma[ch].masked) return 0;
+    uint32_t a = (((uint32_t)(dma[ch].page & 0xFE) << 16) | (uint32_t)dma[ch].addr << 1) & 0xFFFFE;
+    *w = (uint16_t)(g_cpu.mem[a] | g_cpu.mem[a + 1] << 8);
+    dma[ch].addr++;
+    if (dma[ch].count-- == 0) {
+        if (dma[ch].mode & 0x10) { dma[ch].addr = dma[ch].base_addr; dma[ch].count = dma[ch].base_count; }
+        else dma[ch].masked = 1;
+    }
+    return 1;
 }
 
 /* one byte through a DMA channel; returns 0 if the channel is not running */
@@ -74,6 +130,14 @@ static int dma_read(int ch, uint8_t *b)
     }
     return 1;
 }
+
+int audio_dma_read8(int ch, uint8_t *b) { return ch >= 0 && ch < 4 && dma_read(ch, b); }
+
+/* The card the loaded driver is for: only it answers on its ports (a Gravis
+ * and a Sound Blaster are both at 220h by default). The Sound Blaster until a
+ * driver says otherwise, as GOG's setting has it. */
+enum { CARD_SB, CARD_GUS, CARD_PAS, CARD_NONE };
+static int card = CARD_SB;
 
 /* ---- Sound Blaster DSP ------------------------------------------------------ */
 
@@ -209,7 +273,8 @@ int audio_port_in(uint16_t port, uint8_t *v)
 {
     if (dma_port_in(port, v)) return 1;
     if (port == 0x388 || port == 0x389) { *v = 0xFF; return 1; }     /* no FM chip */
-    if (port - sb_base >= 0x10u) return 0;
+    if (card == CARD_GUS) return gus_port_in(port, v);
+    if (card != CARD_SB || port - sb_base >= 0x10u) return 0;
     switch (port - sb_base) {
     case 0x8: case 0x9: *v = 0xFF; return 1;
     case 0x5: *v = sb.mixer[sb.mixer_i]; return 1;
@@ -226,7 +291,8 @@ int audio_port_out(uint16_t port, uint8_t v)
 {
     if (dma_port_out(port, v)) return 1;
     if (port == 0x388 || port == 0x389) return 1;
-    if (port - sb_base >= 0x10u) return 0;
+    if (card == CARD_GUS) return gus_port_out(port, v);
+    if (card != CARD_SB || port - sb_base >= 0x10u) return 0;
     switch (port - sb_base) {
     case 0x8: case 0x9: return 1;
     case 0x4: sb.mixer_i = v; return 1;
@@ -254,9 +320,13 @@ void audio_driver(const char *file, const uint8_t *d, uint32_t len)
 {
     if (len < 0x34 || memcmp(d + 1, "REAL16", 6)) return;
     uint32_t s = (uint32_t)(d[0x30] | d[0x31] << 8 | d[0x32] << 16 | (uint32_t)d[0x33] << 24);
-    if (s + 0x40 > len) return;
+    if (!s || s + 0x40 > len) return;               /* the mixer (MDRV000R) has no settings: not a card */
     const uint8_t *c = d + s;
-    if (!memcmp(d + 8, "MASISBSERIES", 12)) {
+    /* every MASI card driver keeps them alike: port at +19h, IRQ +1Dh, DMA +2Dh */
+    card = !memcmp(d + 8, "MASISBSERIES", 12) ? CARD_SB : !memcmp(d + 8, "MASIULTRASND", 12) ? CARD_GUS
+         : !memcmp(d + 8, "MASIPASERIES", 12) ? CARD_PAS : CARD_NONE;
+    gus_configure(card == CARD_GUS, (uint16_t)(c[0x19] | c[0x1A] << 8), c[0x1D], c[0x2D]);
+    if (card == CARD_SB) {
         uint16_t port = (uint16_t)(c[0x19] | c[0x1A] << 8);
         if (port >= 0x210 && port <= 0x280 && !(port & 0xF)) sb_base = port;
         if (c[0x1D] >= 2 && c[0x1D] <= 15) sb_irq = c[0x1D];
@@ -275,6 +345,7 @@ void audio_advance(uint64_t pit_ticks)
         for (int i = 0; i < n; i++) {
             int l, r;
             sb_sample(&l, &r);
+            gus_sample(&l, &r);
             if (spk_on) {
                 spk_phase += spk_step; if (spk_phase >= 1) spk_phase -= 1;
                 int s = spk_phase < 0.5 ? 3000 : -3000;

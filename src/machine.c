@@ -343,6 +343,7 @@ void recomp_tick(CPU *cpu)
         irq(cpu, 1);
     }
     if (sb_irq_pending() && irq_ok(cpu, sb_irq_line())) { sb_irq_ack(); irq(cpu, sb_irq_line()); }
+    if (gus_irq_pending() && irq_ok(cpu, gus_irq_line())) { gus_irq_ack(); irq(cpu, gus_irq_line()); }
 
     host_frame();
     busy = 0;

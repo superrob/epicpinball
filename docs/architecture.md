@@ -153,7 +153,10 @@ Blaster 16 (DSP 4.05, which is what GOG's DOSBox setup emulates and what
 DMA on channel 1, 2 KB blocks, IRQ 7 — DSP commands `41h` and `C6h`. That is
 GOG's setting; SETUP can choose another port, IRQ, DMA or mixing rate, which it
 writes into the driver, and the modelled card answers where the loaded driver
-says (`audio_driver`). `src/audio.c`
+says (`audio_driver`). With the Gravis Ultrasound's driver the card is a
+Gravis instead (`src/gus.c`): a GF1 model whose voices play the samples the
+driver uploads into card memory, mixed by the card, not the driver; only the
+card the loaded driver is for answers on its ports. `src/audio.c`
 models that DSP (and the older SB/SB Pro commands), the 8237 DMA channel and the
 PC speaker, and mixes to 44.1 kHz stereo for waveOut (SDL on Linux), a WAV, or ffmpeg,
 drawing a line between the DSP's samples (or holding each, as an option;
