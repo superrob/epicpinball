@@ -85,6 +85,28 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep8': dict(                                       # Enigma: its levels draw their own switches
+        stamped=[0xE3, 0xE7, 0xE8],
+        zones=[
+            ('hole', 1, 'LockHole', 0xE3, 0, 0, 319, 399),            # BALL LOCKED
+            ('hole', 2, 'SpikedPit', 0xE7, 0, 0, 319, 399),
+            ('hole', 3, 'Spring', 0xE8, 0, 0, 319, 399),
+        ],
+        named=[                                         # the four wire loops, as the scoreboard names them
+            ('switch', 1, 'AlphaRamp', 'L'), ('switch', 2, 'BetaRamp', 'L'),
+            ('switch', 3, 'DeltaRamp', 'R'), ('switch', 4, 'GammaRamp', 'R'),
+            ('switch', 5, 'BallLock', 'L'), ('switch', 6, 'Mine', 'C'), ('switch', 7, 'EnigmaComes', 'C'),
+        ],
+        messages=[
+            ('switch1', 'ALPHA RAMP'), ('switch2', 'BETA RAMP'), ('switch3', 'DELTA RAMP'), ('switch4', 'GAMMA RAMP'),
+            ('switch5', 'BALL LOCKED'), ('switch6', 'DESTROYED BY A MINE'), ('switch7', 'THE ENIGMA HAS COME'),
+            ('super_jackpot', 'SUPER JACKPOT AWARDED- 100M'),
+            ('award', 'LEVEL 1 COMPLETE'), ('award', 'LEVEL 2 COMPLETE'), ('award', 'LEVEL 3 COMPLETE'),
+            ('award', 'MYSTIC SCROLL-1M'), ('award', 'GOLD BEAR 3M'), ('award', 'LOLLY POP 2M'),
+            ('award', 'SPRING - 15M'), ('award', 'TEDDY WAS RUN OVER 15M'), ('award', 'BRAINS!! - 12M'),
+            ('award', 'A HAND FOR 12M'),
+        ],
+    ),
     'ep7': dict(                                       # Deep Sea
         zones=[
             ('hole', 1, 'EelNest', 0xDA, 0, 0, 144, 399),             # left, by the eel
@@ -554,8 +576,9 @@ def features(img, f, v, art, data):
 
     # the handler's gate: on the ramp layer only some colours are handled, and
     # tilted only some others
-    m = re.search(rf'\Apush es\npusha\ncmp al, 0xAA\njb {A}\ncmp byte ds:\[{N}\], 0x1\njne {A}\n'
-                  rf'((?:cmp al, {A}\nje {A}\n)+)jmp {A}\n((?:cmp al, {A}\nje {A}\n)+)'
+    # (the lowest colour handled is AA, or B1 on table 13; on Enigma's wires none is)
+    m = re.search(rf'\Apush es\npusha\ncmp al, {A}\njb {A}\ncmp byte ds:\[{N}\], 0x1\njne {A}\n'
+                  rf'((?:cmp al, {A}\nje {A}\n)*)jmp {A}\n((?:cmp al, {A}\nje {A}\n)+)'
                   rf'cmp byte ds:\[0x{v["tilt"]:X}\], 0x1\nje {A}\n', sw)
     if not m:
         raise Missing('switch handler gate')
@@ -603,9 +626,8 @@ def features(img, f, v, art, data):
     # kick. A byte, or a word whose hold is under 256, so its low byte tells it.
     for size, t, hold in re.findall(rf'cmp (byte|word) ds:\[{N}\], 0x0\njne {A}\n(?:.*\n){{0,16}}?'
                                     rf'mov \1 ds:\[0x\2\], (0x[0-9A-F]+)\n', sw):
-        if f'dec {size} ds:[0x{t}]\n' in sw and num(t) not in out['timers']:
-            if num(hold) > 0xFF:
-                raise Missing(f'hold timer {t}: {hold} is more than its low byte')
+        # (a longer one is no hole's: Enigma's 500 is another wait)
+        if f'dec {size} ds:[0x{t}]\n' in sw and num(t) not in out['timers'] and num(hold) <= 0xFF:
             out['timers'].append(num(t))
     holes = [z for z in out['zones'] if z[0] == 'hole']
     if holes and not out['timers']:

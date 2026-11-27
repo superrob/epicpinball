@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 7
+table 1's power-up hole and nothing on any other table. **Tables 1 to 8
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -311,6 +311,26 @@ one of them but `Jackpot`.
 
 Four hours of `--autoplay` (120 games) fired every one of them but
 `Jackpot`.
+
+#### Table 8 (Enigma)
+
+Each level draws switches of its own as it runs, so most of Enigma's events
+are its scoreboard's.
+
+| Event | Is |
+|---|---|
+| `t8LockHole` | the hole that locks the ball: BALL LOCKED is `t8BallLock` |
+| `t8SpikedPit`, `t8Spring` | the spiked pit and the spring, as their levels draw them |
+| `t8AlphaRamp`, `t8BetaRamp` | the wire loops on the left, as the scoreboard names them |
+| `t8DeltaRamp`, `t8GammaRamp` | the loops on the right |
+| `t8Mine` | DESTROYED BY A MINE |
+| `t8EnigmaComes` | THE ENIGMA HAS COME |
+| `SuperJackpot` | SUPER JACKPOT AWARDED |
+| `Award` | LEVEL 1, 2, 3 COMPLETE, MYSTIC SCROLL, GOLD BEAR, LOLLY POP, SPRING, TEDDY WAS RUN OVER, BRAINS!!, A HAND FOR 12M |
+
+Eight hours of `--autoplay` (224 games) fired every one of them but
+`t8Spring`, `t8EnigmaComes` and `SuperJackpot`, from levels it did not
+reach.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.

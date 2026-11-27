@@ -328,7 +328,7 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
     else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || got != (1ull << NFIELDS) - 1)
         *why = "incomplete";
     else if (m->nmsgs && !*m->msg_fn) *why = "messages, but no message function";
-    else if (m->nzones && (!m->layer || !m->non_layer || !m->ntilt_pass)) *why = "zones, but no gate";
+    else if (m->nzones && (!m->layer || !m->ntilt_pass)) *why = "zones, but no gate";   /* none may pass on the layer */
     else if (m->slots < 1 || m->slots > 8) *why = "a bad ball count";
     else return 1;
     return 0;

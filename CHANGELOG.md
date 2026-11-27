@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 8's own feedback** (Enigma): the lock hole, the spiked pit and the
+  spring, its four wire loops as its scoreboard names them, the ball lock,
+  the mines, the super jackpot and its awards (`$t8GammaRamp` ...). Tested
+  by eight hours of `--autoplay`.
 - **Table 7's own feedback** (Deep Sea): the eel nest, the wreck, the reef
   and the air tanks, the ramps, the seahorse lanes, the stingray, the lanes
   by the flippers, the loops, the treasure targets, a diver entering, the

@@ -404,6 +404,11 @@ static void test_feedback_map(void)
             snprintf(edited, sizeof edited, "%.*s%s%s", (int)(at - k_map), k_map, bad[i][1], at + strlen(bad[i][0]));
             assert(!watch_map_parse(edited, &m, &why));
         }
+        /* Enigma: nothing passes on its wires */
+        static char wires[sizeof k_map];
+        const char *on = strstr(k_map, "on_layer F9 F8 F1");
+        snprintf(wires, sizeof wires, "%.*son_layer %s", (int)(on - k_map), k_map, on + strlen("on_layer F9 F8 F1"));
+        assert(watch_map_parse(wires, &m, &why) && m.non_layer == 0);
         /* a feature drawn twice: one name */
         static char twice[sizeof k_map + 64];
         const char *at = strstr(k_map, "zone kickback");
