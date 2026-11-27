@@ -3,6 +3,7 @@
 // The headers here are made up: no one's port list is in this repository.
 #undef NDEBUG
 #include "../src/autorow.h"
+#include "../src/locate.h"
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -335,6 +336,27 @@ void palette()
     }
 }
 
+// DirectOutput's GlobalConfig as handed to libdof (locate::global_for)
+void global()
+{
+    const std::string dir = "C:\\DirectOutput\\Config", shapes = dir + "\\DirectOutputShapes.xml";
+    const std::string mine =
+        "<GlobalConfig>\n  <IniFilesPath />\n"
+        "  <CabinetConfigFilePattern>{GlobalConfigDirectory}\\cabinet.xml</CabinetConfigFilePattern>\n</GlobalConfig>";
+    std::string g = locate::global_for(mine, dir, shapes);
+    assert(g.find("<CabinetConfigFilePattern>C:\\DirectOutput\\Config\\cabinet.xml<") != std::string::npos);
+    assert(g.find("<ShapeDefinitionFilePattern>" + shapes + "</ShapeDefinitionFilePattern>\n</GlobalConfig>") != std::string::npos);
+    // an empty one goes, so the one added is the one read; one with a file stays
+    g = locate::global_for("<GlobalConfig>\n  <ShapeDefinitionFilePattern />\n</GlobalConfig>", dir, shapes);
+    assert(g.find("<ShapeDefinitionFilePattern />") == std::string::npos && g.find(shapes) != std::string::npos);
+    const std::string own = "<GlobalConfig><ShapeDefinitionFilePattern>{GlobalConfigDir}\\my.xml</ShapeDefinitionFilePattern></GlobalConfig>";
+    g = locate::global_for(own, dir, shapes);
+    assert(g.find(dir + "\\my.xml") != std::string::npos && g.find(shapes) == std::string::npos);
+    // no shapes file: nothing added; no GlobalConfig element: left alone
+    assert(locate::global_for(mine, dir, "").find("Shape") == std::string::npos);
+    assert(locate::global_for("<x/>", dir, shapes) == "<x/>");
+}
+
 } // namespace
 
 int main()
@@ -349,5 +371,6 @@ int main()
     never();
     file();
     palette();
+    global();
     std::puts("autorow_test: ok");
 }
