@@ -233,7 +233,7 @@ at every table start; nothing is written into the DOF folder. For the header
 above:
 
 ```ini
-epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113
+epicpinball_ep07,E101,E102,E103,E104,0,ON,ON EpMain,E113
 ```
 
 | Device | Gets |
@@ -250,7 +250,7 @@ epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113
 | `Beacon` | `E113 2000`; on a table with features of its own, jackpots too: `E113 2000/E143 2000/E144 2000` |
 | `Shaker` | `E111 300 I32/E112 600 I32` |
 | `Start Button`, `Exit`, `Coin` | `ON` |
-| `RGB Flippers` | `ON White` |
+| `RGB Flippers` | `ON EpMain` |
 | `5 Flasher ...`, `3 Flasher ...`, `Back MX` | colours for events: [flashers](#flashers) |
 | `Left MX`, `Right MX` | slingshots, ramps, kick-outs and the kickback on their side; ball ready breathing at the bottom of the right one: [the side MXs](#the-side-mxs) |
 | everything else | `0` |
@@ -289,20 +289,45 @@ cabinet, left to right:
 
 | Event | Spots | Effect |
 |---|---|---|
-| `multiball` E115 | all | white, blinking while it lasts |
-| a bumper | the spots on its side: left two, centre, right two | yellow, 80 ms |
-| a hole kicking out, the kickback | the spots on its side | orange, 120 ms |
-| a ramp made | the spots on its side | cyan, 150 ms |
-| `skill_shot` E139 | all | cyan, three flashes |
-| `award` E145 | all | orange, three flashes |
-| `lanes_lit` E138 | all | white, three flashes |
-| `jackpot` E143 | all | magenta, three flashes |
-| `super_jackpot` E144 | all | magenta, six flashes |
-| `knocker` E113 (extra ball) | all | white, three flashes |
-| `game_start` E116 | all | green, three flashes |
-| `game_over` E117 | all | blue, three flashes |
-| `drain` E110 | centre | red, 300 ms |
-| `tilt` E112 | all | red, 600 ms |
+| `multiball` E115 | all | *glow*, blinking while it lasts |
+| a bumper | the spots on its side: left two, centre, right two | *main*, 80 ms |
+| a hole kicking out, the kickback | the spots on its side | *feature*, 120 ms |
+| a ramp made | the spots on its side | *ramp*, 150 ms |
+| `skill_shot` E139 | all | *ramp*, three flashes |
+| `award` E145 | all | *feature*, three flashes |
+| `lanes_lit` E138 | all | *glow*, three flashes |
+| `jackpot` E143 | all | *jackpot*, three flashes |
+| `super_jackpot` E144 | all | *jackpot*, six flashes |
+| `knocker` E113 (extra ball) | all | *glow*, three flashes |
+| `game_start` E116 | all | *start*, three flashes |
+| `game_over` E117 | all | *over*, three flashes |
+| `drain` E110 | centre | *danger*, 300 ms |
+| `tilt` E112 | all | *danger*, 600 ms |
+
+#### Colours
+
+A made row names its colours by what they are for, `EpGlow` to `EpDanger`
+in its `[Colors DOF]`, and each table's file gives them that table's own
+colours, from its playfield art, bright enough for LEDs. Danger stays red on
+every table, so a drain and a tilt read as a warning. A name not of the game
+(`saves/dof/auto/` with no table, a test) gets plain colours: white, yellow,
+orange, cyan, magenta, green, blue, red.
+
+| Table | *glow* | *main* | *feature* | *ramp* | *jackpot* | *start* | *over* |
+|---|---|---|---|---|---|---|---|
+| 1 Super Android | `#FFD27A` | `#FF9A00` | `#FF4000` | `#2848FF` | `#6A3CFF` | `#2848FF` | `#FF9A00` |
+| 2 Pot of Gold | `#FFE680` | `#FFC000` | `#FF5A00` | `#1E7BFF` | `#00E040` | `#00E040` | `#1E7BFF` |
+| 3 Excalibur | `#FFE0A0` | `#FFA030` | `#FF6A10` | `#B8C8FF` | `#9A30FF` | `#FFA030` | `#9A30FF` |
+| 4 Crash and Burn | `#FFFFFF` | `#FF6A00` | `#FFD000` | `#1048FF` | `#FF0040` | `#FFFFFF` | `#1048FF` |
+| 5 Magic | `#FFF0D0` | `#FFB830` | `#FF1E1E` | `#2040FF` | `#20C040` | `#FFB830` | `#2040FF` |
+| 6 Jungle Pinball | `#C0FF80` | `#40E000` | `#FF2000` | `#2060FF` | `#FFC000` | `#40E000` | `#FF6000` |
+| 7 Deep Sea | `#A0F0FF` | `#00C8FF` | `#FF8040` | `#0040FF` | `#00FFB0` | `#00C8FF` | `#0040FF` |
+| 8 Enigma | `#FFC8A0` | `#FF4A10` | `#FF8A30` | `#FFC060` | `#FF2000` | `#FF8A30` | `#B01800` |
+| 9 Cyborgirl | `#E0E8FF` | `#FF3A20` | `#FFB040` | `#40A0FF` | `#FF4080` | `#40A0FF` | `#FF3A20` |
+| 10 Pangaea | `#FFC080` | `#FF6A00` | `#20E020` | `#6020FF` | `#FF1040` | `#20E020` | `#FF6A00` |
+| 11 Space Journey | `#D8C8FF` | `#7A3CFF` | `#FF1020` | `#2040FF` | `#FF30D0` | `#2040FF` | `#7A3CFF` |
+| 12 Toy Factory | `#FFD0F8` | `#FF40E0` | `#80D020` | `#40A0FF` | `#8030FF` | `#80D020` | `#8030FF` |
+| 13 African Safari | `#FFE0A0` | `#FF8000` | `#FFD800` | `#00C000` | `#FF4000` | `#00C000` | `#FF8000` |
 
 Lower in the list draws over higher: a bumper's flash shows through the
 multiball blink, and a tilt covers everything. The table's own rows are on
@@ -337,12 +362,12 @@ it carries no variables. The colours and times above stay; these change:
 | Event | On the Back MX |
 |---|---|
 | a bumper | its own circles: a side's bumpers share its spots from the left, so table 1's left bumper has the two left circles and table 5's have one each, but for the two in the centre |
-| `skill_shot` E139 | `SHPCirclePulse`, cyan, 600 ms, on all five |
-| `award` E145 | `SHPDiamondBoxPulse`, orange, 1 s, on all five |
-| `lanes_lit` E138 | `SHPFillLeftRight`, white, 600 ms, across the whole width |
-| `jackpot` E143 | `SHPRoundAndRound`, magenta, 1.2 s, on all five |
-| `super_jackpot` E144 | the same for 2.4 s, and the two strobe circles (`strblft`, `strbrgt`) flashing white six times |
-| `knocker` E113 (extra ball) | `SHPCrossPulse`, white, 900 ms, on all five |
+| `skill_shot` E139 | `SHPCirclePulse`, *ramp*, 600 ms, on all five |
+| `award` E145 | `SHPDiamondBoxPulse`, *feature*, 1 s, on all five |
+| `lanes_lit` E138 | `SHPFillLeftRight`, *glow*, 600 ms, across the whole width |
+| `jackpot` E143 | `SHPRoundAndRound`, *jackpot*, 1.2 s, on all five |
+| `super_jackpot` E144 | the same for 2.4 s, and the two strobe circles (`strblft`, `strbrgt`) flashing *glow* six times |
+| `knocker` E113 (extra ball) | `SHPCrossPulse`, *glow*, 900 ms, on all five |
 
 Without the shapes file and its `.png`, a shape draws nothing, so the `Back MX`
 gets the bands instead, and the helper says `no DirectOutputShapes.xml and .png
@@ -357,10 +382,10 @@ the list drawing over higher:
 
 | Event | MX | Effect |
 |---|---|---|
-| `ball_ready` E114 | right | the bottom 15% breathes yellow, dark to full every two seconds, while a ball waits: `AT85 AH15 F500 BLINK 2000` |
-| `sling_left` E103, `sling_right` E104 | its side | yellow, rising up the side: `M50 MAX50 ADU AS300` |
-| a hole kicking out, the kickback | its side | orange, down the side: `75 ADD AS300` |
-| a ramp made | its side | cyan, down the side: `75 ADD AS300` |
+| `ball_ready` E114 | right | the bottom 15% breathes *main*, dark to full every two seconds, while a ball waits: `AT85 AH15 F500 BLINK 2000` |
+| `sling_left` E103, `sling_right` E104 | its side | *main*, rising up the side: `M50 MAX50 ADU AS300` |
+| a hole kicking out, the kickback | its side | *feature*, down the side: `75 ADD AS300` |
+| a ramp made | its side | *ramp*, down the side: `75 ADD AS300` |
 
 A feature in the centre third of the table goes down both. On table 1 the
 left MX gets the test and left holes, the power-up hole, the kickback and the

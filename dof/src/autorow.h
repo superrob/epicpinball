@@ -15,6 +15,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <map>
 #include <optional>
@@ -159,21 +161,21 @@ inline std::string cell_of(const std::vector<int> &events)
 //
 // Five spots across the back: a row of five RGB flashers, three (the outer two
 // spots each share one), or the Back MX, as the Config Tool's own rows place
-// them. Each gets, bottom layer first:
-//   multiball   white, blinking while it lasts      every spot
-//   bumper      yellow, 80 ms                      the spots on its side
-//   hole kick-out, kickback   orange, 120 ms       the spots on its side
-//   ramp made   cyan, 150 ms                       the spots on its side
-//   skill shot  cyan, three flashes                every spot
-//   award       orange, three flashes              every spot
-//   lanes lit   white, three flashes               every spot
-//   jackpot     magenta, three flashes             every spot
-//   super jackpot  magenta, six flashes            every spot
-//   extra ball  white, three flashes               every spot
-//   game start  green, three flashes               every spot
-//   game over   blue, three flashes                every spot
-//   drain       red, 300 ms                        the centre
-//   tilt        red, 600 ms                        every spot
+// them. Each gets, bottom layer first, in the table's colours (palette):
+//   multiball   glow, blinking while it lasts      every spot
+//   bumper      main, 80 ms                        the spots on its side
+//   hole kick-out, kickback   feature, 120 ms      the spots on its side
+//   ramp made   ramp, 150 ms                       the spots on its side
+//   skill shot  ramp, three flashes                every spot
+//   award       feature, three flashes             every spot
+//   lanes lit   glow, three flashes                every spot
+//   jackpot     jackpot, three flashes             every spot
+//   super jackpot  jackpot, six flashes            every spot
+//   extra ball  glow, three flashes                every spot
+//   game start  start, three flashes               every spot
+//   game over   over, three flashes                every spot
+//   drain       danger, 300 ms                     the centre
+//   tilt        danger, 600 ms                     every spot
 // Measured on libdof 0.5.4: Blink 200 blinks while the level lasts and stops
 // with it; 450 3 is three flashes; a later setting draws over an earlier one.
 //
@@ -279,28 +281,28 @@ inline void flashers(std::map<std::string, Rule> &r, const std::vector<std::stri
         auto feature = [&](int ev, const std::string &how, char side) {
             if (!(d.mx && on_side_mx(names, side))) add(ev, how, side_spots(side));
         };
-        add(kMultiball, "White Blink 200", all);
+        add(kMultiball, "EpGlow Blink 200", all);
         for (size_t i = 0; i < bumpers.size() && i < (size_t)kBumpers; i++)
-            add(bumper_event((int)i), "Yellow 80", round ? bumper_spots(bumpers, i) : side_spots(bumpers[i]));
-        for (size_t i = 0; i < sides.hole.size(); i++) feature(kHole1 + (int)i, "Orange 120", sides.hole[i]);
-        if (!sides.kickback.empty()) feature(kKickback, "Orange 120", sides.kickback[0]);
-        for (size_t i = 0; i < sides.ramp.size(); i++) feature(kRamp1 + (int)i, "Cyan 150", sides.ramp[i]);
+            add(bumper_event((int)i), "EpMain 80", round ? bumper_spots(bumpers, i) : side_spots(bumpers[i]));
+        for (size_t i = 0; i < sides.hole.size(); i++) feature(kHole1 + (int)i, "EpFeature 120", sides.hole[i]);
+        if (!sides.kickback.empty()) feature(kKickback, "EpFeature 120", sides.kickback[0]);
+        for (size_t i = 0; i < sides.ramp.size(); i++) feature(kRamp1 + (int)i, "EpRamp 150", sides.ramp[i]);
         if (!sides.empty()) {        // a table with features of its own: its awards
-            award(kSkillShot, "Cyan 450 3", "Cyan 600", "CirclePulse");
-            award(kAward, "Orange 450 3", "Orange 1000", "DiamondBoxPulse");
-            if (round) put(kLanesLit, "White 600 AL0 AT0 AW100 AH100 SHPFillLeftRight");
-            else add(kLanesLit, "White 450 3", all);
-            award(kJackpot, "Magenta 450 3", "Magenta 1200", "RoundAndRound");
-            award(kSuperJackpot, "Magenta 900 6", "Magenta 2400", "RoundAndRound");
+            award(kSkillShot, "EpRamp 450 3", "EpRamp 600", "CirclePulse");
+            award(kAward, "EpFeature 450 3", "EpFeature 1000", "DiamondBoxPulse");
+            if (round) put(kLanesLit, "EpGlow 600 AL0 AT0 AW100 AH100 SHPFillLeftRight");
+            else add(kLanesLit, "EpGlow 450 3", all);
+            award(kJackpot, "EpJackpot 450 3", "EpJackpot 1200", "RoundAndRound");
+            award(kSuperJackpot, "EpJackpot 900 6", "EpJackpot 2400", "RoundAndRound");
             if (round)               // and the strobes, strblft and strbrgt
                 for (const char *at : { "AL0", "AL91" })
-                    put(kSuperJackpot, std::string("White 900 6 ") + at + " AT0 AW9 AH30 SHPCircle3");
+                    put(kSuperJackpot, std::string("EpGlow 900 6 ") + at + " AT0 AW9 AH30 SHPCircle3");
         }
-        award(kKnocker, "White 450 3", "White 900", "CrossPulse");
-        add(kGameStart, "Lime 450 3", all);
-        add(kGameOver, "Blue 450 3", all);
-        add(kDrain, "Red 300", { 2 });
-        add(kTilt, "Red 600", all);
+        award(kKnocker, "EpGlow 450 3", "EpGlow 900", "CrossPulse");
+        add(kGameStart, "EpStart 450 3", all);
+        add(kGameOver, "EpOver 450 3", all);
+        add(kDrain, "EpDanger 300", { 2 });
+        add(kTilt, "EpDanger 600", all);
         std::string cell;
         for (auto &s : settings) cell += (cell.empty() ? "" : "/") + s;
         r[d.name] = { cell, true, events };
@@ -309,10 +311,10 @@ inline void flashers(std::map<std::string, Rule> &r, const std::vector<std::stri
 
 // The MXs down the sides of the cabinet, top (the back) to bottom (the
 // player), as the Config Tool's rows use them, bottom layer first:
-//   ball ready  the Right MX's bottom breathes yellow while a ball waits
-//   slingshot   yellow, rising up its side
-//   hole kick-out, kickback   orange, down its side
-//   ramp made   cyan, down its side, the ball coming back off it
+//   ball ready  the Right MX's bottom breathes main while a ball waits
+//   slingshot   main, rising up its side
+//   hole kick-out, kickback   feature, down its side
+//   ramp made   ramp, down its side, the ball coming back off it
 // A centre feature runs down both.
 inline void side_mx(std::map<std::string, Rule> &r, const std::vector<std::string> &names, const Sides &sides)
 {
@@ -326,13 +328,13 @@ inline void side_mx(std::map<std::string, Rule> &r, const std::vector<std::strin
             settings.push_back(e(ev) + " " + s);
             events.push_back(ev);
         };
-        if (me == 'R') put(kBallReady, "Yellow AL0 AW100 AT85 AH15 F500 BLINK 2000");
-        put(me == 'L' ? kSlingLeft : kSlingRight, "Yellow M50 MAX50 AT0 AH100 ADU AS300");
+        if (me == 'R') put(kBallReady, "EpMain AL0 AW100 AT85 AH15 F500 BLINK 2000");
+        put(me == 'L' ? kSlingLeft : kSlingRight, "EpMain M50 MAX50 AT0 AH100 ADU AS300");
         for (size_t i = 0; i < sides.hole.size(); i++)
-            if (mine(sides.hole[i])) put(kHole1 + (int)i, "Orange 75 AT0 AH100 ADD AS300");
-        if (!sides.kickback.empty() && mine(sides.kickback[0])) put(kKickback, "Orange 75 AT0 AH100 ADD AS300");
+            if (mine(sides.hole[i])) put(kHole1 + (int)i, "EpFeature 75 AT0 AH100 ADD AS300");
+        if (!sides.kickback.empty() && mine(sides.kickback[0])) put(kKickback, "EpFeature 75 AT0 AH100 ADD AS300");
         for (size_t i = 0; i < sides.ramp.size(); i++)
-            if (mine(sides.ramp[i])) put(kRamp1 + (int)i, "Cyan 75 AT0 AH100 ADD AS300");
+            if (mine(sides.ramp[i])) put(kRamp1 + (int)i, "EpRamp 75 AT0 AH100 ADD AS300");
         std::string cell;
         for (auto &s : settings) cell += (cell.empty() ? "" : "/") + s;
         r[name] = { cell, true, events };
@@ -366,7 +368,7 @@ inline std::map<std::string, Rule> rules(const std::vector<std::string> &names, 
         { "start button", { "ON", false, {} } },
         { "exit", { "ON", false, {} } },
         { "coin", { "ON", false, {} } },
-        { "rgb flippers", { "ON White", true, {} } },
+        { "rgb flippers", { "ON EpMain", true, {} } },
     };
     // Each bumper goes to the device for its side: the back row; the middle
     // row, or an 8-device setup, only where the back row has none. Several
@@ -498,13 +500,63 @@ inline std::string line(const std::string &rom, const Row &row)
     return s;
 }
 
+// ---- colours ---------------------------------------------------------------
+//
+// A made row names its colours by what they are for, and each table's file
+// says what they are there: the table's own, from its playfield art, made
+// bright enough for LEDs. Danger stays red on every table: a drain and a tilt
+// read as a warning.
+enum Role { kGlow, kMain, kFeature, kRamp, kJackpot, kStart, kOver, kDanger, kRoles };
+inline constexpr const char *kRoleName[kRoles] = {
+    "EpGlow", "EpMain", "EpFeature", "EpRamp", "EpJackpot", "EpStart", "EpOver", "EpDanger",
+};
+// RRGGBB by table, 1 to 13; 0, any other name: plain colours
+inline constexpr unsigned kPalette[14][kRoles] = {
+    //  glow      main      feature   ramp      jackpot   start     over      danger
+    { 0xFFFFFF, 0xFFFF00, 0xFF8000, 0x00FFFF, 0xFF00FF, 0x00FF00, 0x0000FF, 0xFF0000 },
+    { 0xFFD27A, 0xFF9A00, 0xFF4000, 0x2848FF, 0x6A3CFF, 0x2848FF, 0xFF9A00, 0xFF0000 },  // Super Android: amber, the android's blue
+    { 0xFFE680, 0xFFC000, 0xFF5A00, 0x1E7BFF, 0x00E040, 0x00E040, 0x1E7BFF, 0xFF0000 },  // Pot of Gold: gold, blue, the clover's green
+    { 0xFFE0A0, 0xFFA030, 0xFF6A10, 0xB8C8FF, 0x9A30FF, 0xFFA030, 0x9A30FF, 0xFF0000 },  // Excalibur: gold, bronze, steel, royal purple
+    { 0xFFFFFF, 0xFF6A00, 0xFFD000, 0x1048FF, 0xFF0040, 0xFFFFFF, 0x1048FF, 0xFF0000 },  // Crash and Burn: flames, blue, the chequered flag
+    { 0xFFF0D0, 0xFFB830, 0xFF1E1E, 0x2040FF, 0x20C040, 0xFFB830, 0x2040FF, 0xFF0000 },  // Magic: gold, the cards' red, the felt's green
+    { 0xC0FF80, 0x40E000, 0xFF2000, 0x2060FF, 0xFFC000, 0x40E000, 0xFF6000, 0xFF0000 },  // Jungle Pinball: green, the apples' red
+    { 0xA0F0FF, 0x00C8FF, 0xFF8040, 0x0040FF, 0x00FFB0, 0x00C8FF, 0x0040FF, 0xFF0000 },  // Deep Sea: aqua, coral, the deep's blue
+    { 0xFFC8A0, 0xFF4A10, 0xFF8A30, 0xFFC060, 0xFF2000, 0xFF8A30, 0xB01800, 0xFF0000 },  // Enigma: the rust of its marble
+    { 0xE0E8FF, 0xFF3A20, 0xFFB040, 0x40A0FF, 0xFF4080, 0x40A0FF, 0xFF3A20, 0xFF0000 },  // Cyborgirl: her red, gold, steel blue
+    { 0xFFC080, 0xFF6A00, 0x20E020, 0x6020FF, 0xFF1040, 0x20E020, 0xFF6A00, 0xFF0000 },  // Pangaea: orange, the dinosaur's green, purple
+    { 0xD8C8FF, 0x7A3CFF, 0xFF1020, 0x2040FF, 0xFF30D0, 0x2040FF, 0x7A3CFF, 0xFF0000 },  // Space Journey: violet, red, blue
+    { 0xFFD0F8, 0xFF40E0, 0x80D020, 0x40A0FF, 0x8030FF, 0x80D020, 0x8030FF, 0xFF0000 },  // Toy Factory: pink, green, light blue, purple
+    { 0xFFE0A0, 0xFF8000, 0xFFD800, 0x00C000, 0xFF4000, 0x00C000, 0xFF8000, 0xFF0000 },  // African Safari: orange, yellow, green
+};
+
+// The table in "epicpinball_ep07", 7; 0 for any other name
+inline int table_of(const std::string &rom)
+{
+    const size_t u = rom.rfind("_ep");
+    if (u == std::string::npos || rom.size() != u + 5) return 0;
+    const int n = std::atoi(rom.c_str() + u + 3);
+    return n >= 1 && n <= 13 && std::isdigit((unsigned char)rom[u + 3]) && std::isdigit((unsigned char)rom[u + 4]) ? n : 0;
+}
+
+// The [Colors DOF] section for the table in rom
+inline std::string colours(const std::string &rom)
+{
+    const unsigned *p = kPalette[table_of(rom)];
+    std::string s = "[Colors DOF]\n";
+    char hex[16];
+    for (int i = 0; i < kRoles; i++) {
+        std::snprintf(hex, sizeof hex, "=#%06XFF\n", p[i]);
+        s += kRoleName[i] + std::string(hex);
+    }
+    return s;
+}
+
 // The whole file libdof reads in place of the one the header came from
 inline std::string file(const std::string &rom, const Row &row, const std::string &from)
 {
     return "# Written by epicpinball-dof from the header of " + from + ",\n"
            "# because no epicpinball row was found. Made again at every table start.\n"
-           "[Colors DOF]\nWhite=#FFFFFFFF\nYellow=#FFFF00FF\nRed=#FF0000FF\nLime=#00FF00FF\nBlue=#0000FFFF\n"
-           "Orange=#FF8000FF\nCyan=#00FFFFFF\nMagenta=#FF00FFFF\n\n"
+           + colours(rom) + "\n"
            "[Config DOF]\n" + line(rom, row) + "\n";
 }
 

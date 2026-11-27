@@ -129,6 +129,12 @@ All notable changes to this project are documented here. The format follows
 - `--feedback-log` and `--plunger-trace`, for testing both. Conformance 152.
 
 ### Changed
+- **Made DOF rows take each table's colours.** The flashers, the Back MX and
+  the side MXs used the same white, yellow, orange, cyan, magenta, green and
+  blue on every table; each table now has its own, from its playfield art
+  (Deep Sea's aqua and coral, Pot of Gold's gold and clover green, ...),
+  named by role in the made file (`EpMain`, `EpFeature`, `EpRamp`, ...).
+  Drain and tilt stay red.
 - `epicpinball.ini` is updated in place, a setting at a time, so its comments
   and the settings tool's keys stay (it was written anew each time).
 
