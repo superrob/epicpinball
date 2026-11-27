@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 10
+table 1's power-up hole and nothing on any other table. **Tables 1 to 11
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -373,6 +373,25 @@ Four hours of `--autoplay` (129 games) fired every one of them but
 
 Four hours of `--autoplay` (172 games) fired every one of them but
 `SkillShot` and `Jackpot`.
+
+#### Table 11 (Space Journey)
+
+| Event | Is |
+|---|---|
+| `t11LockHole` | the lock, centre right: BALL LOCKED is `t11BallLock` |
+| `t11ExtraBallHole` | the hole on the left, by Mars |
+| `t11Abyss` | INTO THE ABYSS, bottom left |
+| `t11AsteroidRamp`, `t11Hyperspace` | the ramps, as the scoreboard names them |
+| `t11LaneS`, `t11LaneT`, `t11LaneA`, `t11LaneR` | STAR, the lanes under Pluto |
+| `t11SpaceStation` | SPACE STATION FLYBY |
+| `t11RightOrbit` | the lane top right |
+| `t11LeftOutlane`, `t11RightOutlane` | the outlanes |
+| `t11LeftTarget`, `t11CentreTarget`, `t11RightTarget` | the targets that light the lock, the comet and the asteroid |
+| `Jackpot`, `SuperJackpot` | JACKPOT  JACKPOT, SUPER JACKPOT! 50MIL |
+| `Award` | 10 MILLION, PLANET ADVANCED, MULTIPLIER ADVANCE, 2 MILLION AND ADVANCE, 1 MILLION! |
+
+Four hours of `--autoplay` (163 games) fired every one of them but the
+jackpots.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.

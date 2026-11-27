@@ -85,6 +85,31 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep11': dict(                                      # Space Journey
+        zones=[
+            ('hole', 1, 'LockHole', 0xC4, 0, 0, 319, 399),            # centre right: BALL LOCKED
+            ('hole', 2, 'ExtraBallHole', 0xC6, 0, 0, 319, 399),       # left, by Mars
+            ('hole', 3, 'Abyss', 0xC7, 0, 0, 319, 399),               # bottom left: INTO THE ABYSS
+            ('rollover', 1, 'LaneS', 0xC1, 0, 0, 111, 399),           # STAR, under Pluto
+            ('rollover', 2, 'LaneT', 0xC1, 112, 0, 134, 399),
+            ('rollover', 3, 'LaneA', 0xC1, 135, 0, 156, 399),
+            ('rollover', 4, 'LaneR', 0xC1, 157, 0, 319, 399),
+            ('switch', 1, 'SpaceStation', 0xC5, 0, 0, 319, 399),      # SPACE STATION FLYBY
+            ('switch', 2, 'RightOrbit', 0xC8, 0, 0, 319, 399),
+            ('switch', 3, 'LeftOutlane', 0xCC, 0, 0, 144, 399),
+            ('switch', 4, 'RightOutlane', 0xCC, 145, 0, 319, 399),
+            ('switch', 5, 'CentreTarget', 0xCD, 0, 0, 319, 399),      # the lock, the comet, the asteroid
+            ('switch', 6, 'RightTarget', 0xCE, 0, 0, 319, 399),
+            ('switch', 7, 'LeftTarget', 0xCF, 0, 0, 319, 399),
+        ],
+        named=[('ramp', 1, 'AsteroidRamp', 'L'), ('ramp', 2, 'Hyperspace', 'R'), ('switch', 8, 'BallLock', 'C')],
+        messages=[
+            ('jackpot', 'JACKPOT  JACKPOT'), ('super_jackpot', 'SUPER JACKPOT! 50MIL'),
+            ('ramp1', 'ASTEROID RAMP'), ('ramp2', 'HYPERSPACE'), ('switch8', 'BALL LOCKED'),
+            ('award', '10 MILLION'), ('award', 'PLANET ADVANCED'), ('award', 'MULTIPLIER ADVANCE'),
+            ('award', '2 MILLION AND ADVANCE'), ('award', '1 MILLION!'),
+        ],
+    ),
     'ep10': dict(                                      # Pangaea
         zones=[
             ('hole', 1, 'Cavern', 0xC7, 0, 0, 319, 399),              # top right: the lock

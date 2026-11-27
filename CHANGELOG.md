@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 11's own feedback** (Space Journey): the lock, the extra ball hole
+  and the abyss, the asteroid and hyperspace ramps, the STAR lanes, the
+  space station, the orbit, the outlanes, its targets, the jackpots and its
+  awards (`$t11Hyperspace` ...). Tested by four hours of `--autoplay`.
 - **Table 10's own feedback** (Pangaea): the cavern and its lock, its four
   other holes, the side targets, the orbits, the bullseye, the outlanes, the
   volcano loop, the eggs, the skill shot, the jackpot and its awards
