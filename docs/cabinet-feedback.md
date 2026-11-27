@@ -232,7 +232,7 @@ It shows no texts of its own, so it has no `Jackpot`, `SkillShot` or
 | `t3Lane1k`, `t3Lane5k`, `t3Lane10k` | the switches down the right U lane |
 | `t3Spinner` | the spinner, left, under the top bumper |
 
-Four hours of `--autoplay` (58 games) fired every one of them.
+Four hours of `--autoplay` (154 games) fired every one of them.
 
 #### Table 4 (Crash and Burn)
 
@@ -251,7 +251,7 @@ Four hours of `--autoplay` (58 games) fired every one of them.
 | `Jackpot`, `SuperJackpot` | JACKPOT!!, DOUBLE JACKPOT |
 | `Award` | ALL GREEN LIGHTS - 5M, MPH MULTIPLIER INCREASE, REFUELED-15M, NEW TIRES-10M, TUNE UP-5M, MYSTERY BONUS, PIT STOP |
 
-Four hours of `--autoplay` (56 games) fired every one of them but the
+Four hours of `--autoplay` (139 games) fired every one of them but the
 jackpots.
 
 #### Table 5 (Magic)
@@ -457,8 +457,9 @@ the ball's X and Y. Then a long run of play shows where the ball meets each:
 ```
 
 `--autoplay` flips at a ball coming down near the flippers, launches a ball
-waiting in the lane, and after a game over types initials and plays again: four
-hours of a table in a couple of minutes. A feature is then a zone (a colour,
+waiting in the lane, nudges a ball that has not moved for ten seconds, and
+after a game over types initials and plays again: four hours of a table in a
+couple of minutes. A feature is then a zone (a colour,
 where the ball is), a hole's hold timer, or a scoreboard text: the game's own
 "BALL 1 LOCKED" or "SKY RAMP" fires a named feature with no switch of its
 own.

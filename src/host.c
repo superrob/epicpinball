@@ -343,15 +343,17 @@ static void keys_due(void)
 #define AUTO_LAUNCH_MS 1200.0        /* the plunger pulled */
 static void autoplay(void)
 {
-    static double until[4], again;   /* left, right, Space, a menu key: down until then, resting after */
-    static uint8_t sc[4] = { 0x2A, 0x36, 0x39, 0x1C };
+    static double until[5], again;   /* left, right, Space, a menu key, a nudge: down until then, resting after */
+    static uint8_t sc[5] = { 0x2A, 0x36, 0x39, 0x1C, 0x2C };
+    static double still;             /* since when no ball has moved: then a nudge, Z and / in turn */
+    static int last_xy, nudges;
     static int menu;                 /* initials AAA, then Enter: PLAY GAME is first on the table's screen */
-    static const double hold[4] = { AUTO_FLIP_MS, AUTO_FLIP_MS, AUTO_LAUNCH_MS, 100.0 };
+    static const double hold[5] = { AUTO_FLIP_MS, AUTO_FLIP_MS, AUTO_LAUNCH_MS, 100.0, 100.0 };
     if (!g_opt.autoplay || driven()) return;
     const double t = pit_now() * 1000.0 / PIT_HZ;
     uint32_t ds, cs;
     const WatchMap *m = watch_table(&ds, &cs);
-    int want[4] = { 0, 0, 0, 0 };
+    int want[5] = { 0, 0, 0, 0, 0 };
     if (!m) {                                        /* PINBALL's screen: initials, then PLAY GAME */
         if (t >= again && until[3] == 0) {
             sc[3] = menu++ % 4 < 3 ? 0x1E : 0x1C;
@@ -363,18 +365,26 @@ static void autoplay(void)
     } else {
         again = t + 8000.0;
         const uint8_t *d = g_cpu.mem + ds;
+        int xy = 0;
         for (int i = 0; i < m->slots && i < 8; i++) {
             const uint16_t o = (uint16_t)(2 * i);
             if ((d[(uint16_t)(m->active + o)] | d[(uint16_t)(m->active + o + 1)] << 8) != 1) continue;
             const int x = d[(uint16_t)(m->x + o)] | d[(uint16_t)(m->x + o + 1)] << 8;
             const int y = d[(uint16_t)(m->y + o)] | d[(uint16_t)(m->y + o + 1)] << 8;
             const int vy = (int16_t)(d[(uint16_t)(m->vy + o)] | d[(uint16_t)(m->vy + o + 1)] << 8);
+            xy = xy * 31 + x * 401 + y;
             if (y > m->drain_y - 75 && y < m->drain_y - 15 && vy > 0 && (m->lane_x == 0 || x < m->lane_x))
                 want[x < 160 ? 0 : 1] = 1;
         }
         want[2] = plunger_lane(m, d, 1);
+        if (xy != last_xy || want[2]) { last_xy = xy; still = t; }
+        else if (t - still > 10000.0) {          /* stuck somewhere: shake it loose */
+            sc[4] = nudges++ % 2 ? 0x35 : 0x2C;
+            want[4] = 1;
+            still = t;
+        }
     }
-    for (int k = 0; k < 4; k++) {
+    for (int k = 0; k < 5; k++) {
         if (want[k] && until[k] == 0) { pad_key(sc[k], 0); until[k] = t + hold[k]; }
         else if (until[k] > 0 && t >= until[k]) { pad_key(sc[k], 1); until[k] = -(t + hold[k]); }   /* let go, then rest */
         else if (until[k] < 0 && t >= -until[k]) until[k] = 0;
