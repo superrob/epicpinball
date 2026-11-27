@@ -143,6 +143,12 @@ void gus_sample(int *l, int *r);
 int  gus_irq_pending(void);
 int  gus_irq_line(void);
 void gus_irq_ack(void);
+/* pas.c: a Pro Audio Spectrum, when its driver is loaded, and MVSOUND.SYS */
+void pas_configure(int on, uint16_t base);
+int  pas_port_in(uint16_t port, uint8_t *v);
+int  pas_port_out(uint16_t port, uint8_t v);
+void pas_sample(int *l, int *r);
+int  pas_mvsound(CPU *c);                       /* its INT 2Fh calls; 1 if it was one */
 void audio_shutdown(void);
 
 /* host.c: window or offscreen, input, presentation, recording */

@@ -47,7 +47,7 @@ if(MSVC)
 endif()
 
 set(GEN "${CMAKE_SOURCE_DIR}/work/gen")
-set(RUNTIME src/main.c src/machine.c src/dos.c src/images.c src/vga.c src/audio.c src/gus.c src/host.c src/present.c src/pad.c
+set(RUNTIME src/main.c src/machine.c src/dos.c src/images.c src/vga.c src/audio.c src/gus.c src/pas.c src/host.c src/present.c src/pad.c
             src/watch.c src/feedback.c src/dof_pipe.c src/plunger.c src/dmd.c src/dmd_pipe.c src/ssf.c src/autostart.c src/arcade.c src/guard.c src/nudge.c src/ini.c src/keys.c src/hud.c src/controller_ini.c src/dinput_joy.c)
 
 if(EXISTS "${GEN}/images_list.c")
@@ -88,7 +88,7 @@ else()
 endif()
 
 # The runtime's own pieces on their own, no game data needed: what CI runs.
-add_executable(selftest tests/selftest.c src/vga.c src/audio.c src/gus.c src/images.c src/watch.c src/feedback.c
+add_executable(selftest tests/selftest.c src/vga.c src/audio.c src/gus.c src/pas.c src/images.c src/watch.c src/feedback.c
                src/plunger.c src/dof_pipe.c src/dmd.c src/ssf.c src/autostart.c src/arcade.c src/guard.c src/nudge.c src/ini.c src/keys.c src/hud.c config/vpx_import.c)
 target_include_directories(selftest PRIVATE src config "${PCRECOMP_HOME}/runtime")
 if(NOT WIN32)

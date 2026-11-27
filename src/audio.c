@@ -274,6 +274,7 @@ int audio_port_in(uint16_t port, uint8_t *v)
     if (dma_port_in(port, v)) return 1;
     if (port == 0x388 || port == 0x389) { *v = 0xFF; return 1; }     /* no FM chip */
     if (card == CARD_GUS) return gus_port_in(port, v);
+    if (card == CARD_PAS) return pas_port_in(port, v);
     if (card != CARD_SB || port - sb_base >= 0x10u) return 0;
     switch (port - sb_base) {
     case 0x8: case 0x9: *v = 0xFF; return 1;
@@ -292,6 +293,7 @@ int audio_port_out(uint16_t port, uint8_t v)
     if (dma_port_out(port, v)) return 1;
     if (port == 0x388 || port == 0x389) return 1;
     if (card == CARD_GUS) return gus_port_out(port, v);
+    if (card == CARD_PAS) return pas_port_out(port, v);
     if (card != CARD_SB || port - sb_base >= 0x10u) return 0;
     switch (port - sb_base) {
     case 0x8: case 0x9: return 1;
@@ -326,6 +328,7 @@ void audio_driver(const char *file, const uint8_t *d, uint32_t len)
     card = !memcmp(d + 8, "MASISBSERIES", 12) ? CARD_SB : !memcmp(d + 8, "MASIULTRASND", 12) ? CARD_GUS
          : !memcmp(d + 8, "MASIPASERIES", 12) ? CARD_PAS : CARD_NONE;
     gus_configure(card == CARD_GUS, (uint16_t)(c[0x19] | c[0x1A] << 8), c[0x1D], c[0x2D]);
+    pas_configure(card == CARD_PAS, (uint16_t)(c[0x19] | c[0x1A] << 8));   /* its DMA and IRQ: MVSOUND.SYS's */
     if (card == CARD_SB) {
         uint16_t port = (uint16_t)(c[0x19] | c[0x1A] << 8);
         if (port >= 0x210 && port <= 0x280 && !(port & 0xF)) sb_base = port;
@@ -346,6 +349,7 @@ void audio_advance(uint64_t pit_ticks)
             int l, r;
             sb_sample(&l, &r);
             gus_sample(&l, &r);
+            pas_sample(&l, &r);
             if (spk_on) {
                 spk_phase += spk_step; if (spk_phase >= 1) spk_phase -= 1;
                 int s = spk_phase < 0.5 ? 3000 : -3000;

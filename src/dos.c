@@ -1015,7 +1015,8 @@ int bios_builtin(CPU *c, unsigned n)
         return 1;
     case 0x1B: case 0x1C: case 0x23: case 0x24: return 1;
     case 0x21: dos_int21(c); return 1;
-    case 0x2F:                                      /* no XMS, no Windows */
+    case 0x2F:                                      /* no XMS, no Windows; MVSOUND.SYS (pas.c) */
+        if (pas_mvsound(c)) return 1;
         if (c->ax == 0x4300 || c->ax == 0x1600) c->al = 0;
         return 1;
     case 0x33: return 1;           /* no mouse driver: a reset leaves AX 0, "none" */

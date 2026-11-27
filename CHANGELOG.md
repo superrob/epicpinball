@@ -19,7 +19,10 @@ All notable changes to this project are documented here. The format follows
   GF1 (src/gus.c): 32 voices out of 1 MB of card memory, with their loops,
   volume ramps and pan, the timers the driver keeps time by, DMA uploads and
   the IRQs, at any port, IRQ and DMA SETUP offers (a second DMA controller,
-  channels 4-7, came with it). The Pro Audio Spectrum comes next.
+  channels 4-7, came with it). The Pro Audio Spectrum plays through a model
+  of its PCM (src/pas.c) -- 8-bit DMA at its own timer's rate, mono or
+  stereo, at any of SETUP's four ports -- and the MVSOUND.SYS calls its driver
+  makes for the card's DMA and IRQ.
 - **`--cabinet`**, for virtual pinball machines (Linux): two windows without
   decorations. The playfield fills a display with the whole table, never the
   scoreboard, and F6 turns it a quarter at a time, menus and all. The

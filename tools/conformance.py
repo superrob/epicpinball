@@ -410,6 +410,11 @@ def scenario_setup(out):
     if code3 == 0:
         run(o3, MENU_MS / 1000, None, {})
         music = wav_rms(os.path.join(o3, 'audio.wav'))
+    o5, code5, log5 = go('pas', w['card3_menu0_last'])        # the Pro Audio Spectrum at port 288h
+    pas, plog = 0.0, ''
+    if code5 == 0:
+        plog = run(o5, MENU_MS / 1000, None, {})[1]
+        pas = wav_rms(os.path.join(o5, 'audio.wav'))
     o4, code4, log4 = go('gravis', w['card2_menu0_last'])     # the Gravis at port 260h
     gus, glog = 0.0, ''
     if code4 == 0:
@@ -427,6 +432,8 @@ def scenario_setup(out):
         ('setup: a mono Sound Blaster set up there plays the menu music', code3 == 0 and music > 300),
         ('setup: a Gravis Ultrasound at 260h set up there plays the menu music',
          code4 == 0 and gus > 300 and '[gus] port 260' in glog and not misses(glog)),
+        ('setup: a Pro Audio Spectrum at 288h set up there plays the menu music',
+         code5 == 0 and pas > 300 and '[pas] port 288' in plog and not misses(plog)),
     ]
 
 

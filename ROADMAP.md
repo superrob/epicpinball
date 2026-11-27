@@ -23,9 +23,11 @@
 
 ## Later
 
-- **The other sound cards**: Gravis Ultrasound (`MDRV003R`) and Pro Audio
-  Spectrum (`MDRV005R`), which SETUP (`--setup`) offers: each needs its card
-  modelled. The Sound Blaster in every setting, PC speaker and no sound work.
+- **The sound cards by ear**: SETUP (`--setup`) offers the Sound Blaster
+  (mono, Pro, 16, clone), Gravis Ultrasound, Pro Audio Spectrum, PC speaker
+  and none, and every one plays, measured against the Sound Blaster's music;
+  the Gravis and the PAS are models written from their documentation and
+  only measured, not yet listened to.
 - **SETUP's `-cd` check at PINBALL's start**: still answered by the runtime;
   running the lifted SETUP there would move what PINBALL allocates after it.
 - **`ORDER.EXE`**, the "Thanks For Playing" screens PINBALL shows on the way

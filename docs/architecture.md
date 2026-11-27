@@ -156,7 +156,10 @@ writes into the driver, and the modelled card answers where the loaded driver
 says (`audio_driver`). With the Gravis Ultrasound's driver the card is a
 Gravis instead (`src/gus.c`): a GF1 model whose voices play the samples the
 driver uploads into card memory, mixed by the card, not the driver; only the
-card the loaded driver is for answers on its ports. `src/audio.c`
+card the loaded driver is for answers on its ports. With the Pro Audio
+Spectrum's, a PAS (`src/pas.c`): the driver mixes and the card plays 8-bit
+DMA at its 8254's rate, and MVSOUND.SYS's `INT 2Fh` calls are answered for
+its DMA and IRQ. `src/audio.c`
 models that DSP (and the older SB/SB Pro commands), the 8237 DMA channel and the
 PC speaker, and mixes to 44.1 kHz stereo for waveOut (SDL on Linux), a WAV, or ffmpeg,
 drawing a line between the DSP's samples (or holding each, as an option;
