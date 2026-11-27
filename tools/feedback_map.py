@@ -85,6 +85,31 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep3': dict(                                       # Excalibur: no scoreboard texts of its own
+        zones=[
+            ('hole', 1, 'BlackHole', 0xFA, 0, 0, 319, 399),           # at the head of the right lane
+            ('rollover', 1, 'LaneS', 0xF4, 0, 0, 119, 399),           # SWORD, the top lanes
+            ('rollover', 2, 'LaneW', 0xF4, 120, 0, 144, 399),
+            ('rollover', 3, 'LaneO', 0xF4, 145, 0, 168, 399),
+            ('rollover', 4, 'LaneR', 0xF4, 169, 0, 193, 399),
+            ('rollover', 5, 'LaneD', 0xF4, 194, 0, 319, 399),
+            ('switch', 1, 'LeftLoop', 0xF2, 0, 0, 144, 399),          # by the axe; both: the multiplier
+            ('switch', 2, 'RightLoop', 0xF2, 145, 0, 319, 399),       # by the spear
+            ('switch', 3, 'LeftLane', 0xF3, 0, 0, 144, 399),          # light the kickback below
+            ('switch', 4, 'RightLane', 0xF3, 145, 0, 319, 399),
+            ('switch', 5, 'LeftOutlane', 0xFC, 0, 0, 144, 399),       # its kickback, when lit
+            ('switch', 6, 'RightOutlane', 0xFC, 145, 0, 319, 399),
+            ('switch', 7, 'LeftOrbit', 0xFD, 0, 0, 319, 399),         # the top corners, by the shields
+            ('switch', 8, 'RightOrbit', 0xFE, 0, 0, 319, 399),
+            ('switch', 9, 'LeftTarget', 0xF6, 0, 0, 319, 399),        # the red capsule
+            ('switch', 10, 'RightTarget', 0xF5, 0, 0, 319, 399),      # the blue one, by XTRA BALL
+            ('switch', 11, 'Lane1k', 0xF7, 0, 0, 319, 399),           # down the right U lane
+            ('switch', 12, 'Lane5k', 0xF8, 0, 0, 319, 399),
+            ('switch', 13, 'Lane10k', 0xF9, 0, 0, 319, 399),
+            ('switch', 14, 'Spinner', 0xFB, 0, 0, 319, 399),          # left, under the top bumper
+        ],
+        lanes=True,                                     # SWORD lit
+    ),
     'ep2': dict(                                       # Pot of Gold
         zones=[
             ('hole', 1, 'TreasureHole', 0xB1, 85, 121, 319, 188),     # centre, under the bumpers

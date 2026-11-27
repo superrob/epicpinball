@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 3's own feedback** (Excalibur): the black hole, the SWORD lanes,
+  the loops, the kickback lanes and outlanes, the orbits, the capsules, the
+  right lane's switches and the spinner (`$t3BlackHole` ...); it has no texts,
+  so no jackpot or awards. Tested by four hours of `--autoplay`.
 - **Table 2's own feedback** (Pot of Gold): its treasure hole and cave, the
   Sky Ramp, the clover lanes, the cave lane, the leprechauns and the rainbow
   lane, its locks, the top lanes, the skill shot, the jackpot and its awards

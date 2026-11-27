@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 and 2
+table 1's power-up hole and nothing on any other table. **Tables 1 to 3
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -213,6 +213,25 @@ the ball on a ramp's wire, over the top lanes, only the ramps' own.
 
 Four hours of `--autoplay` (111 games) fired every one of them but
 `Jackpot`: the locks came, multiball did not.
+
+#### Table 3 (Excalibur)
+
+It shows no texts of its own, so it has no `Jackpot`, `SkillShot` or
+`Award`.
+
+| Event | Is |
+|---|---|
+| `t3BlackHole` | the black hole, at the head of the right lane |
+| `t3LaneS`, `t3LaneW`, `t3LaneO`, `t3LaneR`, `t3LaneD` | SWORD, the top lanes; all five lit is `LanesLit` |
+| `t3LeftLoop`, `t3RightLoop` | the lanes by the axe and the spear; both made advance the multiplier |
+| `t3LeftLane`, `t3RightLane` | the lanes that light the kickbacks |
+| `t3LeftOutlane`, `t3RightOutlane` | the outlanes, which kick a ball back when lit |
+| `t3LeftOrbit`, `t3RightOrbit` | the top corners, by the shields |
+| `t3LeftTarget`, `t3RightTarget` | the red capsule, left; the blue one by XTRA BALL, right |
+| `t3Lane1k`, `t3Lane5k`, `t3Lane10k` | the switches down the right U lane |
+| `t3Spinner` | the spinner, left, under the top bumper |
+
+Four hours of `--autoplay` (58 games) fired every one of them.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.
