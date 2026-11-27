@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 4
+table 1's power-up hole and nothing on any other table. **Tables 1 to 5
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -252,6 +252,23 @@ Four hours of `--autoplay` (58 games) fired every one of them.
 
 Four hours of `--autoplay` (56 games) fired every one of them but the
 jackpots.
+
+#### Table 5 (Magic)
+
+It shows no texts of its own, so it has no `Jackpot`, `SkillShot` or
+`Award`. Its holes and lanes are drawn into its collision map as it runs.
+
+| Event | Is |
+|---|---|
+| `t5TopHole` | the hole under the top arch |
+| `t5LaneM`, `t5LaneA`, `t5LaneG`, `t5LaneI`, `t5LaneC` | MAGIC, the top lanes |
+| `t5LeftLane` | the lane on the left: 50, 75, 100 |
+| `t5CentreTarget` | the red target under the top hat |
+| `t5YellowBumpers` | the target that lights the yellow bumpers, left |
+| `t5LeftOutlane`, `t5RightOutlane` | the outlanes |
+| `t5RightOrbit` | the orbit by the scarf, top right |
+
+Four hours of `--autoplay` (153 games) fired every one of them.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.

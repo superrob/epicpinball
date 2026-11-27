@@ -85,6 +85,23 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep5': dict(                                       # Magic: no scoreboard texts of its own
+        stamped=[0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xFB, 0xFC],     # drawn as it runs
+        zones=[
+            ('hole', 1, 'TopHole', 0xF2, 100, 0, 180, 80),            # under the top arch
+            ('rollover', 1, 'LaneM', 0xF3, 0, 0, 319, 399),           # MAGIC, the top lanes
+            ('rollover', 2, 'LaneA', 0xF4, 0, 0, 319, 399),
+            ('rollover', 3, 'LaneG', 0xF5, 0, 0, 319, 399),
+            ('rollover', 4, 'LaneI', 0xF6, 0, 0, 319, 399),
+            ('rollover', 5, 'LaneC', 0xF7, 0, 0, 319, 399),
+            ('switch', 1, 'LeftLane', 0xF8, 0, 0, 319, 399),          # 50, 75, 100 on the left
+            ('switch', 2, 'CentreTarget', 0xF9, 0, 0, 319, 399),      # the red one under the hat
+            ('switch', 3, 'YellowBumpers', 0xFA, 0, 0, 319, 399),     # lights them
+            ('switch', 4, 'LeftOutlane', 0xFB, 0, 300, 100, 399),
+            ('switch', 5, 'RightOutlane', 0xFC, 220, 300, 319, 399),
+            ('switch', 6, 'RightOrbit', 0xFE, 0, 0, 319, 399),        # by the scarf, top right (FD: none drawn)
+        ],
+    ),
     'ep4': dict(                                       # Crash and Burn
         zones=[
             ('hole', 1, 'LeftScoop', 0xCC, 0, 0, 139, 399),           # left: toward the extra ball
@@ -487,6 +504,9 @@ def features(img, f, v, art, data):
     if any(not NAME.match(x) for x in names) or len({x.lower() for x in names}) != len(names):
         raise Missing(f'feature names: letters and digits, each once: {names}')
     for kind, n, name, colour, x0, y0, x1, y1 in rules['zones']:
+        if colour in rules.get('stamped', ()):     # drawn into the map as it runs: its side from the zone
+            out['zones'].append((kind, n, colour, x0, y0, x1, y1, side((x0 + x1) // 2), name))
+            continue
         regions = seen.setdefault(colour, kick_regions(art, (colour, colour), 2))
         # the scan looks at the pixels under the ball from its top left
         inside = [r for r in regions if x0 <= r[1] - 4 <= x1 and y0 <= r[2] - 4 <= y1]
