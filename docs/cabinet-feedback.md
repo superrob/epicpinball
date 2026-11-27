@@ -151,8 +151,9 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 12
-have them so far** ([below](#table-1-super-android)).
+table 1's power-up hole and nothing on any other table. Every table has them
+([below](#table-1-super-android)); tables 3 and 5 show no texts of their own,
+so they have no `Jackpot`, `SkillShot` or `Award`.
 
 | Feature | When | Signal |
 |---|---|---|
@@ -415,6 +416,28 @@ jackpots.
 
 Four hours of `--autoplay` (163 games) fired every one of them but the
 jackpots.
+
+#### Table 13 (African Safari)
+
+| Event | Is |
+|---|---|
+| `t13WaterHole`, `t13BaseCamp` | the water hole, right, and the base camp, left |
+| `t13LockHole` | the lock by MULTI BALL: BALL LOCKED is `t13BallLock` |
+| `t13LionsDen` | the lion's den |
+| `t13LaneB`, `t13LaneI`, `t13LaneR`, `t13LaneD` | BIRD, the top lanes |
+| `t13MountainLeft`, `t13MountainRight` | the mountain path's ends |
+| `t13MountainPath` | MOUNTAIN PATH-2M: the path made |
+| `t13TargetC`, `t13TargetA`, `t13TargetT` | CAT, on the left |
+| `t13SnakePit` | the snake pit |
+| `t13LostCaves` | the lost caves, right |
+| `t13BaseCampLane` | GO FOR THE BASE CAMP, the lane on the right |
+| `t13LeftOutlane`, `t13RightOutlane` | the outlanes |
+| `Jackpot`, `SuperJackpot` | JACKPOT  JACKPOT, SUPER JACKPOT! 50MIL |
+| `Award` | WATER HOLE 1M, SNAKE PIT MILLIONS, LION`S MILLIONS, MULTIPLIER ADVANCE |
+
+Four hours of `--autoplay` (172 games) fired every one of them but
+`t13BallLock` and the jackpots: the lock hole fired 71 times, but it never
+said BALL LOCKED.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.

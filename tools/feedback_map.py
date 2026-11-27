@@ -85,6 +85,35 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep13': dict(                                      # African Safari
+        zones=[
+            ('hole', 1, 'WaterHole', 0xBC, 0, 0, 319, 399),           # right
+            ('hole', 2, 'BaseCamp', 0xBF, 0, 0, 319, 399),            # left
+            ('hole', 3, 'LockHole', 0xC4, 0, 0, 319, 399),            # by MULTI BALL: BALL LOCKED
+            ('hole', 4, 'LionsDen', 0xC6, 0, 0, 319, 399),
+            ('rollover', 1, 'LaneB', 0xC1, 0, 0, 120, 399),           # BIRD, the top lanes
+            ('rollover', 2, 'LaneI', 0xC1, 121, 0, 143, 399),
+            ('rollover', 3, 'LaneR', 0xC1, 144, 0, 170, 399),
+            ('rollover', 4, 'LaneD', 0xC1, 171, 0, 319, 399),
+            ('switch', 1, 'MountainLeft', 0xBA, 0, 0, 319, 399),      # the mountain path's ends
+            ('switch', 2, 'MountainRight', 0xBB, 0, 0, 319, 399),
+            ('switch', 3, 'TargetC', 0xC0, 0, 0, 319, 224),           # CAT, on the left, top first
+            ('switch', 4, 'TargetA', 0xC0, 0, 225, 319, 237),
+            ('switch', 5, 'TargetT', 0xC0, 0, 238, 319, 399),
+            ('switch', 6, 'SnakePit', 0xC2, 0, 0, 319, 399),
+            ('switch', 7, 'LostCaves', 0xC3, 0, 0, 319, 399),         # right
+            ('switch', 8, 'BaseCampLane', 0xC5, 0, 0, 319, 399),      # GO FOR THE BASE CAMP, right
+            ('switch', 9, 'LeftOutlane', 0xCC, 0, 0, 159, 399),
+            ('switch', 10, 'RightOutlane', 0xCC, 160, 0, 319, 399),
+        ],
+        named=[('switch', 11, 'MountainPath', 'R'), ('switch', 12, 'BallLock', 'C')],
+        messages=[
+            ('jackpot', 'JACKPOT  JACKPOT'), ('super_jackpot', 'SUPER JACKPOT! 50MIL'),
+            ('switch11', 'MOUNTAIN PATH-2M'), ('switch12', 'BALL LOCKED'),
+            ('award', 'WATER HOLE 1M'), ('award', 'SNAKE PIT MILLIONS'), ('award', 'LION`S MILLIONS'),
+            ('award', 'MULTIPLIER ADVANCE'),
+        ],
+    ),
     'ep12': dict(                                      # Toy Factory
         zones=[
             ('hole', 1, 'JunkHeap', 0xBF, 0, 0, 319, 399),            # left: INTO THE JUNK HEAP

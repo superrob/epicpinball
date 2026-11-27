@@ -35,11 +35,11 @@
   on table 1, with the scoreboard placed on the second display, and is tested
   on virtual displays. wlroots compositors and SDL2 proper (not sdl2-compat)
   are untried.
-- **More cabinet feedback**: each table's own holes, kickbacks, targets,
-  lanes, ramps and awards, as table 1 has them (`FEATURES` in
-  `tools/feedback_map.py`; every table has the same switch handler), gates,
-  spinners, lamps, general joystick buttons, Windows, and
-  an entry in the DOF Config Tool's database.
+- **More cabinet feedback**: every table has its own events now, tried
+  only by `--autoplay`: each on a real cabinet, and the jackpots, multiball
+  and later levels the autoplayer never reaches. Table 6's three banks of
+  targets as banks (they are switches each), gates, lamps, general joystick
+  buttons, Windows, and an entry in the DOF Config Tool's database.
 - **The DMD** (works on a real cabinet on table 1): tables 2-13
   on a cabinet and looked at message by message (several players' scores on 9-13, tables 5 and 6,
   whose line appenders are another shape); screens no scripted game reached

@@ -43,6 +43,11 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 13's own feedback** (African Safari): the water hole, base camp,
+  lock and lion's den, the BIRD lanes, the mountain path, the CAT targets,
+  the snake pit, the lost caves, the base camp lane, the outlanes, the
+  jackpots and its awards (`$t13LionsDen` ...). Every table now has events
+  of its own. Tested by four hours of `--autoplay`.
 - **Table 12's own feedback** (Toy Factory): the junk heap, the lock, the
   superball and joystick holes, the skateboard ramp, the top lanes, the toy
   express, the toy chest, the display case, the paint shop, the orbit, the
