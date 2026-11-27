@@ -45,11 +45,12 @@
 - **The DMD** (works on a real cabinet on table 1; every table's messages
   looked at, headless, docs/dmd.md): tables 2-13 on a real DMD; the
   jackpots, modes and later levels `--autoplay` does not reach; table 1's
-  66x13 picture in the bar; Windows.
+  66x13 picture in the bar; more of it on Windows than the high-score
+  initials, seen on a cabinet's ZeDMD.
 - **SSF** (works on a real cabinet's exciters): each table's own board
   effects beyond slots 0-6 by ear on a cabinet (they were chosen by sample
   and by when they play: docs/ssf.md); Windows.
-- **`--table`**: Windows; a frontend's own start and exit keys.
+- **`--table`**: a frontend's own start and exit keys.
 - **Nudging**: nudge buttons on a board that has them; tables 2-13 by
   hand on a cabinet; Windows.
 
