@@ -40,10 +40,14 @@ static char ini[512];
 static uint8_t held[0x200];          /* how many inputs hold each key down (E0 keys apart) */
 static int remap[0x200];             /* [keys]: a key that sends an action's key; 0 = its own */
 #define BUTTONS_PER 4
+#define BUTTON_KEYS 16
 static struct {
     char device[128];
     int on, button[KEY_ACTIONS][BUTTONS_PER], n[KEY_ACTIONS], most;
+    /* any other key by its name: F7 = 9, P = 10 (keys.c) */
+    int nkeys, key_sc[BUTTON_KEYS], key_button[BUTTON_KEYS][BUTTONS_PER], key_n[BUTTON_KEYS];
 } btn;                               /* [buttons] */
+int host_hotkey(int sc, int down);   /* host.c: F7, F9-F12 ... are the window's */
 static uint32_t was;
 static struct {
     char device[128];
@@ -98,6 +102,26 @@ static void keys_load(void)
     }
 }
 
+/* "3 | 7": up to BUTTONS_PER button numbers into out; how many (0: none, or wrong) */
+static int button_list(const char *name, const char *s, int *out)
+{
+    int n = 0;
+    while (*s && n < BUTTONS_PER) {
+        char *e;
+        while (*s == ' ' || *s == '|' || *s == ',') s++;
+        if (!*s || !_strnicmp(s, "none", 4)) break;
+        long b = strtol(s, &e, 10);
+        if (e == s || b < 0 || b > 127) {
+            fprintf(stderr, "[buttons] %s = %s: button numbers from --joysticks\n", name, s);
+            return 0;
+        }
+        out[n++] = (int)b;
+        if (b + 1 > btn.most) btn.most = (int)b + 1;
+        s = e;
+    }
+    return n;
+}
+
 static void buttons_load(void)
 {
     char v[64];
@@ -105,22 +129,19 @@ static void buttons_load(void)
     ini_get(ini, "buttons", "device", "none", btn.device, sizeof btn.device);
     int any = 0;
     for (int a = 0; a < KEY_ACTIONS; a++) {
-        const char *s = ini_get(ini, "buttons", k_actions[a].name, "none", v, sizeof v);
-        while (*s && btn.n[a] < BUTTONS_PER) {
-            char *e;
-            while (*s == ' ' || *s == '|' || *s == ',') s++;
-            if (!*s || !_strnicmp(s, "none", 4)) break;
-            long b = strtol(s, &e, 10);
-            if (e == s || b < 0 || b > 127) {
-                fprintf(stderr, "[buttons] %s = %s: button numbers from --joysticks\n", k_actions[a].name, v);
-                btn.n[a] = 0;
-                break;
-            }
-            btn.button[a][btn.n[a]++] = (int)b;
-            if (b + 1 > btn.most) btn.most = (int)b + 1;
-            s = e;
-        }
+        btn.n[a] = button_list(k_actions[a].name, ini_get(ini, "buttons", k_actions[a].name, "none", v, sizeof v),
+                               btn.button[a]);
         any |= btn.n[a] > 0;
+    }
+    /* any other key, by its name (an action's name, UP or LEFT, is the action) */
+    for (int i = 0; key_name_at(i) && btn.nkeys < BUTTON_KEYS; i++) {
+        const char *name = key_name_at(i);
+        if (key_action_by_name(name) >= 0) continue;
+        const int n = button_list(name, ini_get(ini, "buttons", name, "none", v, sizeof v), btn.key_button[btn.nkeys]);
+        if (!n) continue;
+        btn.key_sc[btn.nkeys] = key_by_name(name);
+        btn.key_n[btn.nkeys++] = n;
+        any = 1;
     }
     if (!any) return;
     if (!*btn.device || !_stricmp(btn.device, "none")) {
@@ -395,12 +416,20 @@ void pad_nudge(int front)
 /* ---- [buttons] ---- */
 
 static SDL_Joystick *bjoy;
-static uint8_t btn_down[KEY_ACTIONS];
+static uint8_t btn_down[KEY_ACTIONS], key_down[BUTTON_KEYS];
+
+/* A button's key: the window's own (F7 ...) on its press, else the game's */
+static void button_key(int sc, int down)
+{
+    if (!host_hotkey(sc, down)) key_hold(sc, down);
+}
 
 static void buttons_up(void)
 {
     for (int a = 0; a < KEY_ACTIONS; a++)
         if (btn_down[a]) { key_hold(k_actions[a].sc, 0); btn_down[a] = 0; }
+    for (int k = 0; k < BUTTON_KEYS; k++)
+        if (key_down[k]) { button_key(btn.key_sc[k], 0); key_down[k] = 0; }
 }
 
 static void buttons_forget(void)
@@ -426,6 +455,11 @@ static void buttons_poll(int front)
         uint8_t d = 0;
         for (int i = 0; i < btn.n[a]; i++) d |= SDL_JoystickGetButton(bjoy, btn.button[a][i]) != 0;
         if (d != btn_down[a]) { key_hold(k_actions[a].sc, d); btn_down[a] = d; }
+    }
+    for (int k = 0; k < btn.nkeys; k++) {
+        uint8_t d = 0;
+        for (int i = 0; i < btn.key_n[k]; i++) d |= SDL_JoystickGetButton(bjoy, btn.key_button[k][i]) != 0;
+        if (d != key_down[k]) { button_key(btn.key_sc[k], d); key_down[k] = d; }
     }
 }
 

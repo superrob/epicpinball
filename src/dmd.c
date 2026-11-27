@@ -377,13 +377,17 @@ static void layout(void)
         for (int j = i; j > 0 && md->ln[order[j - 1]].di / 320 > md->ln[order[j]].di / 320; j--) {
             int t = order[j]; order[j] = order[j - 1]; order[j - 1] = t;
         }
+    /* the board of four players: the other three's scores two to a row (one
+     * under another they would go onto a second page, the score off the DMD) */
+    const int pair = board && nl - 2 >= 3;
     for (int k = 0, g = -1, bottom = -1; k < nl; k++) {
         const Line *l = &md->ln[order[k]];
-        if (l->di / 320 >= bottom || board) g++;
+        if (pair && k >= 2) { if ((k - 2) % 2 == 0) g++; }
+        else if (l->di / 320 >= bottom || board) g++;
         group[k] = g;
         if (l->di / 320 + 2 * l->f->rows > bottom) bottom = l->di / 320 + 2 * l->f->rows;
     }
-    for (int i = 1; i < nl; i++)
+    for (int i = 1; i < nl && !pair; i++)               /* (paired scores keep the game's order: P1, then P2) */
         for (int j = i; j > 0 && group[j - 1] == group[j] && md->ln[order[j - 1]].di % 320 > md->ln[order[j]].di % 320; j--) {
             int t = order[j]; order[j] = order[j - 1]; order[j - 1] = t;
         }
@@ -599,6 +603,42 @@ static void draw_board(const uint32_t *bar, int bw, int bh, uint32_t *out)
             }
 }
 
+/* EPIC_DMD_SHOTS=DIR, testing: each distinct message's picture as it settles
+ * (0.8 s in) and later (3 s, its next page), DIR/epN-NNN-a.ppm, with
+ * DIR/epN.txt naming them; a board too, once a game is under way */
+static void shot(const uint32_t *out)
+{
+    static const char *dir;
+    static int asked, n;
+    static char seen[256][96];
+    static int nseen;
+    if (!asked++) dir = getenv("EPIC_DMD_SHOTS");
+    if (!dir) return;
+    char key[96] = "";
+    const int msg = message_up();
+    if (msg) for (int i = 0; i < md->nlines && strlen(key) < 80; i++)
+        snprintf(key + strlen(key), sizeof key - strlen(key), "%s%s", i ? " | " : "", md->ln[i].text);
+    else snprintf(key, sizeof key, "(the board)");
+    const double age = now_ms() - started;
+    const char *when = !msg ? (age > 8000 ? "a" : NULL) : age > 3000 ? "b" : age > 800 ? "a" : NULL;
+    if (!when) return;
+    char full[100];
+    snprintf(full, sizeof full, "%s#%s", key, when);
+    for (int i = 0; i < nseen; i++) if (!strcmp(seen[i], full)) return;
+    if (nseen == 256) return;
+    snprintf(seen[nseen++], sizeof seen[0], "%s", full);
+    char path[512];
+    snprintf(path, sizeof path, "%s/%s-%03d-%s.ppm", dir, M.name, n, when);
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P6 %d %d 255\n", DMD_W, DMD_H);
+    for (int i = 0; i < DMD_W * DMD_H; i++) { uint8_t px[3] = { out[i] >> 16, out[i] >> 8, out[i] }; fwrite(px, 1, 3, f); }
+    fclose(f);
+    snprintf(path, sizeof path, "%s/%s.txt", dir, M.name);
+    if ((f = fopen(path, "a"))) { fprintf(f, "%03d-%s %s\n", n, when, key); fclose(f); }
+    n++;
+}
+
 int dmd_frame(const uint32_t *bar, int bw, int bh, uint32_t *out)
 {
     for (int i = 0; i < DMD_W * DMD_H; i++) out[i] = 0xFF000000u;
@@ -614,6 +654,7 @@ int dmd_frame(const uint32_t *bar, int bw, int bh, uint32_t *out)
             }
         }
     }
+    if (g_dmd_on) shot(out);
     int changed = memcmp(out, last, sizeof last) != 0;
     memcpy(last, out, sizeof last);
     return changed;

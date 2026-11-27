@@ -43,6 +43,18 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Any key on a cabinet button:** `[buttons]` in `controller.ini` takes a
+  key's name besides the game's actions (`F7 = 9`, `P = 10`), up to 16: the
+  window's own keys (F5 and F6 in a cabinet, F7, F9-F12) do what they do on
+  the keyboard, the others go to the game.
+- **The DMD on every table, looked at message by message:** tables 5 and 6
+  now show their messages' further lines (SCORES with each player, the bonus
+  pages, BEEHIVE-HIT RAMP TO COLLECT 24): their line appenders leave the
+  list's end where it is, which the survey did not take for one. A board of
+  four players on tables 9-13 keeps the score on the DMD, the other three
+  two to a row (they went to a second page). For testing,
+  `EPIC_DMD_SHOTS=DIR` saves each message's picture, and
+  `EPIC_TABLE_PLAYERS=N` starts `--table`'s game with N players.
 - **Table 6's target banks:** each bank all down, as it resets, is an event
   of its own (`$t6SwordTargetsDown`, `$t6BlueTargetsDown`,
   `$t6LeftTargetsDown`), watched by the game's flags for it (`bankset` in the

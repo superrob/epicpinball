@@ -54,6 +54,6 @@ const char k_controller_default[] =
 "[keys]\r\n"
 "\r\n"
 "; A cabinet's buttons (Linux): the device, then action = its button numbers\r\n"
-"; (--joysticks), e.g. left_flipper = 0\r\n"
+"; (--joysticks), e.g. left_flipper = 0; or any key by its name, F7 = 9\r\n"
 "[buttons]\r\n"
 "device = none\r\n";

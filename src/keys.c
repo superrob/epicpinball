@@ -45,6 +45,8 @@ int key_by_name(const char *s)
     return *s && !*e && v > 0 && v < 0x200 ? (int)v : 0;
 }
 
+const char *key_name_at(int i) { return i >= 0 && i < NNAMES ? k_names[i].n : NULL; }
+
 const char *key_name(int sc)
 {
     static char hex[8];

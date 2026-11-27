@@ -632,6 +632,21 @@ static void paint(void)
     HDC dc = GetDC(wnd); paint_gdi(dc); ReleaseDC(wnd, dc);
 }
 
+static void menu(int x, int y);
+/* A key a cabinet button sends ([buttons], pad.c) that is the window's own:
+ * F7, F9-F12 (F5 and F6 are Linux's cabinet's). 1 if it is, done on its press. */
+int host_hotkey(int sc, int down)
+{
+    if (sc != 0x41 && (sc < 0x43 || sc > 0x44) && sc != 0x57 && sc != 0x58) return 0;
+    if (!down) return 1;
+    if (sc == 0x41) command(ID_WHOLE);
+    if (sc == 0x43) command(ID_LOOK + !S.look);
+    if (sc == 0x44) { RECT r; GetWindowRect(wnd, &r); menu(r.left + 40, r.top + 40); }
+    if (sc == 0x57) command(ID_FULL);
+    if (sc == 0x58) command(ID_MODE + (S.mode + 1) % PRESENT_MODES);
+    return 1;
+}
+
 static void menu(int x, int y)
 {
     static const char *const mode_labels[] = { "Sharp", "Smooth", "CRT", "Nearest (original pixels)", "Integer (whole multiples)" };
@@ -902,6 +917,21 @@ static void menu(void)
 
 /* A key: the remaster's own (F-keys, PrtSc), else the game's, by keys.c's
  * table and controller.ini's [keys] (pad.c) */
+/* A key a cabinet button sends ([buttons], pad.c) that is the window's own:
+ * F5 and F6 in a cabinet, F7, F9-F12. 1 if it is, done on its press. */
+int host_hotkey(int sc, int down)
+{
+    if (g_opt.cabinet && (sc == 0x3F || sc == 0x40)) { if (down) command(sc == 0x3F ? ID_STRETCH : ID_TURN); return 1; }
+    if (sc != 0x41 && (sc < 0x43 || sc > 0x44) && sc != 0x57 && sc != 0x58) return 0;
+    if (!down) return 1;
+    if (sc == 0x41) command(ID_WHOLE);
+    if (sc == 0x43) command(ID_LOOK + !S.look);
+    if (sc == 0x44) menu();
+    if (sc == 0x57) command(ID_FULL);
+    if (sc == 0x58) command(ID_MODE + (S.mode + 1) % PRESENT_MODES);
+    return 1;
+}
+
 static void key(const SDL_KeyboardEvent *k)
 {
     int up = k->type == SDL_KEYUP, s = k->keysym.scancode;
@@ -1416,7 +1446,9 @@ void host_frame(void)
     }
     if (now - last_present < (uint64_t)(PIT_HZ / 70)) return;
     if (!wnd) {
-        if (g_opt.dmd_device) { last_present = now; compose_dmd(); }   /* no window: the DMD all the same */
+        static int shots = -1;                     /* EPIC_DMD_SHOTS (testing, dmd.c): its pictures too */
+        if (shots < 0) shots = getenv("EPIC_DMD_SHOTS") != NULL;
+        if (g_opt.dmd_device || (shots && g_opt.dmd)) { last_present = now; compose_dmd(); }   /* no window: the DMD all the same */
         return;
     }
     last_present = now;
