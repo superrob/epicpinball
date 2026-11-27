@@ -43,6 +43,11 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 4's own feedback** (Crash and Burn): its five holes (the scoops,
+  the pit, Dead Man Curve, the tyre), the race track ramp, the DRIVER
+  targets, orbits, outlanes and green-light lanes, the ball lock, the
+  jackpots and its awards (`$t4PitStop` ...). Tested by four hours of
+  `--autoplay`.
 - **Table 3's own feedback** (Excalibur): the black hole, the SWORD lanes,
   the loops, the kickback lanes and outlanes, the orbits, the capsules, the
   right lane's switches and the spinner (`$t3BlackHole` ...); it has no texts,

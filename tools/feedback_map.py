@@ -85,6 +85,37 @@ def effects(f, v):
 
 
 FEATURES = {
+    'ep4': dict(                                       # Crash and Burn
+        zones=[
+            ('hole', 1, 'LeftScoop', 0xCC, 0, 0, 139, 399),           # left: toward the extra ball
+            ('hole', 2, 'TopScoop', 0xCC, 140, 0, 319, 399),          # top right, by the tyre
+            ('hole', 3, 'PitStop', 0xCD, 0, 0, 199, 399),             # the pit, centre
+            ('hole', 4, 'DeadManCurve', 0xCD, 200, 0, 319, 399),      # right: the ball lock
+            ('hole', 5, 'BlowOut', 0xCE, 0, 0, 319, 399),             # the tyre's hub, top
+            ('switch', 1, 'DriverD', 0xCB, 0, 0, 319, 154),           # DRIVER, down the right
+            ('switch', 2, 'DriverR', 0xCB, 0, 155, 319, 167),
+            ('switch', 3, 'DriverI', 0xCB, 0, 168, 319, 180),
+            ('switch', 4, 'DriverV', 0xCB, 0, 181, 319, 193),
+            ('switch', 5, 'DriverE', 0xCB, 0, 194, 319, 206),
+            ('switch', 6, 'DriverR2', 0xCB, 0, 207, 319, 399),
+            ('switch', 7, 'LeftOrbit', 0xCF, 0, 0, 139, 399),
+            ('switch', 8, 'RightOrbit', 0xCF, 140, 0, 319, 399),
+            ('switch', 9, 'LeftOutlane', 0xD0, 0, 0, 159, 399),
+            ('switch', 10, 'RightOutlane', 0xD0, 160, 0, 319, 399),
+            ('switch', 11, 'LeftGreenLane', 0xC7, 0, 0, 159, 399),    # GO - GREEN LIGHT
+            ('switch', 12, 'RightGreenLane', 0xC7, 160, 0, 319, 399),
+        ],
+        named=[
+            ('ramp', 1, 'RaceTrack', 'C'),              # ONTO THE RACE TRACK
+            ('switch', 13, 'BallLock', 'R'),            # at Dead Man Curve
+        ],
+        messages=[
+            ('jackpot', 'JACKPOT!!'), ('super_jackpot', 'DOUBLE JACKPOT'),
+            ('ramp1', 'ONTO THE RACE TRACK'), ('switch13', 'BALL 1 LOCKED'),
+            ('award', 'ALL GREEN LIGHTS - 5M'), ('award', 'REFUELED-15M'),
+            ('award', 'NEW TIRES-10M'), ('award', 'TUNE UP-5M'), ('award', 'MYSTERY BONUS'), ('award', 'PIT STOP'),
+        ],
+    ),
     'ep3': dict(                                       # Excalibur: no scoreboard texts of its own
         zones=[
             ('hole', 1, 'BlackHole', 0xFA, 0, 0, 319, 399),           # at the head of the right lane

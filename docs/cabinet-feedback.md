@@ -151,7 +151,7 @@ On a table with features of its own, also:
 
 A table's own holes, kickback, drop targets, rollovers and ramps are named by
 the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
-table 1's power-up hole and nothing on any other table. **Tables 1 to 3
+table 1's power-up hole and nothing on any other table. **Tables 1 to 4
 have them so far** ([below](#table-1-super-android)).
 
 | Feature | When | Signal |
@@ -232,6 +232,26 @@ It shows no texts of its own, so it has no `Jackpot`, `SkillShot` or
 | `t3Spinner` | the spinner, left, under the top bumper |
 
 Four hours of `--autoplay` (58 games) fired every one of them.
+
+#### Table 4 (Crash and Burn)
+
+| Event | Is |
+|---|---|
+| `t4LeftScoop`, `t4TopScoop` | the scoops left and top right, toward the extra ball |
+| `t4PitStop` | the pit, centre |
+| `t4DeadManCurve` | the hole at the foot of Dead Man Curve, right: the ball lock |
+| `t4BlowOut` | the tyre's hub, top |
+| `t4RaceTrack` | ONTO THE RACE TRACK: the race track ramp |
+| `t4DriverD` … `t4DriverR2` | DRIVER, the targets down the right, top to bottom |
+| `t4LeftOrbit`, `t4RightOrbit` | the orbits |
+| `t4LeftOutlane`, `t4RightOutlane` | the outlanes |
+| `t4LeftGreenLane`, `t4RightGreenLane` | the lanes by the slingshots: GO - GREEN LIGHT |
+| `t4BallLock` | BALL 1 LOCKED |
+| `Jackpot`, `SuperJackpot` | JACKPOT!!, DOUBLE JACKPOT |
+| `Award` | ALL GREEN LIGHTS - 5M, REFUELED-15M, NEW TIRES-10M, TUNE UP-5M, MYSTERY BONUS, PIT STOP |
+
+Four hours of `--autoplay` (56 games) fired every one of them but the
+jackpots.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.
