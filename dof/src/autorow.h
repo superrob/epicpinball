@@ -124,6 +124,7 @@ struct Table {
     {
         if (ev < 0 || ev >= kEvents) return "";
         if (*kDofName[ev]) return kDofName[ev];
+        if (is_lamp(ev)) return number ? "t" + std::to_string(number) + "Lamp" + std::to_string(ev - kLamp1 + 1) : "";
         return number && !name[ev].empty() ? "t" + std::to_string(number) + name[ev] : "";
     }
 };
@@ -521,9 +522,10 @@ inline Row build(const std::vector<std::string> &names, const std::string &bumpe
 
 // Whether a made row could carry an event on this table: a bumper or feature
 // it does not have is no loss, and neither are a single drop target, a
-// rollover or a ball held, which made rows leave to the player's own
+// rollover, a ball held or a lamp, which made rows leave to the player's own
 inline bool row_has(int ev, const std::string &bumpers, const Table &table)
 {
+    if (is_lamp(ev)) return false;
     for (int b = (int)bumpers.size(); b < kBumpers; b++)
         if (ev == bumper_event(b)) return false;
     if (ev >= kHole1 && ev <= kHole5) return ev - kHole1 < (int)table.hole.size();

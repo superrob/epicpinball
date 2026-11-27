@@ -43,6 +43,13 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Each table's lamps, for DOF:** every lamp the game draws is a level,
+  `$t1Lamp1` to `$t13Lamp63`, on while it is lit: blinks and light shows as
+  the table shows them, numbered in the game's order (9 on table 5, 82 on
+  table 10). `tools/feedback_map.py --lamps epN` says where each is. Read
+  from the blitter the lamps' renderer draws them with, so what the player
+  sees is what goes out. Made rows leave them to rows of your own. Map
+  version 8. `EPIC_LAMP_CHECK=1` for testing.
 - **Any key on a cabinet button:** `[buttons]` in `controller.ini` takes a
   key's name besides the game's actions (`F7 = 9`, `P = 10`), up to 16: the
   window's own keys (F5 and F6 in a cabinet, F7, F9-F12) do what they do on

@@ -26,19 +26,28 @@ static const char *const names[FB_EVENTS] = {
     "switch_1", "switch_2", "switch_3", "switch_4", "switch_5", "switch_6", "switch_7", "switch_8",
     "switch_9", "switch_10", "switch_11", "switch_12", "switch_13", "switch_14", "switch_15", "switch_16",
     "switch_17", "switch_18", "switch_19", "switch_20", "switch_21", "switch_22", "switch_23", "switch_24",
-    "table_start", "table_end", "table_lost",
+    [FB_TABLE_START] = "table_start", [FB_TABLE_END] = "table_end", [FB_TABLE_LOST] = "table_lost",
 };
+static char lamp_name[FB_LAMPS][10];
+
+/* lamp_1 to lamp_96, made the first time a name is asked for */
+static const char *name_of(int e)
+{
+    if (!*lamp_name[0])
+        for (int i = 0; i < FB_LAMPS; i++) snprintf(lamp_name[i], sizeof lamp_name[i], "lamp_%d", i + 1);
+    return e >= FB_LAMP_1 && e <= FB_LAMP_96 ? lamp_name[e - FB_LAMP_1] : names[e];
+}
 
 static FILE *log_file;
 static const FbSink *out;
 static char table[16];
 static int muted;
 
-const char *feedback_name(FbEvent e) { return (unsigned)e < FB_EVENTS ? names[e] : "?"; }
+const char *feedback_name(FbEvent e) { return (unsigned)e < FB_EVENTS ? name_of(e) : "?"; }
 
 int feedback_by_name(const char *name)
 {
-    for (int i = 0; i < FB_OUTPUTS; i++) if (!strcmp(name, names[i])) return i;
+    for (int i = 0; i < FB_OUTPUTS; i++) if (!strcmp(name, name_of(i))) return i;
     return -1;
 }
 

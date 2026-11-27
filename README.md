@@ -47,7 +47,7 @@ conformance harness passes 154/154 on Linux.**
 | A full game, start to final ball, played by hand | ✅ |
 | Cabinet mode, `--cabinet` (Linux only) | ✅ on a real cabinet (table 1) and on virtual displays |
 | Nudging from a cabinet: an accelerometer's shove by how hard, nudge buttons as the game's nudge (`[nudge]`, Linux) | ✅ on a real cabinet's accelerometer (a Pinscape Pico); by a scripted accelerometer on four tables and a virtual board in a window; nudge buttons not yet on a real board |
-| Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13, each with events of its own, only in a sandbox (loopback, a simulated board, a virtual joystick, four hours of `--autoplay` each) |
+| Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13, each with events of its own, and every table's lamps, only in a sandbox (loopback, a simulated board, a virtual joystick, four hours of `--autoplay` each) |
 | SSF: the board's sounds on a cabinet's exciters, 7.1 (`--ssf`, Linux) | ✅ headless on all 13 tables (eight channels measured), and on a cabinet's exciters |
 | Straight to a table, `--table N` | ✅ on a real cabinet; headless on all 13 tables (quit, high score, game over, play again); not on Windows |
 | Between games with `--cabinet --table N`: initials on the DMD, Start plays again | implemented: headless on table 1 and in an offscreen window; not yet on a real cabinet |
@@ -96,7 +96,8 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   Between them, the table's score. [How it works](docs/dmd.md).
 - **Cabinet feedback** (`--dof`, Linux): flippers, slingshots, bumpers,
   launch, drain, nudge and the rest go to libdof as DOF events (and each
-  table's own holes, ramps, lanes, targets, loops, jackpots and awards), with
+  table's own holes, ramps, lanes, targets, loops, jackpots, awards and
+  lamps), with
   VPinball's DOF files if there are any (a Config Tool export works as it
   is: the game's row is made from its device list, solenoids, flashers and
   MX strips with DOF's shapes included) (no limits: those are the
