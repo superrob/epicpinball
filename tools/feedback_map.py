@@ -127,7 +127,7 @@ FEATURES = {
         ],
     ),
 }
-COUNTS = dict(hole=5, rollover=6, ramp=3, kickback=1, target=3)   # the events made for them (src/feedback.h)
+COUNTS = dict(hole=5, rollover=6, ramp=3, kickback=1, target=3, switch=16)   # the events made for them (src/feedback.h)
 NAME = re.compile(r'[A-Za-z][A-Za-z0-9]{0,39}\Z')                 # a feature's, in a DOF row after t1
 
 
@@ -379,7 +379,7 @@ def features(img, f, v, art, data):
     collision map, and what its switch handler keeps for them."""
     rules = FEATURES[img]
     sw = f[v['switch_fn']][0]
-    out = dict(zones=[], timers=[], targets=[], bank=None, lanes=None, ramps=None, msg_fn=None, msgs=[])
+    out = dict(zones=[], named=[], timers=[], targets=[], bank=None, lanes=None, ramps=None, msg_fn=None, msgs=[])
 
     # the handler's gate: on the ramp layer only some colours are handled, and
     # tilted only some others
@@ -392,7 +392,10 @@ def features(img, f, v, art, data):
     out['gate'] = (num(m.group(1)), colours(m.group(2)), colours(m.group(3)))
     seen = {}
     # the bank's targets all down go out as its name and Down: that one too
-    names = [z[2] for z in rules['zones']] + list(rules.get('targets') or []) + [rules.get('bank', 'x') + 'Down']
+    # (a feature drawn in two places is one zone each, under one name)
+    names = ([name for _, _, name in dict.fromkeys((z[0], z[1], z[2]) for z in rules['zones'])]
+             + [z[2] for z in rules.get('named', [])]
+             + list(rules.get('targets') or []) + [rules.get('bank', 'x') + 'Down'])
     if any(not NAME.match(x) for x in names) or len({x.lower() for x in names}) != len(names):
         raise Missing(f'feature names: letters and digits, each once: {names}')
     for kind, n, name, colour, x0, y0, x1, y1 in rules['zones']:
@@ -403,15 +406,24 @@ def features(img, f, v, art, data):
             raise Missing(f'{kind} {n}: colour {colour:02X} is not drawn there')
         x = sum(r[0] * r[1] for r in inside) // sum(r[0] for r in inside)
         out['zones'].append((kind, n, colour, x0, y0, x1, y1, side(x), name))
+    # every place a zone's colour is drawn is in a zone, or said to be no feature
+    quiet = [(c, x0, y0, x1, y1) for c, x0, y0, x1, y1 in rules.get('quiet', [])]
     for colour, regions in seen.items():
         for r in regions:
             if not any(z[2] == colour and z[3] <= r[1] - 4 <= z[5] and z[4] <= r[2] - 4 <= z[6]
-                       for z in out['zones']):
+                       for z in out['zones']) and \
+               not any(q[0] == colour and q[1] <= r[1] - 4 <= q[3] and q[2] <= r[2] - 4 <= q[4] for q in quiet):
                 raise Missing(f'colour {colour:02X} at {r[1]},{r[2]} is in no zone')
+    # a feature with no switch of its own: a scoreboard text fires it
+    for kind, n, name, where in rules.get('named', []):
+        if kind == 'hole' or where not in 'LCR' or len(where) != 1:
+            raise Missing(f'{kind} {n}: a named feature is no hole, and has a side')
+        out['named'].append((kind, n, where, name))
     for kind, count in COUNTS.items():
-        got = sorted(z[1] for z in out['zones'] if z[0] == kind)
-        if len(got) != len(set(got)) or any(x > count for x in got):
-            raise Missing(f'{kind}: numbered {got}, events are made for {count}')
+        got = sorted({(z[1], z[8]) for z in out['zones'] if z[0] == kind} | {(z[1], z[3]) for z in out['named'] if z[0] == kind})
+        numbers = [g[0] for g in got]
+        if len(numbers) != len(set(numbers)) or any(x > count for x in numbers) or numbers != list(range(1, len(numbers) + 1)):
+            raise Missing(f'{kind}: numbered {numbers}, one name each, from 1, and events are made for {count}')
 
     # the holes' hold timers: set when a ball is caught, counted down to its kick
     for t, _ in re.findall(rf'cmp byte ds:\[{N}\], 0x0\njne {A}\n(?:.*\n){{0,16}}?mov byte ds:\[0x\1\], (0x[0-9A-F]+)\n', sw):
@@ -458,9 +470,13 @@ def features(img, f, v, art, data):
 
     if rules.get('messages'):
         called = set()
+        have = {f'{z[0]}{z[1]}' for z in out['zones']} | {f'{z[0]}{z[1]}' for z in out['named']}
         for kind, text in rules['messages']:
+            if kind not in ('jackpot', 'super_jackpot', 'skill_shot', 'award') and kind not in have:
+                raise Missing(f'message {text!r} for {kind}, which is no feature of the table')
+            event = re.sub(r'^([a-z]+)(\d+)$', r'\1_\2', kind)
             for at in strings(data, text):
-                out['msgs'].append((at, kind))
+                out['msgs'].append((at, event))
                 for _, (body, _) in f.items():
                     called |= set(re.findall(rf'lea bx, word ds:\[0x{at:X}\]\n(?:mov (?:ax|di), {A}\n){{0,2}}call (ep\d+_[0-9A-F]+)\n', body))
         if len(called) != 1:
@@ -621,6 +637,7 @@ def text_of(img, r):
         if own['msg_fn']:
             out.append(f'msg_fn {own["msg_fn"]}')
         out += [f'zone {k} {n} {c:X} {x0} {y0} {x1} {y1} {s} {name}' for k, n, c, x0, y0, x1, y1, s, name in own['zones']]
+        out += [f'feature {k} {n} {s} {name}' for k, n, s, name in own['named']]
         out += [f'timer {a:X}' for a in own['timers']]
         out += [f'target {a:X} {n} {s} {name}' for a, n, s, name in own['targets']]
         if own['bank']:
@@ -735,7 +752,136 @@ def write_menus(show):
     print('menus map: work/feedback/pin.map')
 
 
+# ---- reading a table: --switches ----------------------------------------------------
+
+def function_items(img, name):
+    """A lifted function as it runs: ('label', address) and ('ins', text, target)
+    in order, target the address a jump goes to (None for others)."""
+    for path in sorted(glob.glob(os.path.join(GEN, img, f'{img}_[0-9]*.c'))):
+        text = open(path).read()
+        at = text.find(f'void {name}(CPU *cpu)')
+        if at < 0:
+            continue
+        body = text[at:text.index('\n}\n', at)]
+        items = []
+        for line in body.split('\n')[2:]:
+            lab = re.match(rf'L_{name}_([0-9A-F]+):;', line)
+            if lab:
+                items.append(('label', int(lab.group(1), 16)))
+                continue
+            m = re.search(r'/\* ([^*]*?) \*/\s*$', line)
+            if not m or m.group(1).endswith('call return addr'):
+                continue
+            ins = m.group(1)
+            c = re.match(rf'\s+({img}_[0-9A-F]+)\(cpu\);', line)
+            if c and ins.startswith('call '):
+                ins = 'call ' + c.group(1)
+            j = re.match(r'(j\w+) 0x([0-9A-F]+)$', ins)
+            items.append(('ins', ins, int(j.group(2), 16) if j else None))
+        return items
+    raise Missing(f'{name} is not in the lifted code')
+
+
+def text_at(data, at):
+    """The scoreboard text at ds:at, or None if it is not one"""
+    out = bytearray()
+    for b in data[at:at + 48]:
+        if b in (0, 0x24):
+            break
+        if not 0x20 <= b < 0x7F:
+            return None
+        out.append(b)
+    return out.decode() if len(out) >= 3 else None
+
+
+def switch_report(img):
+    """Each colour the switch handler gives code of its own: where it is drawn,
+    and that code, from its entry to the handler's end"""
+    file, load, size, fnv = lifted_as(img)
+    f = read_functions(img)
+    v = {}
+    flippers(f, v)
+    tilt_and_nudge(f, v)
+    physics_and_kicker(f, v)
+    plunger(f, v)
+    balls_lost(f, v)
+    art_seg = collision_map(f, v)
+    switches(f, v)
+    module = exe_module(img, file, size)
+    m = re.match(rf'push ds\n(?:.*\n){{0,3}}?mov ax, {N}\nmov ds, ax\n', f[v['main_fn']][0])
+    ds = (num(m.group(1)) - load) & 0xFFFF
+    data = module[ds * 16:ds * 16 + 0x10000]
+    cs = int(v['main_fn'].split('_')[1], 16) >> 4
+    at = ((art_seg - load) & 0xFFFF) * 16
+    art = module[at:at + MAP_W * MAP_H]
+
+    items = function_items(img, v['switch_fn'])
+    label = {it[1]: i for i, it in enumerate(items) if it[0] == 'label'}
+    jt = next(num(m.group(1)) for it in items if it[0] == 'ins'
+              for m in [re.match(rf'mov bx, word cs:\[bx\+{N}\]', it[1])] if m)
+    entries = [struct.unpack_from('<H', module, cs * 16 + jt + 2 * k)[0] for k in range(0x56)]
+    ends = [it[2] for it in items if it[0] == 'ins' and it[1].startswith('jmp 0x')]
+    end = max(set(ends), key=ends.count)
+    groups = {}
+    for k, e in enumerate(entries):
+        groups.setdefault(e, []).append(0xAA + k)
+
+    def walk(start):
+        seen, todo = set(), [label[start]]
+        while todo:
+            i = todo.pop()
+            while i < len(items) and i not in seen:
+                seen.add(i)
+                it = items[i]
+                if it[0] == 'ins':
+                    if it[2] is not None:
+                        if it[2] == end:
+                            if it[1].startswith('jmp '):
+                                break
+                        elif it[2] in label:
+                            todo.append(label[it[2]])
+                            if it[1].startswith('jmp '):
+                                break
+                    elif it[1] in ('ret', 'retf', 'iret', 'jmp bx'):
+                        break
+                i += 1
+        return sorted(seen)
+
+    print(f'{img}: switch handler {v["switch_fn"]}, ds {ds:X}, jump table cs:{jt:X}, end {end:X}')
+    print('  gate: ' + '; '.join(it[1] for it in items[:40] if it[0] == 'ins' and not it[1].startswith('push')
+                                 and 'bx' not in it[1])[:600])
+    for e, colours in sorted(groups.items(), key=lambda g: g[1][0]):
+        where = []
+        for c in colours:
+            for n, x, y, top, bottom in kick_regions(art, (c, c), 2):
+                where.append(f'{c:X}@{x},{y}({top}-{bottom},{n}px,{side(x)})')
+        code = walk(e) if e in label else []
+        lines = [items[i][1] for i in code if items[i][0] == 'ins']
+        if len(lines) <= 1 and not where:
+            continue
+        head = '/'.join(f'{c:X}' for c in colours) if len(colours) < 8 else f'{colours[0]:X}-{colours[-1]:X} ({len(colours)})'
+        print(f'\n== {head} at {e:X}: {len(lines)} instructions')
+        if where:
+            print('  drawn: ' + ' '.join(where[:12]) + (' ...' if len(where) > 12 else ''))
+        if len(colours) >= 8 and len(lines) < 3:
+            continue
+        for i in code:
+            it = items[i]
+            if it[0] == 'label':
+                print(f'  {it[1]:X}:')
+                continue
+            s = it[1]
+            t = re.match(rf'lea bx, word ds:\[{N}\]', s)
+            if t and text_at(data, num(t.group(1))):
+                s += f'    ; "{text_at(data, num(t.group(1)))}"'
+            print('    ' + s)
+
+
 def main():
+    if '--switches' in sys.argv:
+        for img in sys.argv[sys.argv.index('--switches') + 1:]:
+            switch_report(img)
+        return 0
     show = '--show' in sys.argv
     write_menus(show)
     found, bad = {}, []

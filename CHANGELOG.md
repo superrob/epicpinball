@@ -43,6 +43,13 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **For each table's own feedback:** a feature can be any switch the table
+  has (`switch1` to `switch16`: lanes, loops, locks), or have no switch at
+  all and be fired by the table's own scoreboard text ("BALL 1 LOCKED"); a
+  ramp a table does not count fires on its switch. `--switches epN` in
+  `tools/feedback_map.py` prints what each switch colour's code does, and for
+  testing `--autoplay` plays game after game of a table by itself and
+  `--switch-log` lists where the ball meets each switch colour.
 - **Made rows use the side MXs and DOF's shapes.** `Left MX` and `Right MX`
   get slingshots, ramps, hole kick-outs and the kickback on their side, as
   wipes up or down it, and the bottom of the right one breathes while a ball

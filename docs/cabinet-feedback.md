@@ -161,7 +161,8 @@ them so far** ([below](#table-1-super-android)).
 | a drop target | it goes down | instant |
 | a bank's targets all down (its name and `Down`) | the bank's last one goes down and the bank resets | instant |
 | a rollover | the ball rolls over it, every pass | instant |
-| a ramp | made, as the game counts it | instant |
+| a ramp | made, as the game counts it (or, on a table that counts none, its switch) | instant |
+| another switch, a lane, a loop, a lock | the ball rolls over it, or the scoreboard says it happened | instant |
 
 #### Table 1 (Super Android)
 
@@ -193,6 +194,27 @@ the ball on a ramp's wire, over the top lanes, only the ramps' own.
 
 The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
 the table's map; the game passes them to the helper with `--features`.
+
+#### Finding a table's features
+
+Every table has one switch handler: the ball scan hands it the collision map's
+colour under the ball, and it branches to the table's own code for that
+colour, through a jump table. `python3 tools/feedback_map.py --switches epN`
+prints each colour that has code of its own: where it is drawn, and that code,
+with the scoreboard texts it shows. A colour's code often tells places apart by
+the ball's X and Y. Then a long run of play shows where the ball meets each:
+
+```sh
+./epicpinball.sh --headless --mute --table 2 --autoplay --seconds 14400 \
+  --feedback-log events.log --switch-log switches.log
+```
+
+`--autoplay` flips at a ball coming down near the flippers, launches a ball
+waiting in the lane, and after a game over types initials and plays again: four
+hours of a table in a couple of minutes. A feature is then a zone (a colour,
+where the ball is), a hole's hold timer, or a scoreboard text: the game's own
+"BALL 1 LOCKED" or "SKY RAMP" fires a named feature with no switch of its
+own.
 
 #### The bumpers
 

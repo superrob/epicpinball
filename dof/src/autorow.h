@@ -138,7 +138,7 @@ inline std::optional<Table> features(int number, const std::string &text)
     static const struct { const char *kind; int first, most; std::string Table::*sides; } kinds[] = {
         { "hole", kHole1, kHoles, &Table::hole }, { "kickback", kKickback, 1, &Table::kickback },
         { "rollover", kRollover1, kRollovers, nullptr }, { "ramp", kRamp1, kRamps, &Table::ramp },
-        { "target", kTarget1, kTargets, &Table::target },
+        { "target", kTarget1, kTargets, &Table::target }, { "switch", kSwitch1, kSwitches, nullptr },
     };
     char side[kEvents] = {};
     std::string bank;
@@ -167,8 +167,11 @@ inline std::optional<Table> features(int number, const std::string &text)
         int ev = -1;
         for (auto &k : kinds) {
             const size_t len = std::strlen(k.kind);
-            if (key.compare(0, len, k.kind) || key.size() != len + 1 || key[len] < '1' || key[len] > '0' + k.most) continue;
-            ev = k.first + key[len] - '1';
+            if (key.compare(0, len, k.kind) || key.size() <= len || key.size() > len + 2) continue;
+            const std::string digits = key.substr(len);
+            if (digits.find_first_not_of("0123456789") != std::string::npos || digits[0] == '0') continue;
+            const int n = std::stoi(digits);
+            if (n >= 1 && n <= k.most) ev = k.first + n - 1;
         }
         if (ev < 0 || !good(name) || side[ev]) return std::nullopt;
         side[ev] = v[colon + 1];
@@ -527,7 +530,8 @@ inline bool row_has(int ev, const std::string &bumpers, const Table &table)
     if (ev >= kRamp1 && ev <= kRamp3) return ev - kRamp1 < (int)table.ramp.size();
     if (ev == kKickback) return !table.kickback.empty();
     if (ev == kTargetsDown) return !table.target.empty();
-    if ((ev >= kTarget1 && ev <= kTarget3) || (ev >= kRollover1 && ev <= kRollover6) || ev == kBallHeld) return false;
+    if ((ev >= kTarget1 && ev <= kTarget3) || (ev >= kRollover1 && ev <= kRollover6) || ev == kBallHeld
+        || (ev >= kSwitch1 && ev <= kSwitch16)) return false;
     if (ev >= kHole1) return !table.empty();        // ball held, lanes, skill shot, jackpots, awards
     return true;
 }

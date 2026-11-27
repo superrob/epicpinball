@@ -336,6 +336,51 @@ static void keys_due(void)
     }
 }
 
+/* --autoplay, for testing a table's feedback: a player that flips when a ball
+ * comes down near the flippers, launches a ball waiting in the lane, and starts
+ * the next game. Its keys go the way the keyboard's do. */
+#define AUTO_FLIP_MS 140.0           /* a flip held */
+#define AUTO_LAUNCH_MS 1200.0        /* the plunger pulled */
+static void autoplay(void)
+{
+    static double until[4], again;   /* left, right, Space, a menu key: down until then, resting after */
+    static uint8_t sc[4] = { 0x2A, 0x36, 0x39, 0x1C };
+    static int menu;                 /* initials AAA, then Enter: PLAY GAME is first on the table's screen */
+    static const double hold[4] = { AUTO_FLIP_MS, AUTO_FLIP_MS, AUTO_LAUNCH_MS, 100.0 };
+    if (!g_opt.autoplay || driven()) return;
+    const double t = pit_now() * 1000.0 / PIT_HZ;
+    uint32_t ds, cs;
+    const WatchMap *m = watch_table(&ds, &cs);
+    int want[4] = { 0, 0, 0, 0 };
+    if (!m) {                                        /* PINBALL's screen: initials, then PLAY GAME */
+        if (t >= again && until[3] == 0) {
+            sc[3] = menu++ % 4 < 3 ? 0x1E : 0x1C;
+            want[3] = 1;
+            again = t + 600.0;
+        }
+    } else if (watch_game_over() == 1) {             /* over: the scores, until Space */
+        if (t >= again) { want[2] = 1; again = t + 2500.0; }
+    } else {
+        again = t + 8000.0;
+        const uint8_t *d = g_cpu.mem + ds;
+        for (int i = 0; i < m->slots && i < 8; i++) {
+            const uint16_t o = (uint16_t)(2 * i);
+            if ((d[(uint16_t)(m->active + o)] | d[(uint16_t)(m->active + o + 1)] << 8) != 1) continue;
+            const int x = d[(uint16_t)(m->x + o)] | d[(uint16_t)(m->x + o + 1)] << 8;
+            const int y = d[(uint16_t)(m->y + o)] | d[(uint16_t)(m->y + o + 1)] << 8;
+            const int vy = (int16_t)(d[(uint16_t)(m->vy + o)] | d[(uint16_t)(m->vy + o + 1)] << 8);
+            if (y > m->drain_y - 75 && y < m->drain_y - 15 && vy > 0 && (m->lane_x == 0 || x < m->lane_x))
+                want[x < 160 ? 0 : 1] = 1;
+        }
+        want[2] = plunger_lane(m, d, 1);
+    }
+    for (int k = 0; k < 4; k++) {
+        if (want[k] && until[k] == 0) { pad_key(sc[k], 0); until[k] = t + hold[k]; }
+        else if (until[k] > 0 && t >= until[k]) { pad_key(sc[k], 1); until[k] = -(t + hold[k]); }   /* let go, then rest */
+        else if (until[k] < 0 && t >= -until[k]) until[k] = 0;
+    }
+}
+
 /* ---- settings ------------------------------------------------------------------ */
 
 static int mode_by_name(const char *s)
@@ -1335,6 +1380,7 @@ void host_frame(void)
     }
     if (g_auto_on && autostart_hold() != holding) hold(!holding);
     keys_due();
+    autoplay();
     dof_tick();                      /* the helper's starts and ends */
     dmd_pipe_tick();
     watch_tick();                    /* first: a table it has lost is not written */

@@ -31,6 +31,9 @@ typedef enum {
     FB_SKILL_SHOT,
     FB_RAMP_1, FB_RAMP_2, FB_RAMP_3,         /* a ramp made */
     FB_JACKPOT, FB_SUPER_JACKPOT, FB_AWARD,
+    /* A table's other features, its own names for each (its lanes, loops,
+     * locks, a ramp it counts no other way): on a switch, or a scoreboard text */
+    FB_SWITCH_1, FB_SWITCH_16 = FB_SWITCH_1 + 15,
     FB_OUTPUTS,                              /* from here: only for the log */
     FB_TABLE_START = FB_OUTPUTS, FB_TABLE_END, FB_TABLE_LOST,
     FB_EVENTS
@@ -40,6 +43,7 @@ typedef enum {
 #define FB_HOLES 5
 #define FB_ROLLOVERS 6
 #define FB_RAMPS 3
+#define FB_SWITCHES 16
 static inline FbEvent fb_bumper(int i) { return (FbEvent)(i < 3 ? FB_BUMPER_1 + i : FB_BUMPER_4 + i - 3); }
 
 /* What an event carries for the log: where, and what it was made of */

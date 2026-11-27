@@ -5,15 +5,17 @@
 #include "machine.h"
 
 #define WATCH_BUMPERS 6              /* bumper_1-6 */
-#define WATCH_ZONES 24
+#define WATCH_ZONES 48
 #define WATCH_TIMERS 8
 #define WATCH_TARGETS 3
-#define WATCH_MSGS 64
+#define WATCH_MSGS 128
 
 /* A table's own features (FEATURES in tools/feedback_map.py), each with its
  * name: letters and digits, what a DOF row calls it after the table's number */
 #define WATCH_NAME 40
-enum { WZ_HOLE, WZ_KICKBACK, WZ_ROLLOVER, WZ_RAMP, WZ_KINDS };
+enum { WZ_HOLE, WZ_KICKBACK, WZ_ROLLOVER, WZ_RAMP, WZ_SWITCH, WZ_KINDS };
+/* A zone of colour 0 is a feature with no switch of its own: a scoreboard
+ * text fires it (a `feature` line in the map) */
 typedef struct { int kind, n, colour, x0, y0, x1, y1; char side; char name[WATCH_NAME + 1]; } WatchZone;  /* the scanned ball's x, y */
 typedef struct { uint16_t at; int n; char side; char name[WATCH_NAME + 1]; } WatchTarget;
 typedef struct { uint16_t at; int event; } WatchMsg;

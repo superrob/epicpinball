@@ -45,6 +45,7 @@ typedef struct {
     const char *display;      /* --playfield-display N */
     const char *score_window; /* --score-window X,Y,W,H */
     const char *feedback_log; /* --feedback-log FILE: table events */
+    const char *switch_log;   /* --switch-log FILE, testing: each switch colour the ball is handled on, and where */
     const char *plunger_trace;/* --plunger-trace "ms:percent,...": a scripted sensor */
     const char *nudge_trace;  /* --nudge-trace "ms:x,y,...": a scripted accelerometer */
     int dof;                  /* --dof: cabinet outputs through dof/'s helper */
@@ -54,6 +55,7 @@ typedef struct {
     int ssf;                  /* --ssf: 7.1, the board's sounds on the cabinet's exciters */
     const char *ssf_volumes;  /* --ssf-volumes FX,ROLL: over [ssf]'s */
     int table;                /* --table N: straight to table N's game, out when it is quit; 0 none */
+    int autoplay;             /* --autoplay, testing: flips, launches and starts games itself */
 } Options;
 extern Options g_opt;
 

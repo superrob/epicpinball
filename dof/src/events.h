@@ -16,6 +16,8 @@ inline constexpr const char *kEvent[] = {
     "rollover_1", "rollover_2", "rollover_3", "rollover_4", "rollover_5", "rollover_6",
     "lanes_lit", "skill_shot", "ramp_1", "ramp_2", "ramp_3",
     "jackpot", "super_jackpot", "award",
+    "switch_1", "switch_2", "switch_3", "switch_4", "switch_5", "switch_6", "switch_7", "switch_8",
+    "switch_9", "switch_10", "switch_11", "switch_12", "switch_13", "switch_14", "switch_15", "switch_16",
 };
 inline constexpr int kEvents = sizeof kEvent / sizeof *kEvent;
 enum : int {
@@ -26,13 +28,14 @@ enum : int {
     kTarget1, kTarget2, kTarget3, kTargetsDown,
     kRollover1, kRollover2, kRollover3, kRollover4, kRollover5, kRollover6,
     kLanesLit, kSkillShot, kRamp1, kRamp2, kRamp3, kJackpot, kSuperJackpot, kAward,
+    kSwitch1, kSwitch16 = kSwitch1 + 15,
 };
-inline constexpr int kBumpers = 6, kHoles = 5, kTargets = 3, kRollovers = 6, kRamps = 3;
-static_assert(sizeof kEvent / sizeof *kEvent == kAward + 1, "a name for every event");
+inline constexpr int kBumpers = 6, kHoles = 5, kTargets = 3, kRollovers = 6, kRamps = 3, kSwitches = 16;
+static_assert(sizeof kEvent / sizeof *kEvent == kSwitch16 + 1, "a name for every event");
 
 // What a DOF row calls them: $FlipperLeft, as a table without a ROM names its
-// events. The same on every table. A table's own features, from kHole1 to
-// kRamp3, have names of its own instead, t1PowerUpHole (autorow::Table).
+// events. The same on every table. A table's own features (an empty name
+// here) have names of its own instead, t1PowerUpHole (autorow::Table).
 inline constexpr const char *kDofName[] = {
     "FlipperLeft", "FlipperRight", "SlingshotLeft", "SlingshotRight",
     "Bumper1", "Bumper2", "Bumper3",
@@ -44,11 +47,12 @@ inline constexpr const char *kDofName[] = {
     "", "", "", "", "", "",
     "LanesLit", "SkillShot", "", "", "",
     "Jackpot", "SuperJackpot", "Award",
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
 };
 static_assert(sizeof kDofName / sizeof *kDofName == kEvents, "a DOF name for every event");
 
 // A table's own feature, named by the table
-inline constexpr bool is_feature(int e) { return e >= kHole1 && e <= kRamp3 && *kDofName[e] == 0; }
+inline constexpr bool is_feature(int e) { return e >= 0 && e < kEvents && *kDofName[e] == 0; }
 
 // Levels: on while it lasts. The rest only happen.
 inline constexpr bool is_level(int e)

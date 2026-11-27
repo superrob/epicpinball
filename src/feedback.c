@@ -23,6 +23,8 @@ static const char *const names[FB_EVENTS] = {
     "rollover_1", "rollover_2", "rollover_3", "rollover_4", "rollover_5", "rollover_6",
     "lanes_lit", "skill_shot", "ramp_1", "ramp_2", "ramp_3",
     "jackpot", "super_jackpot", "award",
+    "switch_1", "switch_2", "switch_3", "switch_4", "switch_5", "switch_6", "switch_7", "switch_8",
+    "switch_9", "switch_10", "switch_11", "switch_12", "switch_13", "switch_14", "switch_15", "switch_16",
     "table_start", "table_end", "table_lost",
 };
 

@@ -341,9 +341,10 @@ static const char k_map[] =
     "zone hole 3 F6 220 0 319 399 R RightHole\nzone kickback 1 F8 0 321 50 399 L Kickback\n"
     "zone rollover 1 FA 0 0 179 399 C TopLane1\nzone rollover 2 FA 180 0 319 399 R TopLane2\n"
     "zone ramp 1 F9 0 0 74 399 L LeftRamp\nzone ramp 2 F6 220 0 319 399 R CentreRamp\n"
+    "feature switch 1 C BallLock\nzone switch 2 FB 0 0 319 399 R LeftLoop\n"
     "timer 200\ntimer 201\ntarget 210 1 L DropTarget1\ntarget 211 2 L DropTarget2\ntarget 212 3 L DropTarget3\n"
     "bank DropTargets\nlanes 220 4\nramps 230\n"
-    "msg 300 jackpot\nmsg 310 award\nend\n";
+    "msg 300 jackpot\nmsg 310 award\nmsg 320 switch_1\nend\n";
 
 static void test_feedback_map(void)
 {
@@ -357,7 +358,10 @@ static void test_feedback_map(void)
     /* a table's own features: the zone a switch is, and each one's name and side for DOF */
     assert(!strcmp(m.features, "hole1=TestHole:L hole2=PowerUpHole:C hole3=RightHole:R kickback1=Kickback:L "
                                "rollover1=TopLane1:C rollover2=TopLane2:R ramp1=LeftRamp:L ramp2=CentreRamp:R "
+                               "switch1=BallLock:C switch2=LeftLoop:R "
                                "target1=DropTarget1:L target2=DropTarget2:L target3=DropTarget3:L bank=DropTargets"));
+    /* a switch zone is a feature of its own; a named one is never a switch's */
+    assert(watch_zone(&m, WZ_SWITCH, 0xFB, 10, 10) >= 0 && watch_zone(&m, WZ_SWITCH, 0, 0, 0) < 0);
     assert(watch_zone(&m, WZ_HOLE, 0xF6, 219, 50) == 1 && watch_zone(&m, WZ_HOLE, 0xF6, 220, 50) == 2);
     assert(watch_zone(&m, WZ_RAMP, 0xF6, 220, 50) == 7 && watch_zone(&m, WZ_RAMP, 0xF6, 219, 50) < 0);
     assert(watch_zone(&m, WZ_KICKBACK, 0xF8, 30, 320) < 0 && watch_zone(&m, WZ_KICKBACK, 0xF8, 30, 321) == 3);
@@ -390,7 +394,8 @@ static void test_feedback_map(void)
         static const char *const bad[][2] = {
             { "C PowerUpHole", "C Power-Up" }, { "L LeftRamp", "L 1Ramp" }, { "R RightHole", "R TestHole" },
             { "R CentreRamp", "R righthole" }, { "L DropTarget2", "L DropTargetsDown" }, { "bank DropTargets\n", "" },
-            { "L TestHole", "L" },
+            { "L TestHole", "L" }, { "msg 320 switch_1", "msg 320 switch_3" }, { "switch 1 C", "switch 1 X" },
+            { "feature switch", "feature hole" }, { "LeftLoop", "BallLock" },
         };
         for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
             static char edited[sizeof k_map + 32];
