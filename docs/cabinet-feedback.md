@@ -1128,6 +1128,12 @@ Without hardware, in a sandbox with no devices:
   `Cabinet.xml` read, the WemosD1 LED strip controller in it connected on its
   COM port (in about 1.2 s, which the helper now waits for), and table 1's
   events on a row made from its header blinking the Back MX;
+- tables 2 to 13 on that Windows cabinet, a minute each on `--autoplay`,
+  coils left out: each table's events on its LED strips, on rows made from
+  the header in the table's own colours; its eight busiest lamps on the
+  Pinscape Pico's button lights (table 5's glowing lights among them), each
+  of them changing but table 8's lamp 18; and its messages on the ZeDMD.
+  Every table lit the strips, the buttons and the DMD;
 - events by name, through libdof's master and the helper on ArtNet over
   loopback: `--test` with an event of every table, a table 1 feature
   (`t1PowerUpHole`, any case), the bank's `t1DropTargetsDown` and
@@ -1136,7 +1142,7 @@ Without hardware, in a sandbox with no devices:
   table 1, `Bumper1` and `t1TopLane1` lighting their outputs each time the
   game sent them. Named events are not yet tried on the real cabinet.
 
-Not tested: tables 2 to 13 on a cabinet, other controllers and other
-cabinets' Config Tool headers, Flatpak and portable VPX, play on a
-cabinet's Windows with its coils (only lights were driven there), other
-releases of the game.
+Not tested: tables 2 to 13 on a cabinet's coils or played by hand, other
+controllers and other cabinets' Config Tool headers, Flatpak and portable
+VPX, play on a cabinet's Windows with its coils (only lights were driven
+there), other releases of the game.

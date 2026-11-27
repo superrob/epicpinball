@@ -13,8 +13,9 @@
   presenter and the settings file are checked headless and in a recorded
   window; F7-F12, the menu and the pad were not pressed by a test.
 - **Cabinet feedback on every table.** `--dof` and the analog plunger work on
-  a real cabinet on table 1; tables 2 to 13 have only met a sandbox
-  (docs/cabinet-feedback.md).
+  a real cabinet on table 1; tables 2 to 13 have lit a Windows cabinet's LED
+  strips, button lights and DMD on `--autoplay`, but not yet driven its coils
+  or been played by hand (docs/cabinet-feedback.md).
 - **A netlab recipe**, so builds and conformance run on the farm like the other
   recomps (repo rules, section 8). Needs the MSVC build to run on the clang-cl
   builder, or an MSVC builder.
@@ -37,16 +38,15 @@
   are untried.
 - **More cabinet feedback**: every table has its own events now, tried
   only by `--autoplay`: each on a real cabinet, and the jackpots, multiball
-  and later levels the autoplayer never reaches; the lamps of tables 2-13 on
-  a real cabinet (table 1's follow on a Windows cabinet's button lights), and
-  names for them; on Windows, the coils (only lights were driven there); and
+  and later levels the autoplayer never reaches; names for the lamps (every
+  table's follow a Windows cabinet's button lights); on Windows, the coils
+  (only lights were driven there); and
   an entry in the DOF Config Tool's database, which is the Config Tool's site
   to take.
 - **The DMD** (works on a real cabinet on table 1; every table's messages
-  looked at, headless, docs/dmd.md): tables 2-13 on a real DMD; the
-  jackpots, modes and later levels `--autoplay` does not reach; table 1's
-  66x13 picture in the bar; more of it on Windows than the high-score
-  initials, seen on a cabinet's ZeDMD.
+  looked at, headless, docs/dmd.md; every table's on a Windows cabinet's
+  ZeDMD on `--autoplay`): the jackpots, modes and later levels `--autoplay`
+  does not reach; table 1's 66x13 picture in the bar.
 - **SSF** (works on a real cabinet's exciters): each table's own board
   effects beyond slots 0-6 by ear on a cabinet (they were chosen by sample
   and by when they play: docs/ssf.md); Windows.
