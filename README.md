@@ -238,7 +238,7 @@ actions ([docs](docs/cabinet-feedback.md#keys-and-buttons)).
 | `--no-cabinet`, `--no-dmd`, `--no-dmd-device`, `--no-ssf`, `--no-dof` | leave a mode out this run that `[modes]` in `epicpinball.ini` turns on (the settings tool sets it; [docs](docs/config.md)) |
 | `--joysticks` | list joysticks, their live axes and buttons pressed, to set up `[plunger]`, `[nudge]` and `[buttons]` in `saves/controller.ini` (Linux); the settings tool does it with pictures |
 | `--feedback-log FILE`, `--plunger-trace "ms:percent,..."`, `--nudge-trace "ms:x,y,..."`, `--nudge-velocity` | testing: what a cabinet would feel; a scripted plunger sensor; a scripted accelerometer, or with `--nudge-velocity` its velocity |
-| `--autoplay`, `--switch-log FILE` | testing: a player that flips at a ball coming down, launches, and starts game after game (with `--table`); each switch colour the ball is handled on, and where ([docs](docs/cabinet-feedback.md#finding-a-tables-features)) |
+| `--autoplay`, `--switch-log FILE` | testing: a player that flips at a ball coming down, launches, and starts game after game (with `--table`); each switch colour the ball is handled on and where, and each effect the table plays ([docs](docs/cabinet-feedback.md#finding-a-tables-features)) |
 | `--mute` | |
 | `--headless` | no window, no audio device, deterministic time — works over RDP |
 | `--record out.mp4` | video and audio through ffmpeg (with `--headless`: unattended) |

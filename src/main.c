@@ -37,7 +37,8 @@
  *   --feedback-log FILE  what a cabinet would feel, as a list: flippers, slings,
  *                     bumpers, launch, drain ... (docs/cabinet-feedback.md)
  *   --autoplay        testing, with --table: flips, launches, plays game after game
- *   --switch-log FILE testing: each switch colour the ball is handled on, and where
+ *   --switch-log FILE testing: each switch colour the ball is handled on, and where;
+ *                     each effect the table plays (fxNN)
  *   --dmd             a 128x32 DMD of the table: with --cabinet in the
  *                     scoreboard's window, else a window of its own; the
  *                     messages of tables 1-8 leave the playfield for it

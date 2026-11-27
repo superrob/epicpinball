@@ -587,8 +587,24 @@ static int handled(int colour)
     return !on_layer && g_cpu.mem[DS + M.tilt] != 1;
 }
 
+/* --switch-log, testing */
+static void switch_log(const char *fmt, ...)
+{
+    static FILE *f;
+    if (!f && !(f = fopen(g_opt.switch_log, "w"))) { g_opt.switch_log = NULL; return; }
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fflush(f);
+}
+
 void watch_enter(CPU *cpu, const char *fn)
 {
+    if (g_opt.switch_log && *M.effect_fn && !strcmp(fn, M.effect_fn) && sound())
+        /* an effect the table plays: its slot and pan, the first ball's place */
+        switch_log("%.0f %s fx%02X %d %d %d\n", now_ms(), M.name, cpu->al, cpu->ah >> 4,
+                   rd16(DS + M.x), rd16(DS + M.y));
     if (!strcmp(fn, M.step_fn)) {
         if (!sound()) return;
         nudge_step(&M, g_cpu.mem + DS);          /* a shove of the cabinet, as this step begins */
@@ -612,14 +628,9 @@ void watch_enter(CPU *cpu, const char *fn)
         sw_t = now_ms();
         const double t = now_ms();
         if (g_opt.switch_log) {                    /* testing: each colour once a gap, with the ball's place */
-            static FILE *f;
             static double last[256];
-            if (!f && !(f = fopen(g_opt.switch_log, "w"))) g_opt.switch_log = NULL;
-            else if (t - last[sw_colour] > SWITCH_GAP_MS) {
-                fprintf(f, "%.0f %s %02X %d %d %d\n", t, M.name, sw_colour, sw_x, sw_y,
-                        g_cpu.mem[DS + M.tilt] == 1);
-                fflush(f);
-            }
+            if (t - last[sw_colour] > SWITCH_GAP_MS)
+                switch_log("%.0f %s %02X %d %d %d\n", t, M.name, sw_colour, sw_x, sw_y, g_cpu.mem[DS + M.tilt] == 1);
             last[sw_colour] = t;
         }
         for (int i = 0; i < M.nzones; i++) {

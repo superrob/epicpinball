@@ -43,6 +43,11 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **SSF on every table's own board:** each table's holes (and table 1's,
+  8's, 10's and 12's rubber posts, table 11's targets) now go to the exciters
+  too, not only the sounds every table shares. Found by their samples: table
+  1's hole and post sounds are in the others byte for byte. `--switch-log`
+  lists each effect a table plays.
 - **Table 13's own feedback** (African Safari): the water hole, base camp,
   lock and lion's den, the BIRD lanes, the mountain path, the CAT targets,
   the snake pit, the lost caves, the base camp lane, the outlanes, the

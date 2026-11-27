@@ -106,8 +106,30 @@ of its `SFXn.PIN` (`board` in `work/feedback/epN.map`, by
 |---|---|---|---|---|---|---|---|
 | | bumper | drop target | slingshot | thud, kickback | flipper | the ball in the shooter lane | plunger |
 
-Table 1 adds 0Bh (its holes) and 11h (its rubber posts). Award and jackpot
-calls are pitch sequences of other slots, and stay on the front.
+Beyond them each table has its own, by its samples:
+
+| Table | Also the board's |
+|---|---|
+| 1, 10 | 0Bh, its holes; 11h, its rubber posts |
+| 2, 4, 6, 7, 13 | 0Bh, its holes |
+| 3 | 0Ah, its hole |
+| 5 | none |
+| 8 | 08h, a rubber post; 0Bh, its holes |
+| 9 | 0Bh and 0Eh, its holes (the one sample twice) |
+| 11 | 08h, its three targets; 0Bh and 0Eh, its holes |
+| 12 | 0Bh, its holes; 0Fh, a rubber post |
+
+Each `SFXn.PIN` is a table of 50 (length, paragraph) pairs, then the samples,
+8-bit, packed one after another. Table 1's hole and rubber post samples are in
+the other tables byte for byte, in other slots: those are the board's there
+too. Every other sample was heard by when it plays, with `--autoplay` and
+`--switch-log` (which lists each effect the table plays): table 11's 08h, short
+and noisy, follows its targets every time. The rest are the speaker's, kept on
+the front: tones, calls, and samples that follow no one switch (a whoosh that
+plays after a lane on one table and a hole on another). Samples table 1 shares
+with others keep table 1's place: its 0Dh and 0Eh, in most tables, stay on the
+front. Award and jackpot calls are pitch sequences of other slots, and stay on
+the front too. `board_epN` in `epicpinball.ini` changes any table's list.
 
 ## What to know
 
@@ -156,6 +178,10 @@ Without hardware, headless, the eight channels written to a WAV:
   effects off;
 - **7.1 in a window:** SDL opened the device with eight channels (its disk
   driver, written to a file);
+- **every table's own board effects:** ten minutes of `--autoplay` on each
+  with `EPIC_SSF_CHECK=1`: each of them on the exciters and its voice silenced
+  in the game's mix (every board effect: 9,214), the hole sounds placed at the
+  holes (table 4's pit, tyre, scoops and Dead Man Curve, table 11's lock);
 - the self-test (placing, the silent voice, stops, rolling, a prompt);
   conformance 154/154 and the feedback game cases without `--ssf`.
 

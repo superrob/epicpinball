@@ -53,7 +53,20 @@ SLINGS_BELOW = 270              # on every table they sit just over the flippers
 # slingshot, thud or kickback, flipper, the ball in the shooter lane, the
 # plunger); some tables have more. Award and jackpot calls stay on the front.
 BOARD_EFFECTS = list(range(7))
-BOARD_MORE = {'ep1': [0xB, 0x11]}          # its holes, its rubber posts
+# Beyond them, each table's own: table 1's hole and rubber post samples, which
+# the other tables carry too (byte for byte, in other slots), and table 11's
+# target. The rest are the speaker's: tones, calls, and samples that follow no
+# one switch. Found by sample (docs/ssf.md).
+BOARD_MORE = {
+    'ep1': [0xB, 0x11],                         # its holes, its rubber posts
+    'ep2': [0xB], 'ep3': [0xA], 'ep4': [0xB], 'ep6': [0xB], 'ep7': [0xB],   # their holes
+    'ep8': [0x8, 0xB],                          # a post, its holes
+    'ep9': [0xB, 0xE],                          # its holes (the sample twice)
+    'ep10': [0xB, 0x11],                        # as table 1
+    'ep11': [0x8, 0xB, 0xE],                    # its three targets, its holes
+    'ep12': [0xB, 0xF],                         # its holes, a post
+    'ep13': [0xB],
+}
 
 
 def sound_driver(v):

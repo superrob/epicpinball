@@ -45,7 +45,8 @@
   whose line appenders are another shape); screens no scripted game reached
   (jackpots, modes, high score entry); Windows.
 - **SSF** (works on a real cabinet's exciters): each table's own board
-  effects beyond slots 0-6 (table 1's are listed); Windows.
+  effects beyond slots 0-6 by ear on a cabinet (they were chosen by sample
+  and by when they play: docs/ssf.md); Windows.
 - **`--table`**: Windows; a frontend's own start and exit keys.
 - **Nudging**: nudge buttons on a board that has them; tables 2-13 by
   hand on a cabinet; Windows.
