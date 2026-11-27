@@ -88,6 +88,47 @@ def table_keys(n):
     return ','.join(keys), p, end
 
 
+SETUP_CARDS = 8           # No Sound, PC Speaker, Gravis, PAS, SB, SB16, SB clone, SB Pro
+
+
+def setup_keys(seq):
+    """SETUP.EXE (--setup), a key at a time: Enter on the language first,
+    then `seq`. A screen takes about a second to draw (its menus read their
+    texts from SETUP.EXE); a step within one, a third of that.
+    -> (keys, ms to run for)"""
+    keys, t = [], 1500
+    for k in ['ENTER'] + list(seq):
+        keys.append(f'{t}:{k}')
+        t += 300 if k in ('DOWN', 'UP') else 1200
+    return ','.join(keys), t + 2000
+
+
+def setup_walks():
+    """Every branch of SETUP's menus, each a key script ending in Exit and
+    Save (tools/discover.py lifts what they reach; each saved card then
+    starts PINBALL). The main menu: Select Sound Card, Select Language,
+    Instructions, Exit and Save; a card's menus (Yes/No on its BLASTER
+    settings, port, IRQs, DMAs, quality) default to their first or current
+    item, and DOWN x9 takes any of them to its last.
+    -> {name: [keys]}"""
+    w = {}
+    for card in range(SETUP_CARDS):
+        pick = ['ENTER'] + ['DOWN'] * card + ['ENTER']
+        w[f'card{card}'] = pick + ['ENTER'] * 7
+        for menu in range(6):
+            seq = []
+            for j in range(7):
+                seq += (['DOWN'] * 9 if j == menu else []) + ['ENTER']
+            w[f'card{card}_menu{menu}_last'] = pick + seq
+    for lang in range(4):                 # each language, then Instructions: HELPME, its every page
+        w[f'lang{lang}'] = ['DOWN', 'ENTER'] + ['DOWN'] * lang + ['ENTER', 'DOWN', 'DOWN', 'ENTER',
+                           'ENTER', 'PAGEDOWN', 'P', 'ESC', 'ESC', 'ENTER', 'DOWN', 'ENTER']
+    for doc in range(6):                  # HELPME's every entry, 1-5 and Exit
+        w[f'helpme{doc}'] = ['DOWN', 'DOWN', 'ENTER'] + ['DOWN'] * doc + ['ENTER', 'PAGEDOWN', 'DOWN', 'UP',
+                            'ESC', 'ESC', 'ENTER', 'DOWN', 'ENTER']
+    return w
+
+
 def run(out, seconds, keys, shots, extra=(), env=None):
     save = os.path.join(out, 'save')
     os.makedirs(save, exist_ok=True)
@@ -347,6 +388,41 @@ def scenario_feedback(out, n, plain_dir):
             (f'plunger table {n}: a full pull launches as hard as Space', strength(by_key) == strength(by_axis) != [])]
 
 
+def scenario_setup(out):
+    """SETUP.EXE (--setup): a Sound Blaster 16 at its defaults, saved as the
+    original saves it; Instructions (HELPME.EXE) and back; a mono Sound
+    Blaster set up there, then PINBALL playing its menu music with it."""
+    def go(name, seq):
+        o = os.path.join(out, name)
+        keys, end = setup_keys(seq)
+        code, log = run(o, end / 1000, keys, {}, ['--setup'])
+        return o, code, log
+    w = setup_walks()
+    o, code, log = go('sb16', w['card5'])
+    save = os.path.join(o, 'save')
+    inf = os.path.join(save, 'SOUNDCRD.INF')
+    drv = open(os.path.join(save, 'MDRV004R.MUS'), 'rb').read() if os.path.exists(os.path.join(save, 'MDRV004R.MUS')) else b''
+    at = struct.unpack_from('<I', drv, 0x30)[0] if len(drv) > 0x34 else 0
+    c = drv[at:at + 0x40] if at else b''
+    o2, code2, log2 = go('helpme', w['helpme0'])
+    o3, code3, log3 = go('mono', w['card4'])
+    music = 0.0
+    if code3 == 0:
+        run(o3, MENU_MS / 1000, None, {})
+        music = wav_rms(os.path.join(o3, 'audio.wav'))
+    return [
+        ('setup: a Sound Blaster 16 saved, clean exit, no misses', code == 0 and not misses(log) and os.path.exists(inf)),
+        ("setup: its SOUNDCRD.INF is GOG's, byte for byte",
+         os.path.exists(inf) and open(inf, 'rb').read() == open(os.path.join(DATA, 'SOUNDCRD.INF'), 'rb').read()),
+        ('setup: the driver holds port 220h, IRQ 7, DMA 1, High (20,100 Hz)',
+         len(c) == 0x40 and struct.unpack_from('<H', c, 0x19)[0] == 0x220 and c[0x1D] == 7 and c[0x2D] == 1
+         and struct.unpack_from('<H', c, 0x31)[0] == 20100),
+        ('setup: Instructions run HELPME.EXE, and SETUP carries on after it',
+         code2 == 0 and not misses(log2) and 'helpme.exe exited, code 0' in log2),
+        ('setup: a mono Sound Blaster set up there plays the menu music', code3 == 0 and music > 300),
+    ]
+
+
 def scenario_determinism(out):
     """Headless time is deterministic: the same script twice, the same frame."""
     keys, play, end = table_keys(1)
@@ -403,6 +479,7 @@ def main():
                        cwd=ROOT, capture_output=True)    # work/feedback; a FAIL below if it cannot
         for n in (1, 9):
             results += scenario_feedback(sub(f'feedback{n}'), n, os.path.join(tmp, f'table{n}'))
+        results += scenario_setup(sub('setup'))
         results += scenario_determinism(sub('det'))
     for name, ok in results:
         print(f'{"PASS" if ok else "FAIL"}  {name}')

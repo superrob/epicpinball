@@ -198,6 +198,7 @@ int main(int argc, char **argv)
             g_opt.table = (int)n; i++;
         }
         else if (!strcmp(a, "--autoplay")) g_opt.autoplay = 1;
+        else if (!strcmp(a, "--setup")) g_opt.setup = 1;
         else if (!strcmp(a, "--joysticks")) list_joysticks = 1;
         else if (!strcmp(a, "--plunger-trace") && v) { g_opt.plunger_trace = v; i++; }
         else if (!strcmp(a, "--nudge-trace") && v) { g_opt.nudge_trace = v; i++; }
@@ -289,7 +290,7 @@ int main(int argc, char **argv)
 
     if (!setjmp(g_exit_jmp)) {
         void (*entry)(CPU *) = images_lookup(g_cpu.cs, g_cpu.ip);
-        if (!entry) fatal("PINBALL.EXE is not lifted -- run tools/lift.py, then build");
+        if (!entry) fatal("%s is not lifted -- run tools/lift.py, then build", g_opt.setup ? "SETUP.EXE" : "PINBALL.EXE");
         entry(&g_cpu);
         fprintf(stderr, "[dos] the program returned without exiting\n");
     }

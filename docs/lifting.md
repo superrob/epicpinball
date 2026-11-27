@@ -29,9 +29,11 @@ segment it runs at, with the runtime keeping track of which are live
 Every start, PINBALL runs `SETUP.EXE -cd <its directory>` and then looks for
 `pincd=` at `B000:FA00` — an unused corner of monochrome text memory that SETUP
 writes its answer into. Without it PINBALL prints *Please run SETUP* and quits.
-SETUP is a Borland C++ program with a whole sound-card menu; for now the
-runtime writes the string itself and does not run it (`dos_exec`, marked as a
-shortcut; [ROADMAP](../ROADMAP.md)).
+SETUP is a Borland C++ program with a whole sound-card menu. At PINBALL's
+start the runtime still writes the string itself (`dos_exec`): running SETUP
+there would move every block PINBALL allocates after it, and with them where
+the tables are lifted. `--setup` runs the lifted SETUP on its own, as the menu
+it is (section 13).
 
 ## 3. The MASI drivers are raw blobs
 
@@ -153,6 +155,55 @@ compare (`18h`, with bits in `07h` and `09h`: `1B9h`, scanline 441 of 480;
 `1A5h`, scanline 421, on 9-13): the CRTC restarts at address 0 there, where the
 tables draw the dot matrix, while the playfield above scrolls by start address
 ([dmd](dmd.md)).
+
+## 13. SETUP.EXE and HELPME.EXE are compiled
+
+The two programs nobody wrote in assembly: SETUP in Borland C++ (1993, with
+its exceptions and string classes), and HELPME, which SETUP's Instructions
+runs, in Turbo Pascal. What each cost:
+
+- **Code only pointers reach.** Following calls from the entry point found
+  275 of SETUP's routines and 55% of its code; the rest is reached through
+  vtables and function pointers, and a run only through the keys pressed.
+  Every compiler prologue (`push bp / mov bp, sp`: `55 8B EC` in Borland C,
+  `55 89 E5` in Turbo Pascal; or `enter`) that follows the end of another
+  routine is an entry too (`compiled_seeds`): 486 routines, 93%.
+- **Borland's switch on long or sparse values** compares the value with N
+  words at T in a `loop`, then `jmp cs:[bx+D]`: the targets are the N words at
+  T+D. Unrecognised, SETUP's dispatch on a menu choice reached its arms one run
+  at a time (`jump_table`).
+- **Turbo Pascal's main program ends in `call Halt`**, which never returns,
+  and a few zero bytes pad it to the CRT unit's segment. Walking on, the zeros
+  decoded across the boundary and CRT's code was lifted as main's, with CS 0:
+  `AssignCrt` then stored `0000:0359` as the screen's routine, a routine of
+  main's that waits for a key, and HELPME sat on a blank screen. A walk now
+  stops at an instruction that straddles the next segment's start
+  (`segment_ends`), in Turbo Pascal only: Borland C's segments overlap by a
+  paragraph, and SETUP's `retf` at `0D59:0330` is `0D8C:0000`.
+- **What DOS and the BIOS had to answer**: `INT 21h AX=3700h`, the switch
+  character, before `system()` builds `COMMAND.COM /c helpme.exe`, which the
+  runtime runs as `HELPME.EXE` (there is no COMMAND.COM); an arrow key through
+  `AH=06/07/08` as 0 and then its scan code; `INT 10h AX=1130h`, from which
+  Turbo Pascal's CRT takes the number of rows (it had none, and wrote into a
+  one-row window); scrolling with `INT 10h AH=06/07`, which only cleared; the
+  device `PRN` opened as a device, not created as a file; and code page 437's
+  accented letters in the text font ("Fran ais").
+- **Settings in the driver.** SETUP keeps the card's port, IRQ, DMA and mixing
+  rate in the chosen driver: 40h bytes at the offset its header gives at 30h,
+  the same layout in every MASI card driver. The check that a driver is the
+  one lifted leaves that block out.
+- **Where the card driver's block goes moves everything after it.** PINBALL
+  allocates the card's driver first, then the mixer, its songs and each table:
+  with the PAS driver, 702 bytes shorter than the Sound Blaster's, the mixer
+  landed at `0C61` instead of `0C8D`. The block allocated right after a card
+  driver is opened gets the room of the largest one (`src/dos.c`), so every
+  card leaves the rest where it was lifted. With no music (PC speaker, none)
+  PINBALL loads no songs, and table 1 went to `1F7E`, not `42CF`: a lifted
+  program is now EXEC'd where it was lifted when that memory is free.
+- **The Sound Blaster's mono mixer** was never lifted: GOG's setting is
+  stereo. The driver picks its mixing routines out of tables
+  (`mov ax, [bx+2217h]` ... `mov [0BC6h], ax` ... `call [0BC6h]`), which
+  `table_pointers` now reads, so every routine of every setting is lifted.
 
 ## Debugging kit
 

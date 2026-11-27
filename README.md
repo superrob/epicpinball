@@ -42,7 +42,7 @@ conformance harness passes 154/154 on Linux.**
 | Windowed play at real speed | ✅ |
 | Linux, natively (gcc, SDL2) | ✅ played on a real Linux desktop and a cabinet; 154/154 conformance on Arch (133/133 on Debian 13, before cabinet mode) |
 | Gamepad (XInput, `controller.ini`, GOG's DOSBox mapping by default) | implemented, untested on a real pad |
-| `SETUP.EXE` (the sound card menu) | not lifted: its start-up check is answered, and GOG's `SOUNDCRD.INF` (Sound Blaster 16) is used as shipped |
+| `SETUP.EXE`, the sound-card menu (`--setup`, or the settings tool's *Choose with SETUP*), and its Instructions (`HELPME.EXE`) | ✅ lifted: every menu and language headless, its `SOUNDCRD.INF` and driver settings as the original writes them; the Sound Blaster (mono, Pro, 16, clone, any port, IRQ, DMA and quality), PC Speaker (the tables' effects on it, no music) and No Sound play; Gravis Ultrasound and Pro Audio Spectrum not yet. At PINBALL's start its `-cd` check is still answered, not run |
 | The `DEMO\` folder's shareware version | not supported |
 | A full game, start to final ball, played by hand | ✅ |
 | Cabinet mode, `--cabinet` (Linux and Windows) | ✅ on a real cabinet, Linux (table 1) and Windows (played), and on virtual displays |
@@ -231,6 +231,7 @@ actions ([docs](docs/cabinet-feedback.md#keys-and-buttons)).
 | `--stretch` | with `--cabinet`: the playfield stretched to fill its display, this run |
 | `--playfield-display N` | with `--cabinet`: the display the playfield fills; they are listed at start |
 | `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard (or with `--dmd`, the DMD) window goes, this run |
+| `--setup` | SETUP.EXE, the game's own sound-card menu, in a window: what it saves goes to the save folder |
 | `--table N` | straight to table N (1-13) and a one-player game; quitting it quits the program; with `--cabinet`, initials on the DMD and Start for the next game ([docs](docs/table.md)) |
 | `--ssf` | 7.1 for a cabinet with exciters: the board's sounds on the side (top) and rear (bottom) pairs; `[ssf]` in `epicpinball.ini` sets their volumes ([docs](docs/ssf.md)) |
 | `--ssf-volumes FX,ROLL` | SSF's effects and rolling volumes for this run, over `[ssf]`'s (4 is the default, 0 none) |

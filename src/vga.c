@@ -36,6 +36,69 @@ static int table_dmd;                /* the table's scoreboard at full height, i
 
 uint8_t *vga_text_mem(void) { return g_cpu.mem + 0xB8000; }
 
+/* The text screen's font: pcrecomp's code page 437, with its blank 80h-AFh
+ * filled in -- SETUP's languages are Fran\x87ais and Espa\xA4ol, and its German,
+ * French and Spanish help is full of accents. An accented letter is its base
+ * letter with the accent drawn above it (a capital is squeezed down a row to
+ * make room) or the cedilla below; the rest of that range is drawn here. */
+static uint8_t font[256][8];
+
+static void font_build(void)
+{
+    memcpy(font, font8x8_cp437, sizeof font);
+    /* accents: two rows over a small letter, one (ring: two) over a capital */
+    enum { GRAVE, ACUTE, CIRC, DIAER, RING, TILDE, CEDIL };
+    static const uint8_t mark[][2] = {
+        [GRAVE] = { 0x30, 0x18 }, [ACUTE] = { 0x0C, 0x18 }, [CIRC] = { 0x38, 0x6C },
+        [DIAER] = { 0x6C, 0x00 }, [RING] = { 0x38, 0x28 }, [TILDE] = { 0x76, 0xDC } };
+    static const struct { uint8_t code; char base; uint8_t accent; } acc[] = {
+        {0x80,'C',CEDIL},{0x81,'u',DIAER},{0x82,'e',ACUTE},{0x83,'a',CIRC},{0x84,'a',DIAER},
+        {0x85,'a',GRAVE},{0x86,'a',RING},{0x87,'c',CEDIL},{0x88,'e',CIRC},{0x89,'e',DIAER},
+        {0x8A,'e',GRAVE},{0x8B,'i',DIAER},{0x8C,'i',CIRC},{0x8D,'i',GRAVE},{0x8E,'A',DIAER},
+        {0x8F,'A',RING},{0x90,'E',ACUTE},{0x93,'o',CIRC},{0x94,'o',DIAER},{0x95,'o',GRAVE},
+        {0x96,'u',CIRC},{0x97,'u',GRAVE},{0x98,'y',DIAER},{0x99,'O',DIAER},{0x9A,'U',DIAER},
+        {0xA0,'a',ACUTE},{0xA1,'i',ACUTE},{0xA2,'o',ACUTE},{0xA3,'u',ACUTE},{0xA4,'n',TILDE},
+        {0xA5,'N',TILDE}};
+    for (size_t i = 0; i < sizeof acc / sizeof acc[0]; i++) {
+        const uint8_t *b = font8x8_cp437[(uint8_t)acc[i].base];
+        uint8_t *g = font[acc[i].code];
+        int cap = acc[i].base < 'a';
+        if (acc[i].accent == CEDIL) {
+            memcpy(g, b, 8);
+            g[7] = 0x18;
+        } else if (cap) {
+            static const int keep[6] = { 0, 1, 2, 4, 5, 6 };   /* the middle row goes */
+            g[0] = mark[acc[i].accent][0];
+            g[1] = acc[i].accent == RING ? mark[RING][1] : 0;
+            for (int r = 0; r < 6; r++) g[2 + r] = b[keep[r]];
+        } else {
+            memcpy(g, b, 8);
+            g[0] = mark[acc[i].accent][0];
+            g[1] = mark[acc[i].accent][1];
+        }
+    }
+    static const struct { uint8_t code, g[8]; } own[] = {
+        {0x91,{0x00,0x00,0x7E,0x1B,0x7F,0xD8,0x7E,0x00}},   /* ae */
+        {0x92,{0x3E,0x6C,0xCC,0xFE,0xCC,0xCC,0xCE,0x00}},   /* AE */
+        {0x9B,{0x18,0x18,0x7E,0xC0,0xC0,0x7E,0x18,0x18}},   /* cent */
+        {0x9C,{0x38,0x6C,0x64,0xF0,0x60,0xE6,0xFC,0x00}},   /* pound */
+        {0x9D,{0xCC,0xCC,0x78,0xFC,0x30,0xFC,0x30,0x30}},   /* yen */
+        {0x9E,{0xF8,0xCC,0xCC,0xFA,0xC6,0xCF,0xC6,0xC7}},   /* peseta */
+        {0x9F,{0x0E,0x1B,0x18,0x3C,0x18,0x18,0xD8,0x70}},   /* florin */
+        {0xA6,{0x3C,0x6C,0x6C,0x3E,0x00,0x7E,0x00,0x00}},   /* feminine ordinal */
+        {0xA7,{0x38,0x6C,0x6C,0x38,0x00,0x7C,0x00,0x00}},   /* masculine ordinal */
+        {0xA8,{0x30,0x00,0x30,0x60,0xC0,0xCC,0x78,0x00}},   /* inverted question mark */
+        {0xA9,{0x00,0x00,0x00,0xFC,0xC0,0xC0,0x00,0x00}},   /* reversed not */
+        {0xAA,{0x00,0x00,0x00,0xFC,0x0C,0x0C,0x00,0x00}},   /* not */
+        {0xAB,{0xC3,0xC6,0xCC,0xDE,0x33,0x66,0xCC,0x0F}},   /* one half */
+        {0xAC,{0xC3,0xC6,0xCC,0xDB,0x37,0x6F,0xCF,0x03}},   /* one quarter */
+        {0xAD,{0x18,0x18,0x00,0x18,0x18,0x18,0x18,0x00}},   /* inverted exclamation mark */
+        {0xAE,{0x00,0x33,0x66,0xCC,0x66,0x33,0x00,0x00}},   /* << */
+        {0xAF,{0x00,0xCC,0x66,0x33,0x66,0xCC,0x00,0x00}},   /* >> */
+        {0xB2,{0xDD,0x77,0xDD,0x77,0xDD,0x77,0xDD,0x77}}};  /* dark shade (pcrecomp's is solid) */
+    for (size_t i = 0; i < sizeof own / sizeof own[0]; i++) memcpy(font[own[i].code], own[i].g, 8);
+}
+
 static inline int chained(void) { return (seq[4] & 8) != 0; }
 
 void vga_set_mode(int m)
@@ -79,6 +142,7 @@ void vga_init(void)
         {21,21,21},{21,21,63},{21,63,21},{21,63,63},{63,21,21},{63,21,63},{63,63,21},{63,63,63}};
     memset(dac, 0, sizeof dac);
     memcpy(dac, ega, sizeof ega);
+    font_build();
     /* text mode reads attr -> DAC through the EGA-compatible mapping */
     vga_set_mode(3);
 }
@@ -297,7 +361,7 @@ void vga_compose(uint32_t *out, int *w, int *h)
                 uint32_t fg = rgb(attr[at & 15] & 0x3F), bg = rgb(attr[(at >> 4) & 7] & 0x3F);
                 if ((at & 0x80) && (blink & 32)) fg = bg;
                 for (int y = 0; y < 16; y++) {
-                    uint8_t bits = font8x8_cp437[ch][y >> 1];
+                    uint8_t bits = font[ch][y >> 1];
                     if (r == cy && c == cx && y >= 13 && (blink & 16)) bits = 0xFF;
                     uint32_t *o = out + (r * 16 + y) * 640 + c * 8;
                     for (int x = 0; x < 8; x++) o[x] = (bits & (0x80 >> x)) ? fg : bg;

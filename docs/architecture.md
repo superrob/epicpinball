@@ -21,7 +21,8 @@ The thing you run under DOS is `PINBALL.EXE`, but it is only the front end:
 | `EP1.EXE` … `EP13.EXE` | one table each: physics, playfield, scoreboard. Started with a command tail whose first character is the mode (`D` demo, `1`–`4` players) and whose digits are PINBALL's settings | ~6,000 instructions each, the same engine with each table's data |
 | `MDRV000R.MUS` | MASI "Line Processing Routines": the mixer that plays the `.PSM` modules and the effects | raw 16-bit code, a `REAL16` header with its entry offset at 28h |
 | `MDRV004R.MUS` | the MASI Sound Blaster driver (SB, Pro, 16) | the same format |
-| `SETUP.EXE` | sound card setup (Borland C++) | not lifted: its `-cd` check is answered in `src/dos.c` ([ROADMAP](../ROADMAP.md)) |
+| `SETUP.EXE` | the sound-card menu: card, port, IRQ, DMA, quality; writes `SOUNDCRD.INF` and the chosen driver's settings | Borland C++, ~28,000 instructions; run by `--setup`; at PINBALL's start its `-cd` check is answered in `src/dos.c` |
+| `HELPME.EXE` | SETUP's Instructions: the manual, the license and the order forms, page by page | Turbo Pascal, ~3,000 instructions |
 
 All of them share one 1 MB address space, as they did under DOS, and call each
 other: the table calls PINBALL's music interface through a far pointer PINBALL
@@ -42,6 +43,18 @@ song and effects decides where `EPn.EXE` goes, and the drivers go wherever
 (`src/images.c` → `work/layout.txt`) and the lifter reads it back. The DOS
 model is deterministic, so a placement, once seen, is the same every run; if it
 ever differs the runtime refuses to run the image and records the new place.
+
+The card's driver is the one thing that changes with a setting: SETUP picks
+it, and PINBALL allocates it first, before the mixer, its songs and every
+table. So the block PINBALL asks for right after opening a card driver gets
+the room of the largest card driver (`src/dos.c`): whatever card, the rest
+lands where it was lifted. A card that plays no music (PC speaker, none) has
+no songs below the table, and DOS would put the table lower: a program that
+was lifted to run higher goes there when that memory is free (`dos_exec`),
+with the PSP and top of memory it always has. And SETUP writes the card's settings (port, IRQ,
+DMA, mixing rate) into the driver itself, 40h bytes at the offset its header
+gives at 30h: the check that a driver is the file that was lifted leaves
+those out (`src/images.c`, `tools/lift.py`).
 
 At run time `src/images.c` keeps which images are **live**: PINBALL from boot, a
 driver once PINBALL has read the whole file into memory (`src/dos.c` notices),
@@ -64,7 +77,11 @@ longjmp also skips the rest of the interrupt delivery in `src/machine.c`;
 `machine_unwound()` puts that state back, or no interrupt would ever be
 delivered again.
 
-`SETUP.EXE -cd <dir>` is the one EXEC that is answered rather than run: SETUP
+`--setup` starts the lifted `SETUP.EXE` in PINBALL's place, as the first
+program. Its Instructions are `system("helpme.exe")`: there is no
+`COMMAND.COM`, so an EXEC of `COMMAND.COM /c PROGRAM` runs `PROGRAM` itself.
+
+At PINBALL's start, `SETUP.EXE -cd <dir>` is the one EXEC that is answered rather than run: SETUP
 writes `pincd=<dir>` into an unused corner of monochrome text memory
 (`B000:FA00`) and PINBALL reads it back. The runtime writes the same string.
 
@@ -133,7 +150,10 @@ PINBALL's own screens are mode 13h at 320×200.
 The MASI Sound Blaster driver asks the DSP its version and, given a Sound
 Blaster 16 (DSP 4.05, which is what GOG's DOSBox setup emulates and what
 `SOUNDCRD.INF` was written for), plays **8-bit stereo at 22,050 Hz**, auto-init
-DMA on channel 1, 2 KB blocks, IRQ 7 — DSP commands `41h` and `C6h`. `src/audio.c`
+DMA on channel 1, 2 KB blocks, IRQ 7 — DSP commands `41h` and `C6h`. That is
+GOG's setting; SETUP can choose another port, IRQ, DMA or mixing rate, which it
+writes into the driver, and the modelled card answers where the loaded driver
+says (`audio_driver`). `src/audio.c`
 models that DSP (and the older SB/SB Pro commands), the 8237 DMA channel and the
 PC speaker, and mixes to 44.1 kHz stereo for waveOut (SDL on Linux), a WAV, or ffmpeg,
 drawing a line between the DSP's samples (or holding each, as an option;

@@ -77,7 +77,10 @@ static int dma_read(int ch, uint8_t *b)
 
 /* ---- Sound Blaster DSP ------------------------------------------------------ */
 
-#define SB_BASE 0x220
+/* Where the card is: the settings SETUP wrote into the driver PINBALL loaded
+ * (audio_driver), GOG's 220h, IRQ 7, DMA 1 until then. */
+static uint16_t sb_base = 0x220;
+static int sb_irq = 7, sb_dma = 1;
 static struct {
     uint8_t q[16]; int qh, qt;            /* bytes for the read-data port */
     int reset;
@@ -95,7 +98,7 @@ static struct {
 int g_audio_smooth = 1;
 
 int  sb_irq_pending(void) { return sb.irq; }
-int  sb_irq_line(void) { return 7; }   /* GOG's SOUNDCRD.INF is set up for IRQ 7 */
+int  sb_irq_line(void) { return sb_irq; }
 void sb_irq_ack(void) { sb.irq = 0; }
 
 static void sb_put(uint8_t v) { sb.q[sb.qt] = v; sb.qt = (sb.qt + 1) & 15; }
@@ -109,7 +112,7 @@ static void sb_command(void)
     case 0x14: case 0x91:                              /* 91h: block size from 48h */
         if (sb.cmd == 0x14) sb.len = (uint32_t)(a[0] | a[1] << 8) + 1;
         sb.pos = 0; sb.playing = 1; sb.autoinit = 0; sb.silence = 0;
-        trace("[sb] play %u bytes at %u Hz from %X\n", sb.len, sb.rate, (unsigned)dma[1].page << 16 | dma[1].addr);
+        trace("[sb] play %u bytes at %u Hz from %X\n", sb.len, sb.rate, (unsigned)dma[sb_dma].page << 16 | dma[sb_dma].addr);
         break;
     case 0x1C: case 0x90:
         /* SB Pro stereo: the mixer's 0Eh bit 1, at half the time-constant rate */
@@ -158,7 +161,7 @@ static int sb_args(uint8_t c)
 static int sb_byte(int *v)
 {
     uint8_t b = 128;
-    if (!sb.silence && !dma_read(1, &b)) return 0;
+    if (!sb.silence && !dma_read(sb_dma, &b)) return 0;
     *v = sb.is_signed ? (int)(b ^ 0x80) : b;
     if (++sb.pos >= sb.len) {
         sb.irq = 1;
@@ -205,14 +208,16 @@ void audio_speaker(int gate, uint16_t divisor)
 int audio_port_in(uint16_t port, uint8_t *v)
 {
     if (dma_port_in(port, v)) return 1;
-    switch (port) {
-    case 0x388: case 0x389: case SB_BASE + 8: case SB_BASE + 9: *v = 0xFF; return 1;   /* no FM chip */
-    case SB_BASE + 0x5: *v = sb.mixer[sb.mixer_i]; return 1;
-    case SB_BASE + 0xA:
+    if (port == 0x388 || port == 0x389) { *v = 0xFF; return 1; }     /* no FM chip */
+    if (port - sb_base >= 0x10u) return 0;
+    switch (port - sb_base) {
+    case 0x8: case 0x9: *v = 0xFF; return 1;
+    case 0x5: *v = sb.mixer[sb.mixer_i]; return 1;
+    case 0xA:
         if (sb.qh != sb.qt) { *v = sb.q[sb.qh]; sb.qh = (sb.qh + 1) & 15; } else *v = 0xFF;
         return 1;
-    case SB_BASE + 0xC: *v = 0x00; return 1;           /* ready for a command */
-    case SB_BASE + 0xE: *v = (sb.qh != sb.qt) ? 0x80 : 0x00; sb.irq = 0; return 1;
+    case 0xC: *v = 0x00; return 1;                     /* ready for a command */
+    case 0xE: *v = (sb.qh != sb.qt) ? 0x80 : 0x00; sb.irq = 0; return 1;
     }
     return 0;
 }
@@ -220,15 +225,17 @@ int audio_port_in(uint16_t port, uint8_t *v)
 int audio_port_out(uint16_t port, uint8_t v)
 {
     if (dma_port_out(port, v)) return 1;
-    switch (port) {
-    case 0x388: case 0x389: case SB_BASE + 8: case SB_BASE + 9: return 1;
-    case SB_BASE + 0x4: sb.mixer_i = v; return 1;
-    case SB_BASE + 0x5: trace("[sb] mixer %02X = %02X\n", sb.mixer_i, v); sb.mixer[sb.mixer_i] = v; return 1;
-    case SB_BASE + 0x6:
+    if (port == 0x388 || port == 0x389) return 1;
+    if (port - sb_base >= 0x10u) return 0;
+    switch (port - sb_base) {
+    case 0x8: case 0x9: return 1;
+    case 0x4: sb.mixer_i = v; return 1;
+    case 0x5: trace("[sb] mixer %02X = %02X\n", sb.mixer_i, v); sb.mixer[sb.mixer_i] = v; return 1;
+    case 0x6:
         if (v & 1) sb.reset = 1;
         else if (sb.reset) { sb.reset = 0; sb.qh = sb.qt = 0; sb.playing = 0; sb.need = 0; sb_put(0xAA); }
         return 1;
-    case SB_BASE + 0xC:
+    case 0xC:
         if (sb.need) { sb.arg[sb.got++] = v; if (--sb.need == 0) sb_command(); }
         else { sb.cmd = v; sb.got = 0; sb.need = sb_args(v); if (!sb.need) sb_command(); }
         return 1;
@@ -239,6 +246,25 @@ int audio_port_out(uint16_t port, uint8_t v)
 /* ---- rendering -------------------------------------------------------------- */
 
 void audio_init(void) {}
+
+/* A MASI driver PINBALL has just read into memory. Its settings (SETUP's
+ * menus: 40h bytes at the offset its header gives at 30h) say where its card
+ * is; the card answers there. */
+void audio_driver(const char *file, const uint8_t *d, uint32_t len)
+{
+    if (len < 0x34 || memcmp(d + 1, "REAL16", 6)) return;
+    uint32_t s = (uint32_t)(d[0x30] | d[0x31] << 8 | d[0x32] << 16 | (uint32_t)d[0x33] << 24);
+    if (s + 0x40 > len) return;
+    const uint8_t *c = d + s;
+    if (!memcmp(d + 8, "MASISBSERIES", 12)) {
+        uint16_t port = (uint16_t)(c[0x19] | c[0x1A] << 8);
+        if (port >= 0x210 && port <= 0x280 && !(port & 0xF)) sb_base = port;
+        if (c[0x1D] >= 2 && c[0x1D] <= 15) sb_irq = c[0x1D];
+        if (c[0x2D] <= 3) sb_dma = c[0x2D];
+        trace("[sb] %s: port %03X, IRQ %d, DMA %d, %u Hz mixing\n", file, sb_base, sb_irq, sb_dma,
+              (unsigned)(c[0x31] | c[0x32] << 8));
+    }
+}
 
 void audio_advance(uint64_t pit_ticks)
 {

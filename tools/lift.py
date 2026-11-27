@@ -44,7 +44,12 @@ WORK = os.path.join(ROOT, 'work')
 # only one is ever live (src/images.c).
 IMAGES = {'pin': 'PINBALL.EXE'}
 IMAGES.update({f'ep{n}': f'EP{n}.EXE' for n in range(1, 14)})
-IMAGES.update({'mlpr': 'MDRV000R.MUS', 'nosnd': 'MDRV001R.MUS', 'sb': 'MDRV004R.MUS'})
+IMAGES.update({'mlpr': 'MDRV000R.MUS', 'nosnd': 'MDRV001R.MUS', 'pcspk': 'MDRV002R.MUS', 'gus': 'MDRV003R.MUS',
+               'sb': 'MDRV004R.MUS', 'pas': 'MDRV005R.MUS'})
+# SETUP.EXE, the sound-card menu (Borland C++), runs as the first program
+# with --setup, where PINBALL would: the same segment, never both live.
+IMAGES['setup'] = 'SETUP.EXE'
+IMAGES['helpme'] = 'HELPME.EXE'     # SETUP's Instructions: system("helpme.exe"), Turbo Pascal
 
 # PINBALL.EXE goes where DOS would put the first program on a clean machine.
 # Baked into the lifted C; src/dos.c agrees (PSP_SEG).
@@ -83,7 +88,7 @@ JCC = {'jo', 'jno', 'jb', 'jae', 'je', 'jne', 'jbe', 'ja', 'js', 'jns', 'jp',
 
 def read_layout():
     """{image: load segment} as the runtime recorded it, plus PINBALL's own."""
-    out = {'pin': PSP_SEG + 0x10}
+    out = {'pin': PSP_SEG + 0x10, 'setup': PSP_SEG + 0x10}
     p = os.path.join(WORK, 'layout.txt')
     if os.path.exists(p):
         for line in open(p):
@@ -120,6 +125,7 @@ class Image:
                         self.entries.append((0, v))
         self.reloc_at = {s * 16 + o for o, s in self.relocs}
         self._dec = {}
+        self.seg_end = {}                # compiled code: cs -> where the next segment starts (segment_ends)
 
     def decode(self, cs, ip):
         d = self._dec.get(cs)
@@ -145,10 +151,26 @@ def jump_table(img, fn, ins):
         if (j.mnemonic == 'cmp' and j.op1 and j.op1.type == OpType.REG16
                 and repr(j.op1) == o.base and j.op2 and j.op2.type in (OpType.IMM8, OpType.IMM16)):
             bound = (j.op2.disp & 0xFFFF) + 1
-    if not bound or bound > 0x400:
-        return None
     base = ins.offset - ins.address               # cs * 16
     start = o.disp & 0xFFFF
+    if not bound:
+        # Borland C's switch on sparse or long case values: `mov cx, N /
+        # mov bx, T` and a `loop` comparing the value with N words at T (and
+        # their high words, for a long), then `jmp cs:[bx+D]`: the N targets
+        # are at T+D. SETUP's dispatch on a menu's choice is one.
+        wide = [fn[a] for a in sorted(fn) if ins.address - 40 <= a < ins.address]
+        n = t = None
+        for j in wide:
+            if j.mnemonic == 'mov' and j.op1 and j.op1.type == OpType.REG16 and j.op2 \
+                    and j.op2.type in (OpType.IMM8, OpType.IMM16):
+                if repr(j.op1) == 'cx':
+                    n = j.op2.disp & 0xFFFF
+                elif repr(j.op1) == o.base:
+                    t = j.op2.disp & 0xFFFF
+        if n and t is not None and n <= 0x100 and any(j.mnemonic == 'loop' for j in wide):
+            return [struct.unpack_from('<H', img, base + ((t + start + 2 * k) & 0xFFFF))[0] for k in range(n)]
+    if not bound or bound > 0x400:
+        return None
     return [struct.unpack_from('<H', img, base + ((start + 2 * k) & 0xFFFF))[0]
             for k in range(bound)]
 
@@ -255,6 +277,8 @@ def discover(im, extra):
             if ins is None or ins.mnemonic == 'db':
                 bad.append((cs, ip, lin))
                 continue
+            if cs * 16 + ip < im.seg_end.get(cs, 1 << 30) < cs * 16 + ip + ins.length:
+                continue                 # across into the next segment: padding after a call that never returned
             fn[ip] = ins
             m, o = ins.mnemonic, ins.op1
             nxt = (ip + ins.length) & 0xFFFF
@@ -319,6 +343,59 @@ def stored_pointers(im, entries, bodies):
             v = o.disp & 0xFFFF
             if cs * 16 + v < len(im.img) and plausible(im, cs, v):
                 out.add((cs, v))
+    return out
+
+
+def table_pointers(im, entries, bodies):
+    """Routines picked out of a table into a variable that is called through:
+    `mov ax, [bx+T]` then `mov [x], ax`, where `[x]` is the operand of a
+    `call/jmp word [x]` somewhere. The SB driver chooses its mixing routines
+    this way, mono or stereo, by DSP version (`mov ax, [bx+2217h]` ...
+    `mov [0BC6h], ax` ... `call [0BC6h]`): GOG's stereo setting never runs
+    the mono ones, but a player's SETUP may. T's words are read while each is
+    a plausible routine: not before the first one known (a driver's header
+    and settings come first), and not inside an instruction already decoded
+    (the table at 2227h runs on into other data: 0101h, 0201h, 0402h)."""
+    called = set()
+    starts, inside = set(), set()
+    for lin, body in bodies.items():
+        for ip, ins in body.items():
+            o = ins.op1
+            if ins.mnemonic in ('call', 'jmp') and o is not None and o.type in (OpType.MEM, OpType.MOFFS) \
+                    and not o.base and not o.index and o.size == 2:
+                called.add((entries[lin], o.seg or 'ds', o.disp & 0xFFFF))
+            a = entries[lin] * 16 + ip
+            starts.add(a)
+            inside.update(range(a + 1, a + ins.length))
+    first = min(entries) if entries else 0
+    out = set()
+    for lin, body in bodies.items():
+        cs = entries[lin]
+        ips = sorted(body)
+        for k, ip in enumerate(ips):
+            ins = body[ip]
+            src = ins.op2
+            if ins.mnemonic != 'mov' or src is None or src.type != OpType.MEM or not src.base or src.size != 2 \
+                    or ins.op1 is None or ins.op1.type != OpType.REG16:
+                continue
+            reg = str(ins.op1)
+            for nip in ips[k + 1:k + 4]:          # the store follows closely
+                n = body[nip]
+                d = n.op1
+                if n.mnemonic == 'mov' and d is not None and d.type in (OpType.MEM, OpType.MOFFS) and not d.base \
+                        and not d.index and str(n.op2) == reg and (cs, d.seg or 'ds', d.disp & 0xFFFF) in called:
+                    t = src.disp & 0xFFFF
+                    for i in range(32):
+                        a = cs * 16 + t + 2 * i
+                        if a + 2 > len(im.img):
+                            break
+                        v = struct.unpack_from('<H', im.img, a)[0]
+                        at = cs * 16 + v
+                        if not (first <= at < len(im.img)) or (at in inside and at not in starts) \
+                                or not plausible(im, cs, v):
+                            break
+                        out.add((cs, v))
+                    break
     return out
 
 
@@ -403,6 +480,62 @@ def smc_targets(entries, bodies):
     return out
 
 
+# Compiled C (SETUP.EXE, Borland C++): its code reaches much of itself only
+# through function pointers and vtables, which neither a walk of the calls
+# nor a run that does not press every key finds. Its routines start with the
+# compiler's prologue, so those are entries too.
+COMPILED = {'setup', 'helpme'}
+
+
+def segment_ends(im):
+    """Compiled code: where each code segment's successor starts. A routine's
+    last call can be one that never returns -- Turbo Pascal's main program
+    ends in `call Halt` -- and walking on after it ran HELPME's main into the
+    CRT unit's segment, lifting CRT's code with the wrong CS (and so CRT's
+    routines' addresses with it): the zeros padding main out to the next
+    paragraph decode as instructions, and one runs across the boundary. The
+    walk stops at an instruction that straddles it. One that starts on it is
+    code. Turbo Pascal programs only: Borland C's segments are paragraph-
+    aligned and overlap -- a routine's last instruction can run onto the next
+    segment's base (SETUP's `retf` at 0D59:0330 is 0D8C:0000)."""
+    first = im.decode(im.cs, im.ip)
+    if first is None or first.mnemonic != 'call' or first.op1 is None or first.op1.type != OpType.FAR:
+        return {}                        # Borland C: its segments overlap by a paragraph (see above)
+    segs = sorted({struct.unpack_from('<H', im.img, s * 16 + o)[0] for o, s in im.relocs
+                   if s * 16 + o + 2 <= len(im.img)} | {im.cs})
+    segs = [x for x in segs if x * 16 < len(im.img)]
+    return {a: b * 16 for a, b in zip(segs, segs[1:])}
+
+
+def compiled_seeds(im):
+    """(cs, ip) of every Borland prologue (`push bp / mov bp, sp`, encoded
+    8B EC by Borland C and 89 E5 by Turbo Pascal, or `enter`) that starts a
+    routine: right after another one ends, and decoding as code. The code
+    segments are the relocated words below the data segment: Borland C's
+    start-up loads it into DS first thing (`mov dx, DGROUP`); in Turbo Pascal
+    it is the highest one."""
+    segs = sorted({struct.unpack_from('<H', im.img, s * 16 + o)[0] for o, s in im.relocs
+                   if s * 16 + o + 2 <= len(im.img)} | {im.cs})
+    first = im.decode(im.cs, im.ip)
+    if first is not None and first.mnemonic == 'mov' and (im.cs * 16 + im.ip + 1) in im.reloc_at:
+        dgroup = first.op2.disp & 0xFFFF
+    elif first is not None and first.mnemonic == 'call' and first.op1 is not None and first.op1.type == OpType.FAR:
+        # Turbo Pascal: the units' start-up first, the System unit last; the
+        # data segment is the highest one
+        dgroup = max(x for x in segs if x * 16 < len(im.img))
+    else:
+        return set()
+    segs = [x for x in segs if x < dgroup]
+    out = set()
+    for m in re.finditer(rb'\x55(?:\x8b\xec|\x89\xe5)|\xc8..\x00', im.img[:dgroup * 16], re.S):
+        t = m.start()
+        cs = max(x for x in segs if x * 16 <= t)
+        if t - cs * 16 < 0x10000 and (after_exit(im.img, t) or im.img[t - 1] in (0x90, 0x00)) \
+                and plausible(im, cs, t - cs * 16):
+            out.add((cs, t - cs * 16))
+    return out
+
+
 def load_misses(name, load_seg):
     """work/misses/<image>.txt: seg:off the runtime jumped to with no lifted
     function, absolute; turned back into image-relative (cs, ip)."""
@@ -423,11 +556,14 @@ def lift_image(name, load_seg):
     src = os.path.join(DATA, IMAGES[name])
     im = Image(name, src)
     extra = load_misses(name, load_seg)
+    if name in COMPILED:
+        im.seg_end = segment_ends(im)
+        extra |= compiled_seeds(im)
     # Walk, add the stored pointers the walk makes visible, walk again.
     fps = set()
     while True:
         entries, bodies, tables, bad = discover(im, extra | fps)
-        more = stored_pointers(im, entries, bodies) - fps
+        more = (stored_pointers(im, entries, bodies) | table_pointers(im, entries, bodies)) - fps
         if not more:
             break
         fps |= more
@@ -534,8 +670,17 @@ def lift_image(name, load_seg):
     print(f'  -> {final} ({len(files)} files, {changed} changed)')
 
 
+DRV_SETTINGS = 0x40
+
+
 def _fnv(b):
-    """FNV-1a 32: the runtime checks it to refuse a file this lift is not of."""
+    """FNV-1a 32: the runtime checks it to refuse a file this lift is not of.
+    A MASI driver's settings (port, IRQ, DMA, mixing rate: 40h bytes at the
+    offset its header gives at 30h) are SETUP's to write and no code: they
+    count as zeros, as src/images.c takes them."""
+    at = struct.unpack_from('<I', b, 0x30)[0] if b[1:7] == b'REAL16' else 0
+    if at:                               # the mixer (MDRV000R) has none: 0
+        b = b[:at] + bytes(DRV_SETTINGS) + b[at + DRV_SETTINGS:]
     h = 0x811C9DC5
     for x in b:
         h = ((h ^ x) * 0x01000193) & 0xFFFFFFFF

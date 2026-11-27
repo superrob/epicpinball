@@ -85,6 +85,28 @@ static unsigned largest_free(void)
     return best;
 }
 
+/* The block from `seg` to the end of the free memory it is in, if `seg` is
+ * free (a paragraph below it too: DOS's arena header); its size in *paras */
+static int arena_alloc_at(uint16_t seg, uint16_t *paras)
+{
+    unsigned lo = 0x0060;
+    if (narena == MAX_BLOCKS) return 0;
+    for (int i = 0; i <= narena; i++) {
+        unsigned hi = (i < narena) ? arena[i].seg - 1u : MEM_TOP;
+        if (seg > lo + 1 && seg < hi) {          /* inside this free run, with room for its header */
+            arena[narena].seg = seg;
+            arena[narena].paras = (uint16_t)(hi - seg);
+            arena[narena].owner = g_psp_seg;
+            *paras = arena[narena].paras;
+            narena++;
+            arena_sort();
+            return 1;
+        }
+        if (i < narena) lo = arena[i].seg + arena[i].paras;
+    }
+    return 0;
+}
+
 static int arena_alloc(uint16_t paras, uint16_t *seg)
 {
     unsigned lo = 0x0060;
@@ -114,12 +136,42 @@ static FILE *fh[MAXH];
  * memory, places it there as an image (src/images.c). */
 static struct { char name[13]; uint32_t start; long size; } fh_drv[MAXH];
 
+/* The card's driver (MDRV001R-005R, not the mixer, MDRV000R) is allocated
+ * first, and the mixer, the songs and every table after it: where they land
+ * depends on its size, and they are lifted at one place (docs/architecture.md,
+ * "Images"). So the block PINBALL asks for right after opening a card's
+ * driver, if it is that driver's size, gets the room of the largest card
+ * driver there is: everything after lands where it does with GOG's Sound
+ * Blaster, whatever card SETUP chose. The driver uses only what it asked for.
+ * (PINBALL asks for its size / 16 + 2 paragraphs.) */
+static long card_drv_size;            /* the card driver just opened, until the next allocation */
+static void join(char *out, size_t n, const char *dir, const char *name);
+
+static long largest_card_driver(void)
+{
+    static long most = -1;
+    if (most >= 0) return most;
+    most = 0;
+    for (int i = 1; i <= 5; i++) {
+        char n[16], p[512];
+        snprintf(n, sizeof n, "MDRV%03dR.MUS", i);
+        join(p, sizeof p, g_opt.datadir, n);
+        FILE *f = fopen(p, "rb");
+        if (!f) continue;
+        fseek(f, 0, SEEK_END);
+        if (ftell(f) > most) most = ftell(f);
+        fclose(f);
+    }
+    return most;
+}
+
 static void drv_open(int h, const char *name)
 {
     fh_drv[h].name[0] = 0;
     if (h < 0 || _strnicmp(name, "MDRV", 4) != 0) return;
     snprintf(fh_drv[h].name, sizeof fh_drv[h].name, "%s", name);
     fseek(fh[h], 0, SEEK_END); fh_drv[h].size = ftell(fh[h]); fseek(fh[h], 0, SEEK_SET);
+    card_drv_size = _strnicmp(name, "MDRV000", 7) ? fh_drv[h].size : 0;
 }
 
 static void drv_read(int h, long pos, uint32_t dest, size_t got)
@@ -130,8 +182,10 @@ static void drv_read(int h, long pos, uint32_t dest, size_t got)
     if (pos + (long)got != fh_drv[h].size) return;
     uint32_t a = fh_drv[h].start;
     trace("[dos] %s read whole to %05X\n", fh_drv[h].name, a);
+    if (g_opt.setup) { fh_drv[h].name[0] = 0; return; }   /* SETUP reads each driver's MDRVINFO text: not a load */
     if (a & 15) { fprintf(stderr, "[dos] %s loaded at %05X, not on a paragraph\n", fh_drv[h].name, a); return; }
     images_placed(fh_drv[h].name, g_cpu.mem + a, (uint32_t)fh_drv[h].size, (uint16_t)(a >> 4), (uint32_t)fh_drv[h].size);
+    audio_driver(fh_drv[h].name, g_cpu.mem + a, (uint32_t)fh_drv[h].size);
     fh_drv[h].name[0] = 0;
 }
 
@@ -180,10 +234,28 @@ static void copy_file(const char *from, const char *to)
     if (b) fclose(b);
 }
 
+/* A DOS device name, with or without an extension: not a file. HELPME's
+ * printer (Turbo Pascal's Lst) is PRN, opened at its start. */
+static int dos_device(const char *b)
+{
+    static const char *const dev[] = { "PRN", "NUL", "AUX", "CON", "LPT1", "LPT2", "LPT3",
+                                       "COM1", "COM2", "COM3", "COM4", NULL };
+    size_t n = strcspn(b, ".");
+    for (int i = 0; dev[i]; i++)
+        if (strlen(dev[i]) == n && !_strnicmp(b, dev[i], n)) return 1;
+    return 0;
+}
+
 static FILE *open_game(const char *dosname, int mode /*0 r,1 w,2 rw*/, int create)
 {
     char sp[512], dp[512];
     const char *b = base_name(dosname);
+    /* a device: what is printed goes nowhere, what is read is at its end */
+#ifdef _WIN32
+    if (dos_device(b)) return fopen("NUL", "r+b");
+#else
+    if (dos_device(b)) return fopen("/dev/null", "r+b");
+#endif
     join(sp, sizeof sp, g_opt.savedir, b);
     join(dp, sizeof dp, g_opt.datadir, b);
     if (create) return fopen(sp, "w+b");
@@ -310,6 +382,16 @@ void bios_key_push(uint8_t scan, uint8_t ascii)
 {
     int n = (kb_tail + 1) & 31;
     if (n != kb_head) { keybuf[kb_tail] = (uint16_t)(scan << 8 | ascii); kb_tail = n; }
+}
+
+/* DOS hands an extended key (arrows, F-keys: no ASCII) to AH=06/07/08 as
+ * two characters, 0 and then its scan code: the second, waiting. SETUP's
+ * menus are moved this way. */
+static int kb_ext = -1;
+static uint8_t dos_char(uint16_t k)
+{
+    if ((k & 0xFF) == 0 || (k & 0xFF) == 0xE0) { kb_ext = k >> 8; return 0; }
+    return (uint8_t)k;
 }
 
 static int key_wait(int peek, uint16_t *out)
@@ -444,7 +526,10 @@ void dos_boot(CPU *cpu)
     char env[512]; int n = 0;
     for (int i = 0; env_vars[i]; i++) { strcpy(env + n, env_vars[i]); n += (int)strlen(env_vars[i]) + 1; }
     env[n++] = 0;
-    make_env(env, n, "C:\\PINBALL.EXE", ENV_SEG);
+    const char *first = g_opt.setup ? "SETUP.EXE" : "PINBALL.EXE";   /* --setup: the sound-card menu */
+    char firstpath[32];
+    snprintf(firstpath, sizeof firstpath, "C:\\%s", first);
+    make_env(env, n, firstpath, ENV_SEG);
     arena[narena++] = (Block){ ENV_SEG, 0x1F, g_psp_seg };
     arena[narena++] = (Block){ g_psp_seg, (uint16_t)(MEM_TOP - g_psp_seg), g_psp_seg };
     arena_sort();
@@ -457,9 +542,9 @@ void dos_boot(CPU *cpu)
     tail[1 + (t ? t + 1 : 0)] = 0x0D;
 
     uint32_t len;
-    uint8_t *raw = slurp("PINBALL.EXE", &len);
-    if (!raw) fatal("PINBALL.EXE not found in %s -- copy your own Epic Pinball there (README)", g_opt.datadir);
-    load_exe(cpu, "PINBALL.EXE", raw, len, g_psp_seg, MEM_TOP, ENV_SEG, tail);
+    uint8_t *raw = slurp(first, &len);
+    if (!raw) fatal("%s not found in %s -- copy your own Epic Pinball there (README)", first, g_opt.datadir);
+    load_exe(cpu, first, raw, len, g_psp_seg, MEM_TOP, ENV_SEG, tail);
     free(raw);
     autostart_begin(images_at((uint16_t)(g_psp_seg + 0x10)), (uint16_t)(g_psp_seg + 0x10));
 }
@@ -483,6 +568,24 @@ static void dos_exec(CPU *c)
     { int machine_busy(void); void host_backtrace(void);
       if (machine_busy()) { trace("[dos] exec from inside an interrupt\n"); host_backtrace(); } }
     if (c->al != 0) { fprintf(stderr, "[dos] EXEC AL=%02X not supported\n", c->al); fail(c, 1); return; }
+    /* There is no COMMAND.COM: `COMMAND.COM /c PROGRAM args`, which C's
+     * system() runs, runs PROGRAM (.EXE if it names no extension) itself.
+     * SETUP's Instructions is `system("helpme.exe")`. */
+    if (!_stricmp(base_name(name), "COMMAND.COM")) {
+        int n = tail[0];
+        const char *t = (const char *)tail + 1, *e = t + n;
+        while (t < e && *t == ' ') t++;
+        if (e - t < 2 || t[0] != '/' || (t[1] | 0x20) != 'c') { fail(c, 2); return; }
+        for (t += 2; t < e && *t == ' '; t++) {}
+        int k = 0;
+        while (t + k < e && t[k] != ' ' && k < 60) k++;
+        snprintf(name, sizeof name, "%.*s%s", k, t, memchr(t, '.', (size_t)k) ? "" : ".EXE");
+        int rest = (int)(e - (t + k));
+        tail[0] = (uint8_t)rest;
+        memmove(tail + 1, t + k, (size_t)rest);
+        tail[1 + rest] = 0x0D;
+        trace("[dos] COMMAND.COM /c: %s tail \"%.*s\"\n", name, rest, (const char *)tail + 1);
+    }
     /* PINBALL runs `SETUP.EXE -cd <its directory>` at every start; SETUP checks
      * the install and hands the directory back as "pincd=<dir>" at B000:FA00,
      * an unused corner of mono text memory, which PINBALL then reads.
@@ -516,13 +619,21 @@ static void dos_exec(CPU *c)
     uint16_t env = make_env(es, elen, path, 0);
     /* the program gets the largest free block, all of it */
     uint16_t paras = (uint16_t)largest_free(), psp;
-    if (!env || !arena_alloc(paras, &psp)) { free(raw); fail(c, 8); return; }
+    /* ...unless it was lifted to run higher and that memory is free: then
+     * there. A table goes above PINBALL's songs, and is lifted there; with
+     * a card that plays no music (PC speaker, none) there are no songs, and
+     * DOS would put it lower. Up there it has the PSP and the top of memory
+     * it always has. */
+    uint16_t want = images_lifted_at(base_name(name));
+    if (env && want > 0x10 && arena_alloc_at((uint16_t)(want - 0x10), &paras)) psp = (uint16_t)(want - 0x10);
+    else if (!env || !arena_alloc(paras, &psp)) { free(raw); fail(c, 8); return; }
     arena[arena_find(env)].owner = psp; arena[arena_find(psp)].owner = psp;
 
     CPU saved = *c;
     jmp_buf jb, *prev = exec_jmp;
     load_exe(c, name, raw, len, psp, (uint16_t)(psp + paras), env, tail);
     free(raw);
+    trace("[dos] %s: PSP %04X, stack %04X:%04X; the parent's %04X:%04X\n", name, psp, c->ss, c->sp, saved.ss, saved.sp);
     exec_jmp = &jb;
     if (!setjmp(jb)) {
         void (*fn)(CPU *) = images_lookup(c->cs, c->ip);
@@ -575,18 +686,24 @@ void dos_int21(CPU *c)
     case 0x06:
         if (c->dl == 0xFF) {
             uint16_t k;
-            if (key_wait(1, &k)) { key_wait(0, &k); c->al = (uint8_t)k; c->flags &= ~FLAG_ZF; }
+            if (kb_ext >= 0) { c->al = (uint8_t)kb_ext; kb_ext = -1; c->flags &= ~FLAG_ZF; }
+            else if (key_wait(1, &k)) { key_wait(0, &k); c->al = dos_char(k); c->flags &= ~FLAG_ZF; }
             else { c->al = 0; c->flags |= FLAG_ZF; }
         } else { uint8_t ch = c->dl; con_write(&ch, 1); }
         break;
-    case 0x07: case 0x08: { uint16_t k; key_wait(0, &k); c->al = (uint8_t)k; break; }
+    case 0x07: case 0x08: {
+        uint16_t k;
+        if (kb_ext >= 0) { c->al = (uint8_t)kb_ext; kb_ext = -1; }
+        else { key_wait(0, &k); c->al = dos_char(k); }
+        break;
+    }
     case 0x09: {
         uint16_t o = c->dx; uint8_t ch;
         while ((ch = g_cpu.mem[seg_off(c->ds, o++)]) != '$') con_write(&ch, 1);
         c->al = '$'; break;
     }
     case 0x0B: { uint16_t k; c->al = key_wait(1, &k) ? 0xFF : 0; break; }
-    case 0x0C: kb_head = kb_tail; if (c->al == 6 || c->al == 7 || c->al == 8) { c->ah = c->al; dos_int21(c); } break;
+    case 0x0C: kb_head = kb_tail; kb_ext = -1; if (c->al == 6 || c->al == 7 || c->al == 8) { c->ah = c->al; dos_int21(c); } break;
     case 0x0D: break;
     case 0x0E: c->al = 26; break;
     case 0x19: c->al = 2; break;                      /* C: */
@@ -715,8 +832,16 @@ void dos_int21(CPU *c)
     }
     case 0x47: g_cpu.mem[seg_off(c->ds, c->si)] = 0; CF_CLR(c); break;
     case 0x48: {
-        uint16_t seg;
-        if (arena_alloc(c->bx, &seg)) { c->ax = seg; CF_CLR(c); }
+        uint16_t seg, want = c->bx;
+        if (card_drv_size && want >= (card_drv_size + 15) / 16 && want <= card_drv_size / 16 + 2) {   /* PINBALL: size/16 + 2 */
+            long most = largest_card_driver();
+            if (most > card_drv_size) {
+                trace("[dos] %ld-byte card driver: given the room of the largest, %ld\n", card_drv_size, most);
+                want = (uint16_t)(most / 16 + 2);         /* as PINBALL asks for the largest */
+            }
+        }
+        card_drv_size = 0;
+        if (arena_alloc(want, &seg)) { c->ax = seg; CF_CLR(c); }
         else { c->bx = (uint16_t)largest_free(); fail(c, 8); }
         trace("[dos] alloc %04X paras -> %s %04X\n", c->bx, (c->flags & FLAG_CF) ? "fail" : "ok", c->ax);
         break;
@@ -759,6 +884,9 @@ void dos_int21(CPU *c)
         CF_CLR(c); break;
     }
     case 0x57: if (c->al == 0) { c->cx = 0x6000; c->dx = 0x1B21; } CF_CLR(c); break;
+    case 0x37:                                       /* the switch character: Borland's system() asks */
+        if (c->al == 0) { c->dl = '/'; c->al = 0; } else c->al = 0xFF;
+        break;
     default:
         fprintf(stderr, "[dos] unhandled INT 21h AH=%02X AL=%02X\n", ah, c->al);
         fail(c, 1);
@@ -774,10 +902,20 @@ void bios_int10(CPU *c)
     case 0x01: break;
     case 0x02: g_cpu.mem[0x450] = c->dl; g_cpu.mem[0x451] = c->dh; break;
     case 0x03: c->dl = g_cpu.mem[0x450]; c->dh = g_cpu.mem[0x451]; c->cx = 0x0D0E; break;
-    case 0x06: case 0x07: {                         /* scroll window (only full clears matter) */
+    case 0x06: case 0x07: {                         /* scroll a window up (06h) or down: AL lines, 0 clears */
         uint8_t *t = g_cpu.mem + 0xB8000;
-        for (int r = c->ch; r <= c->dh && r < 25; r++)
-            for (int x = c->cl; x <= c->dl && x < 80; x++) { t[(r * 80 + x) * 2] = ' '; t[(r * 80 + x) * 2 + 1] = c->bh; }
+        int top = c->ch, bot = c->dh < 25 ? c->dh : 24, left = c->cl, right = c->dl < 80 ? c->dl : 79;
+        int n = c->al, h = bot - top + 1;
+        if (top > bot || left > right) break;
+        if (n == 0 || n > h) n = h;
+        int w = (right - left + 1) * 2;
+        if (c->ah == 0x06)
+            for (int r = top; r + n <= bot; r++) memcpy(t + (r * 80 + left) * 2, t + ((r + n) * 80 + left) * 2, w);
+        else
+            for (int r = bot; r - n >= top; r--) memcpy(t + (r * 80 + left) * 2, t + ((r - n) * 80 + left) * 2, w);
+        int from = c->ah == 0x06 ? bot - n + 1 : top, to = c->ah == 0x06 ? bot : top + n - 1;
+        for (int r = from; r <= to; r++)
+            for (int x = left; x <= right; x++) { t[(r * 80 + x) * 2] = ' '; t[(r * 80 + x) * 2 + 1] = c->bh; }
         break;
     }
     case 0x08: {
@@ -808,7 +946,12 @@ void bios_int10(CPU *c)
             }
         }
         break;
-    case 0x11: break;                               /* font loads: text mode only */
+    case 0x11:                                      /* font loads: text mode only */
+        if (c->al == 0x30) {                        /* font information: Turbo Pascal's CRT takes its rows from DL */
+            c->cx = 16; c->dl = 24;                 /* 16 lines a character, 25 rows */
+            c->es = 0xC000; c->bp = 0;              /* where a VGA BIOS keeps its fonts */
+        }
+        break;
     case 0x12: if (c->bl == 0x10) { c->bh = 0; c->bl = 3; c->cx = 0x0009; } break;
     case 0x1A: if (c->al == 0) { c->al = 0x1A; c->bx = 0x0008; } break;   /* VGA, colour */
     default: trace("[bios] INT 10h AH=%02X\n", c->ah);

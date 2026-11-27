@@ -23,12 +23,13 @@
 
 ## Later
 
-- **Lift `SETUP.EXE`** (Borland C++ 3.x, like Blake Stone's executables) so its
-  sound-card menu works and the `-cd` check stops being answered by hand. Until
-  then the card is whatever `SOUNDCRD.INF` says; GOG's says Sound Blaster 16.
-- **The other MASI drivers**: Gravis Ultrasound (`MDRV003R`), Pro Audio Spectrum
-  (`MDRV005R`), PC speaker and no-sound. Each needs its card modelled; the
-  SB16 covers everyone today.
+- **The other sound cards**: Gravis Ultrasound (`MDRV003R`) and Pro Audio
+  Spectrum (`MDRV005R`), which SETUP (`--setup`) offers: each needs its card
+  modelled. The Sound Blaster in every setting, PC speaker and no sound work.
+- **SETUP's `-cd` check at PINBALL's start**: still answered by the runtime;
+  running the lifted SETUP there would move what PINBALL allocates after it.
+- **`ORDER.EXE`**, the "Thanks For Playing" screens PINBALL shows on the way
+  out (hand-written asm, `.TFP` pictures): not lifted, so they are skipped.
 - **Gamepad**: `controller.ini`, GOG's mapping by default, untested on hardware.
   Rumble on the flippers and bumpers would be the remaster's next touch.
 - **Cabinet mode on more cabinets**: it works on one real cabinet under KDE,

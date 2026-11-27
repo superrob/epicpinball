@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`SETUP.EXE` lifted** (Borland C++), with `HELPME.EXE` (Turbo Pascal), which
+  its Instructions run: `--setup`, or *Choose with SETUP* in the settings tool,
+  opens the game's own sound-card menu in a window. Card, port, IRQ, DMA and
+  quality are saved as the original saves them -- `SOUNDCRD.INF`, and the
+  settings inside the chosen driver -- into the save folder. The Sound Blaster
+  takes its port, IRQ and DMA from those settings (it was fixed at 220h, IRQ 7,
+  DMA 1), and every Sound Blaster setting plays: mono, Pro, 16, clone, and every
+  quality. PC Speaker plays the tables' effects on the speaker, without music,
+  and No Sound is silent. Gravis Ultrasound and Pro Audio Spectrum come next.
 - **`--cabinet`**, for virtual pinball machines (Linux): two windows without
   decorations. The playfield fills a display with the whole table, never the
   scoreboard, and F6 turns it a quarter at a time, menus and all. The

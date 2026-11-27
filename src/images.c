@@ -44,8 +44,9 @@ static const LiftedImage *by_file(const char *file)
 static int image_name(const char *file, char *name)
 {
     static const char *const fixed[][2] = {
-        {"PINBALL.EXE", "pin"}, {"MDRV000R.MUS", "mlpr"}, {"MDRV001R.MUS", "nosnd"}, {"MDRV004R.MUS", "sb"}};
-    for (int i = 0; i < 4; i++) if (!_stricmp(file, fixed[i][0])) { strcpy(name, fixed[i][1]); return 1; }
+        {"PINBALL.EXE", "pin"}, {"MDRV000R.MUS", "mlpr"}, {"MDRV001R.MUS", "nosnd"}, {"MDRV002R.MUS", "pcspk"},
+        {"MDRV003R.MUS", "gus"}, {"MDRV004R.MUS", "sb"}, {"MDRV005R.MUS", "pas"}};
+    for (int i = 0; i < (int)(sizeof fixed / sizeof fixed[0]); i++) if (!_stricmp(file, fixed[i][0])) { strcpy(name, fixed[i][1]); return 1; }
     if (_strnicmp(file, "MDRV", 4) == 0) return 0;
     int i = 0;
     for (; file[i] && file[i] != '.' && i < 15; i++) name[i] = (char)tolower((unsigned char)file[i]);
@@ -77,10 +78,18 @@ static void record_layout(const char *file, uint16_t seg)
     if (f) { fputs(out, f); fclose(f); }
 }
 
+/* FNV-1a 32 of a file, as tools/lift.py takes it. A MASI driver's settings
+ * (port, IRQ, DMA, mixing rate: 40h bytes at the offset its header gives at
+ * 30h) are SETUP's to write and no code: they are left out, so a driver
+ * SETUP has set up is still the one that was lifted. */
+#define DRV_SETTINGS 0x40
 static uint32_t fnv(const uint8_t *p, uint32_t n)
 {
-    uint32_t h = 0x811C9DC5u;
-    while (n--) h = (h ^ *p++) * 0x01000193u;
+    uint32_t h = 0x811C9DC5u, skip = 0;
+    if (n >= 0x34 && !memcmp(p + 1, "REAL16", 6))
+        skip = (uint32_t)(p[0x30] | p[0x31] << 8 | p[0x32] << 16 | (uint32_t)p[0x33] << 24);
+    for (uint32_t i = 0; i < n; i++)
+        h = (h ^ (skip && i - skip < DRV_SETTINGS ? 0 : p[i])) * 0x01000193u;
     return h;
 }
 
@@ -119,6 +128,13 @@ void images_placed(const char *file, const uint8_t *raw, uint32_t rawlen, uint16
 }
 
 /* What was lifted from the program loaded there, or NULL */
+/* Where a program file was lifted to run (its load segment), or 0 */
+uint16_t images_lifted_at(const char *file)
+{
+    const LiftedImage *li = by_file(file);
+    return li ? li->load_seg : 0;
+}
+
 const LiftedImage *images_at(uint16_t seg)
 {
     for (int i = 0; i < nplaced; i++)

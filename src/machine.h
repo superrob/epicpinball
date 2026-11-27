@@ -54,6 +54,7 @@ typedef struct {
     int dmd_device;           /* --dmd-device: the same on a real DMD, through dmd/'s helper */
     int ssf;                  /* --ssf: 7.1, the board's sounds on the cabinet's exciters */
     const char *ssf_volumes;  /* --ssf-volumes FX,ROLL: over [ssf]'s */
+    int setup;                /* --setup: SETUP.EXE, the sound-card menu, in PINBALL's place */
     int table;                /* --table N: straight to table N's game, out when it is quit; 0 none */
     int autoplay;             /* --autoplay, testing: flips, launches and starts games itself */
 } Options;
@@ -87,6 +88,7 @@ void images_placed(const char *file, const uint8_t *raw, uint32_t rawlen, uint16
 void images_gone(uint16_t seg);
 void (*images_lookup(uint16_t seg, uint16_t off))(CPU *);
 const LiftedImage *images_at(uint16_t seg);
+uint16_t images_lifted_at(const char *file);      /* its load segment, 0 if not lifted */
 void images_miss(const char *how, uint16_t seg, uint16_t off);
 
 /* machine.c: PIC, PIT, keyboard controller, speaker, IRQ delivery */
@@ -130,6 +132,7 @@ void audio_advance(uint64_t pit_ticks);    /* render up to this emulated time */
 int  audio_port_in(uint16_t port, uint8_t *v);
 int  audio_port_out(uint16_t port, uint8_t v);
 void audio_speaker(int gate, uint16_t divisor);
+void audio_driver(const char *file, const uint8_t *d, uint32_t len);   /* a MASI driver was loaded */
 void audio_shutdown(void);
 
 /* host.c: window or offscreen, input, presentation, recording */

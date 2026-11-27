@@ -42,6 +42,7 @@ extern "C" {
 #include <SDL.h>
 #endif
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -554,8 +555,82 @@ static void axis_bars(Joy *j, int mark)
 #define HELPER_BUILD(dir) dir "/build.sh"
 #endif
 
+/* ---- the sound card: SETUP.EXE's choice ------------------------------------------- */
+
+static std::string slurp_bin(const std::string &path)
+{
+    FILE *f = fopen(path.c_str(), "rb");
+    if (!f) return "";
+    std::string s;
+    char b[4096];
+    size_t n;
+    while ((n = fread(b, 1, sizeof b, f)) > 0) s.append(b, n);
+    fclose(f);
+    return s;
+}
+
+/* As the game reads a file: the save folder first, then the game's */
+static std::string game_file(const std::string &name)
+{
+    std::string s = slurp_bin(g_save + "/" + name);
+    return s.empty() ? slurp_bin("original/" + name) : s;
+}
+
+/* The card SOUNDCRD.INF names, and the settings SETUP wrote into its driver
+ * (the same 40h-byte block in every MASI card driver: port at +19h, IRQ
+ * +1Dh, DMA +2Dh, mixing rate +31h) */
+static std::string sound_card()
+{
+    const std::string inf = game_file("SOUNDCRD.INF");
+    if (inf.size() < 0x1A || inf.compare(1, 6, "REAL16")) return "none: SOUNDCRD.INF is missing, run SETUP";
+    const std::string id = inf.substr(8, 12);
+    static const struct { const char *id, *name; } cards[] = {
+        { "MASINOSNDCRD", "No sound" }, { "MASIPCSPEAKR", "PC speaker" }, { "MASIULTRASND", "Gravis Ultrasound" },
+        { "MASISBSERIES", "Sound Blaster" }, { "MASIPASERIES", "Pro Audio Spectrum" } };
+    std::string out = id;
+    for (const auto &c : cards) if (id == c.id) out = c.name;
+    const std::string drv = game_file(std::string(inf.c_str() + 0x19));
+    if (drv.size() < 0x34 || id == "MASINOSNDCRD" || id == "MASIPCSPEAKR") return out;
+    const auto u8 = [&](size_t i) { return (unsigned)(uint8_t)drv[i]; };
+    const size_t b = u8(0x30) | u8(0x31) << 8 | u8(0x32) << 16 | u8(0x33) << 24;
+    if (b + 0x40 > drv.size()) return out;
+    if (id == "MASISBSERIES") out += (u8(b + 0x11) & 0x20) ? " (clone)" : (u8(b + 0x11) & 2) ? " (Pro or 16)" : " (mono)";
+    const unsigned rate = u8(b + 0x31) | u8(b + 0x32) << 8;
+    const char *q = rate >= 44100 ? "ultra high" : rate >= 32100 ? "very high" : rate >= 20100 ? "high" : "medium";
+    char t[120];
+    snprintf(t, sizeof t, ": port %03Xh, IRQ %u, DMA %u, %s quality", u8(b + 0x19) | u8(b + 0x1A) << 8, u8(b + 0x1D),
+             u8(b + 0x2D), q);
+    return out + t;
+}
+
+static std::atomic<bool> g_setup_running;
+static std::atomic<int> g_setup_runs;  /* finished runs: the card is read again after each */
+
+/* SETUP.EXE, lifted (`epicpinball --setup`), in a window of its own */
+static void run_setup()
+{
+    if (g_setup_running.exchange(true)) return;
+    std::thread([] {
+        const std::string cmd = "\"" + game_exe() + "\" --setup --save \"" + g_save + "\"";
+        run_lines(cmd, [](const char *) {});
+        g_setup_runs++;
+        g_setup_running = false;
+    }).detach();
+}
+
 static void page_modes()
 {
+    ImGui::SeparatorText("Sound card");
+    static int seen = -1;
+    static std::string card;
+    if (seen != g_setup_runs) { seen = g_setup_runs; card = sound_card(); }
+    ImGui::TextWrapped("%s", card.c_str());
+    ImGui::BeginDisabled(g_setup_running || game_exe().empty());
+    if (ImGui::Button(g_setup_running ? "SETUP is open..." : "Choose with SETUP", ImVec2(220, 0))) run_setup();
+    ImGui::EndDisabled();
+    help("The game's own sound-card menu (SETUP.EXE): card, port, IRQ, DMA and quality, and its Instructions. "
+         "What it saves goes into this save folder, never into the game's.");
+
     ImGui::SeparatorText("Every run with a window starts with");
     const bool helper[5] = { true, true, exists("dmd/build/epicpinball-dmd") || exists("dmd/build/epicpinball-dmd.exe"), true,
                              exists("dof/build/epicpinball-dof") || exists("dof/build/epicpinball-dof.exe") };

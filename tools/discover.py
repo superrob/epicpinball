@@ -12,6 +12,9 @@ What the lift needs that the binaries alone do not say:
   - the entry points nothing calls directly: interrupt handlers installed
     through a variable, routines picked out of tables. src/images.c
     writes each one the guest reaches to work/misses/<image>.txt.
+  - SETUP.EXE's and HELPME.EXE's branches, which only keys reach, and the
+    sound drivers its choices load: every menu of SETUP is walked
+    (conformance.setup_walks), and PINBALL started on what each card saved.
 
 So: lift what is known, build, start PINBALL headless and play every table a
 little from its menu (the conformance script's input), and lift again with
@@ -63,10 +66,30 @@ def main():
         for n in range(1, conformance.TABLES + 1):
             keys, _, end = conformance.table_keys(n)
             missed |= set(conformance.misses(conformance.run(out, end / 1000, keys, {})[1]))
-        if not missed:
+        # SETUP.EXE (--setup): every branch of its menus, then PINBALL on
+        # what each saved, so every card's driver is placed and run
+        print('  setup: every menu, then each card it saves', flush=True)
+        walks = conformance.setup_walks()
+        def walk(item):
+            name, seq = item
+            o = os.path.join(out, 'setup', name)
+            keys, end = conformance.setup_keys(seq)
+            m = set(conformance.misses(conformance.run(o, end / 1000, keys, {}, ['--setup'])[1]))
+            if name.startswith('card'):
+                # PINBALL on the card it saved: its driver loads (as set up) and plays the menu's music
+                m |= set(conformance.misses(conformance.run(o, conformance.MENU_MS / 1000, None, {})[1]))
+            return m
+        for item in sorted(walks.items()):   # one at a time: each run rewrites work/layout.txt
+            missed |= walk(item)
+        after = state()
+        for f in sorted(set(before) | set(after)):
+            new = sorted(x for x in after.get(f, set()) - before.get(f, set()) if x)
+            if new:
+                print(f'    {os.path.relpath(f, ROOT)}: ' + ', '.join(new[:8]) + (' ...' if len(new) > 8 else ''))
+        if not missed and after == before:
             print(f'settled after {rnd} round{"s" if rnd > 1 else ""}: every address reached is lifted')
             return 0
-        if state() == before:
+        if missed and after == before:
             # recorded already, lifted, and still missing: a lifter or runtime bug
             print('misses the lift does not fix:\n  ' + '\n  '.join(sorted(missed)))
             return 1
