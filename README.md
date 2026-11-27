@@ -47,7 +47,7 @@ conformance harness passes 154/154 on Linux.**
 | A full game, start to final ball, played by hand | ✅ |
 | Cabinet mode, `--cabinet` (Linux and Windows) | ✅ on a real cabinet (table 1) and on virtual displays; Windows on a cabinet: table 1 on its playfield display (the scoreboard on its DMD), not yet played |
 | Nudging from a cabinet: an accelerometer's shove by how hard, nudge buttons as the game's nudge (`[nudge]`, Linux and Windows) | ✅ on a real cabinet's accelerometer (a Pinscape Pico); by a scripted accelerometer on four tables and a virtual board in a window; nudge buttons not yet on a real board; Windows: the Pinscape Pico read on a cabinet, not yet played |
-| Cabinet feedback through libdof (`--dof`) and an analog plunger (`[plunger]`), Linux and Windows | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13, each with events of its own, only in a sandbox (loopback, a simulated board, a virtual joystick, four hours of `--autoplay` each); Windows: the helper built by `dof\build.ps1` on a cabinet and started on table 1 with DirectOutput's files, not yet played |
+| Cabinet feedback through libdof (`--dof`) and an analog plunger (`[plunger]`), Linux and Windows | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13, each with events of its own, and every table's lamps, only in a sandbox (loopback, a simulated board, a virtual joystick, four hours of `--autoplay` each); Windows: the helper built by `dof\build.ps1` on a cabinet and started on table 1 with DirectOutput's files, not yet played |
 | SSF: the board's sounds on a cabinet's exciters, 7.1 (`--ssf`, Linux and Windows) | ✅ headless on all 13 tables (eight channels measured), and on a cabinet's exciters; Windows headless under Wine, and opened in 7.1 on a cabinet, not yet heard in play |
 | Straight to a table, `--table N` | ✅ on a real cabinet; headless on all 13 tables (quit, high score, game over, play again); Windows headless under Wine |
 | Between games with `--cabinet --table N`: initials on the DMD, Start plays again | implemented: headless on table 1 and in an offscreen window; not yet on a real cabinet, nor on Windows |
@@ -97,7 +97,8 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   Between them, the table's score. [How it works](docs/dmd.md).
 - **Cabinet feedback** (`--dof`): flippers, slingshots, bumpers,
   launch, drain, nudge and the rest go to libdof as DOF events (and each
-  table's own holes, ramps, lanes, targets, loops, jackpots and awards), with
+  table's own holes, ramps, lanes, targets, loops, jackpots, awards and
+  lamps), with
   VPinball's DOF files if there are any (a Config Tool export works as it
   is: the game's row is made from its device list, solenoids, flashers and
   MX strips with DOF's shapes included) (no limits: those are the

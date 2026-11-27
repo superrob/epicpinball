@@ -13,7 +13,14 @@
  *     turns back on tilt and the like); a launch is the release block zeroing
  *     the pull and then changing ball 0's velocity. What the host writes
  *     itself does not come through here, so cannot pass for either;
- *   - sampling, on every host_frame and physics step, for levels: flippers.
+ *   - sampling, on every host_frame and physics step, for levels: flippers;
+ *   - the lamps: RECOMP_ENTER of their renderer, with the list of lamp
+ *     states it draws in SI, and of the blitter it calls, with a lamp's lit
+ *     or unlit picture in SI, its place in the table of them in BX and the
+ *     lamp's state in that list on the stack. What it draws is what the
+ *     player sees, a light show or a blink included; each host_frame sends
+ *     what has changed. Tables 3 and 5 also glow lights on the palette: their
+ *     glow function, with the light's place in the list in CX, its state in BL.
  *
  * Where each of these lives is in work/feedback/epN.map, generated from the
  * player's own copy by tools/feedback_map.py. docs/cabinet-feedback.md.
@@ -64,10 +71,27 @@ static int caught[WATCH_TIMERS];     /* the hole each timer holds a ball in, 1 o
 static double counted[WATCH_TIMERS]; /* when each timer last counted */
 static struct { uint16_t x, y; double moved; } ball[8];      /* when each ball last moved */
 static double last_step;
+static uint16_t lamp_ds;             /* the lamps' pictures' segment */
+static int lamp_list = -1;           /* the list the renderer draws; -1 none yet */
+static uint8_t lamp_drawn[WATCH_LAMPS], lamp_sent[WATCH_LAMPS];  /* lit on the screen; and as sent */
+static int lamp_muted;               /* the demo, when lamps were last sent */
+static int lamp_check;               /* EPIC_LAMP_CHECK: testing */
+static uint32_t lamp_blits[WATCH_LAMPS], lamp_strays, lamp_wrong;
 static uint16_t ss0, sp0;            /* the table's stack */
 
 static uint16_t rd16(uint32_t a) { return (uint16_t)(g_cpu.mem[a] | g_cpu.mem[a + 1] << 8); }
 static double now_ms(void) { return pit_now() * 1000.0 / PIT_HZ; }
+
+/* Lamp events the table has: its lamps, and past them its glowing lights */
+static int nlamps(void) { return M.glows ? M.glow_from - 1 + M.glows : M.lamps; }
+
+/* Every lamp sent lit, out: the table ends or is lost */
+static void lamps_off(double ms)
+{
+    for (int i = 0; i < nlamps(); i++)
+        if (lamp_sent[i]) feedback_event(ms, (FbEvent)(FB_LAMP_1 + i), 0, (FbDetail){ 0 });
+    memset(lamp_sent, 0, sizeof lamp_sent);
+}
 
 /* A table's stack can leave its segment: a ball off the left edge of EP13
  * overruns a sprite buffer into the timer chain, and from then on every tick
@@ -87,6 +111,7 @@ static int sound(void)
     if (multi) feedback_event(now_ms(), FB_MULTIBALL, 0, (FbDetail){ 0 });
     if (held) feedback_event(now_ms(), FB_BALL_HELD, 0, (FbDetail){ 0 });
     ready = multi = held = 0;
+    lamps_off(now_ms());
     feedback_event(now_ms(), FB_TABLE_LOST, 1, (FbDetail){ g_cpu.sp, sp0, 0, 0 });
     feedback_table(now_ms(), NULL, NULL, NULL);
     return 0;
@@ -109,6 +134,7 @@ static const struct { const char *key; size_t at; } fields[] = {
     FIELD(pull), FIELD(pull_inc), FIELD(pull_max), FIELD(pull_shift), FIELD(ctrl), FIELD(space),
     FIELD(lane_off), FIELD(lane_x), FIELD(lane_y), FIELD(over_pull), FIELD(scan_x), FIELD(scan_y),
     FIELD(nudge_gate), FIELD(gate_lo), FIELD(gate_hi), FIELD(x_min),
+    FIELD(lamp_seg), FIELD(lamp_table), FIELD(lamps),
 };
 #undef FIELD
 #define NFIELDS (int)(sizeof fields / sizeof fields[0])
@@ -274,6 +300,15 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         else if (!strcmp(key, "msg_fn")) snprintf(m->msg_fn2, sizeof m->msg_fn2, "%s", val);
         else if (!strcmp(key, "effect_fn")) snprintf(m->effect_fn, sizeof m->effect_fn, "%s", val);
         else if (!strcmp(key, "guard_fn")) snprintf(m->guard_fn, sizeof m->guard_fn, "%s", val);
+        else if (!strcmp(key, "lamp_fn")) snprintf(m->lamp_fn, sizeof m->lamp_fn, "%s", val);
+        else if (!strcmp(key, "lamp_list_fn")) snprintf(m->lamp_list_fn, sizeof m->lamp_list_fn, "%s", val);
+        else if (!strcmp(key, "glow_fn")) snprintf(m->glow_fn, sizeof m->glow_fn, "%s", val);
+        else if (!strcmp(key, "glow_from") || !strcmp(key, "glows")) {
+            char *e;
+            unsigned long v = strtoul(val, &e, 16);
+            if (*e || !v || v > WATCH_LAMPS) { *why = "a bad glowing light"; return 0; }
+            *(key[4] == '_' ? &m->glow_from : &m->glows) = (int)v;
+        }
         else if (!strcmp(key, "sfx_on")) {
             char *e;
             unsigned long v = strtoul(val, &e, 16);
@@ -348,10 +383,14 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
     for (int i = 0; i < nnames; i++)
         for (int j = i + 1; j < nnames; j++)
             if (same_name(names[i], names[j])) { *why = "a feature's name used twice"; return 0; }
-    if (version != 7) *why = "another version's map";
-    else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || !*m->guard_fn
+    if (version != 8) *why = "another version's map";
+    else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || !*m->guard_fn || !*m->lamp_fn || !*m->lamp_list_fn
              || got != (1ull << NFIELDS) - 1)
         *why = "incomplete";
+    else if (!m->lamps || m->lamps > WATCH_LAMPS || m->lamp_table + 4u * m->lamps > 0x10000u) *why = "bad lamps";
+    else if (!*m->glow_fn != !m->glows || !m->glows != !m->glow_from
+             || (m->glows && (m->glow_from <= m->lamps || m->glow_from - 1 + m->glows > WATCH_LAMPS)))
+        *why = "bad glowing lights";
     else if (m->nmsgs && !*m->msg_fn) *why = "messages, but no message function";
     else if (m->nzones && (!m->layer || !m->ntilt_pass)) *why = "zones, but no gate";   /* none may pass on the layer */
     else if (m->slots < 1 || m->slots > 8) *why = "a bad ball count";
@@ -443,6 +482,13 @@ int watch_map_use(const WatchMap *m, uint16_t load_seg)
     for (int i = 0; i < WATCH_ZONES; i++) sw_last[i] = -1e18;
     for (int i = 0; i < WATCH_TIMERS; i++) { caught[i] = 0; counted[i] = -1e18; }
     for (int i = 0; i < 8; i++) { ball[i].x = ball[i].y = 0; ball[i].moved = -1e18; }
+    lamp_ds = (uint16_t)(load_seg + M.lamp_seg);
+    lamp_list = -1;
+    memset(lamp_drawn, 0, sizeof lamp_drawn);
+    memset(lamp_sent, 0, sizeof lamp_sent);
+    memset(lamp_blits, 0, sizeof lamp_blits);
+    lamp_muted = lamp_strays = lamp_wrong = 0;
+    lamp_check = getenv("EPIC_LAMP_CHECK") != NULL;
     fresh = 1;
     pull_old = 0;
     flipper[0] = flipper[1] = 0;
@@ -464,6 +510,19 @@ void watch_table_end(void)
     if (multi) feedback_event(now_ms(), FB_MULTIBALL, 0, (FbDetail){ 0 });
     if (held) feedback_event(now_ms(), FB_BALL_HELD, 0, (FbDetail){ 0 });
     ready = multi = held = 0;
+    lamps_off(now_ms());
+    if (lamp_check) {                /* which lamps were drawn at all, and what else was */
+        char never[WATCH_LAMPS * 4 + 1] = "";
+        int drawn = 0;
+        for (int i = 0; i < nlamps(); i++) {
+            if (i >= M.lamps && i < M.glow_from - 1) continue;   /* between lamps and glows: none */
+            if (lamp_blits[i]) drawn++;
+            else snprintf(never + strlen(never), sizeof never - strlen(never), " %d", i + 1);
+        }
+        fprintf(stderr, "[lamps] check %s: %d of %d lamps drawn, never:%s; %u pictures there no lamp's;"
+                " %u lamps drawn other than their list says\n",
+                M.name, drawn, M.lamps + M.glows, *never ? never : " none", lamp_strays, lamp_wrong);
+    }
     feedback_table(now_ms(), NULL, NULL, NULL);
 }
 
@@ -581,11 +640,54 @@ static void stepped(void)
 void watch_released(void)
 {
     flipper[0] = flipper[1] = known = ready = multi = held = 0;
+    memset(lamp_sent, 0, sizeof lamp_sent);
+}
+
+int watch_lamp_at(const CPU *cpu, int *lit)
+{
+    /* the renderer's own: not its copy of the last few to the other page
+     * first (a call of its own), nor another caller's pictures there */
+    const uint32_t sp = (uint32_t)cpu->ss * 16;
+    const uint16_t bx = cpu->bx, k = (uint16_t)(bx / 4 + 1);
+    if (cpu->ds != lamp_ds || lamp_list < 0 || bx & 1 || bx >= 4u * M.lamps
+        || rd16((uint32_t)lamp_ds * 16 + (uint16_t)(M.lamp_table + bx)) != cpu->si
+        || rd16(sp + (uint16_t)(cpu->sp + 4)) != cpu->si
+        || rd16(sp + (uint16_t)(cpu->sp + 6)) != (uint16_t)(lamp_list + k)) return 0;
+    *lit = !(bx & 2);
+    return k;
+}
+
+int watch_glow_lit(int state, int flag)
+{
+    if (state == 0xFD) return 0;
+    if (state == 0xFE) return 1;
+    if (flag == 1 && state < 0x32) return 0;
+    return (state < 0x32 ? state : 0x63 - state) >= 0x19;     /* up to 0x31, and down */
+}
+
+/* Each frame, the lamps that changed. Kept through a pause between balls, as
+ * a table's own lamps are. The demo mutes them; out of it, the lit ones are
+ * sent again, since nothing was while it played. */
+static void lamps(void)
+{
+    const int muted = g_cpu.mem[DS + M.demo] == 1;
+    if (muted != lamp_muted) {       /* muting puts every output out; out of it, none was sent */
+        feedback_mute(muted);
+        memset(lamp_sent, 0, sizeof lamp_sent);
+    }
+    lamp_muted = muted;
+    for (int i = 0; i < nlamps(); i++)
+        if (lamp_drawn[i] != lamp_sent[i]) {
+            emit((FbEvent)(FB_LAMP_1 + i), lamp_drawn[i], 0, 0, i + 1, 0);
+            lamp_sent[i] = lamp_drawn[i];
+        }
 }
 
 void watch_tick(void)
 {
-    if (!g_watch_on || !sound() || !started || idle) return;
+    if (!g_watch_on || !sound()) return;
+    lamps();
+    if (!started || idle) return;
     if (now_ms() - last_step > IDLE_MS) {
         for (int i = 0; i < 2; i++)
             if (flipper[i]) emit((FbEvent)(FB_FLIPPER_LEFT + i), 0, 0, 0, -1, 0);
@@ -627,6 +729,35 @@ static void switch_log(const char *fmt, ...)
 
 void watch_enter(CPU *cpu, const char *fn)
 {
+    if (!strcmp(fn, M.lamp_list_fn)) {                       /* the lamps' list, in SI */
+        lamp_list = cpu->si;
+        return;
+    }
+    if (*M.glow_fn && !strcmp(fn, M.glow_fn)) {              /* a glowing light: CX which, BL its state */
+        const int k = cpu->cx;
+        if (k < M.glow_from || k >= M.glow_from + M.glows || !sound()) return;
+        const int flag = g_cpu.mem[(uint32_t)lamp_ds * 16 + (uint16_t)((k - M.glow_from) * 4 + 3)];
+        lamp_drawn[k - 1] = (uint8_t)watch_glow_lit(cpu->bl, flag);
+        if (lamp_check) lamp_blits[k - 1]++;
+        return;
+    }
+    if (!strcmp(fn, M.lamp_fn) && cpu->ds == lamp_ds) {       /* a lamp's picture, in SI */
+        int lit, k = watch_lamp_at(cpu, &lit);
+        if (k && sound()) lamp_drawn[k - 1] = (uint8_t)lit;
+        if (lamp_check && k) {
+            /* the lamp's state in the list, just set: 5 and 4 drawn lit, 6 and 3 unlit */
+            const uint8_t st = g_cpu.mem[DS + (uint16_t)(lamp_list + k)];
+            lamp_blits[k - 1]++;
+            if ((lit && st != 5 && st != 4) || (!lit && st != 6 && st != 3)) {
+                if (lamp_wrong++ < 8)
+                    fprintf(stderr, "[lamps] check %s: lamp %d drawn %s, its state %u in the list at %04X\n",
+                            M.name, k, lit ? "lit" : "unlit", st, lamp_list);
+            }
+        }
+        else if (lamp_check && lamp_strays++ < 8)
+            fprintf(stderr, "[lamps] check %s: a picture at %04X no lamp's\n", M.name, cpu->si);
+        return;
+    }
     if (g_opt.switch_log && *M.effect_fn && !strcmp(fn, M.effect_fn) && sound())
         /* an effect the table plays: its slot and pan, the first ball's place */
         switch_log("%.0f %s fx%02X %d %d %d\n", now_ms(), M.name, cpu->al, cpu->ah >> 4,

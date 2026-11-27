@@ -177,6 +177,11 @@ void features()
     assert(!autorow::row_has(kSwitch1, "LCR", *two));
     assert(autorow::build({ "Beacon", "10 Bumper Middle Center" }, "LCR", *two).cells[1] == "$Bumper2/$t2TreasureHole");
     for (int e = 0; e < kEvents; e++) assert(is_feature(e) == !*kDofName[e]);
+    // its lamps: t2Lamp1 on, levels, named by the table's number alone, kept out of made rows
+    assert(two->dof(kLamp1) == "t2Lamp1" && autorow::features(13, "")->dof(kLamp96) == "t13Lamp96");
+    assert(autorow::Table{}.dof(kLamp1).empty() && is_level(kLamp1) && is_level(kLamp96) && !is_level(kSwitch24));
+    assert(!autorow::row_has(kLamp1, "LCR", *two) && event_by_name("lamp_96") == kLamp96 && event_by_name("lamp_97") < 0);
+    assert(autorow::listed({ kLamp1, kLamp1 + 1, kLamp1 + 2 }, *two) == "t2Lamp1-3");
 
     // their solenoids: the middle row on their side, after the bumpers there and the launch
     const auto made = [&](const Names &n, const std::string &b) { return autorow::line("t", autorow::build(n, b, *one)); };

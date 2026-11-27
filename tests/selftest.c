@@ -330,13 +330,14 @@ static void test_images(void)
 /* ---- cabinet feedback and the plunger ---- */
 
 static const char k_map[] =
-    "epicpinball-feedback 7\nimage ep1 16 69691905\n"
+    "epicpinball-feedback 8\nimage ep1 16 69691905\n"
     "ds 10\ncs 2000\nactive 100\nx 110\ny 120\nvx 130\nvy 140\nslots 5\n"
     "flip_l 150\nflip_r 152\nup_l 154\nup_r 155\ntilt 160\nmeter 161\ncooldown 162\ndemo 163\n"
     "extra 164\nover 165\ncount 166\ndrain_y 18F\nkick 167\nweak_y 180\nsling_line C7\nmap 170\n"
     "pull 180\npull_inc C\npull_max 2C4\npull_shift 5\nctrl 297\nspace 296\n"
     "lane_off 0\nlane_x 118\nlane_y DC\nover_pull 0\nscan_x 190\nscan_y 192\nnudge_gate 16A\ngate_lo 4\ngate_hi 2A\n"
     "step_fn ep1_step\nkicker_fn ep1_kick\nswitch_fn ep1_sw\nguard_fn ep1_guard\nx_min 1\nbumper 100 60 0\nbumper 200 60 2\n"
+    "lamp_list_fn ep1_lamps\nlamp_fn ep1_lamp\nlamp_seg 3000\nlamp_table 10\nlamps 3\n"
     "msg_fn ep1_msg\nlayer 240\non_layer F9 F8 F1\ntilt_pass F0 F6\n"
     "zone hole 1 F5 0 0 319 399 L TestHole\nzone hole 2 F6 0 0 219 399 C PowerUpHole\n"
     "zone hole 3 F6 220 0 319 399 R RightHole\nzone kickback 1 F8 0 321 50 399 L Kickback\n"
@@ -353,6 +354,10 @@ static void test_feedback_map(void)
     static char cut[sizeof k_map];
     const char *why = "";
     WatchMap m;
+    /* the names the log and the helper use: a lamp's made, the log's own last */
+    assert(!strcmp(feedback_name(FB_LAMP_1), "lamp_1") && feedback_by_name("lamp_96") == FB_LAMP_96);
+    assert(!strcmp(feedback_name(FB_SWITCH_24), "switch_24") && !strcmp(feedback_name(FB_TABLE_LOST), "table_lost"));
+    assert(feedback_by_name("table_start") < 0 && feedback_by_name("lamp_97") < 0);
     assert(watch_map_parse(k_map, &m, &why));
     assert(!strcmp(m.name, "ep1") && m.size == 16 && m.fnv == 0x69691905u && m.pull_max == 708 && m.nbumpers == 2);
     assert(!strcmp(m.layout, "LR"));
@@ -395,7 +400,7 @@ static void test_feedback_map(void)
         assert(!watch_map_parse(cut, &m, &why));
     }
     memcpy(cut, k_map, sizeof k_map);
-    strstr(cut, "feedback 7")[9] = '6';                   /* another version */
+    strstr(cut, "feedback 8")[9] = '7';                   /* another version */
     assert(!watch_map_parse(cut, &m, &why));
     {
         /* names: letters and digits, each once on a table, one for a feature,
@@ -484,6 +489,13 @@ static void test_feedback_map(void)
     memcpy(cut, k_map, sizeof k_map);
     strstr(cut, "on_layer F9")[9] = 'X';                  /* a colour it cannot read */
     assert(!watch_map_parse(cut, &m, &why));
+    memcpy(cut, k_map, sizeof k_map);
+    strstr(cut, "lamps 3")[6] = '0';                      /* a table has lamps */
+    assert(!watch_map_parse(cut, &m, &why));
+    memcpy(cut, k_map, sizeof k_map);
+    strstr(cut, "lamp_fn")[0] = 'q';                      /* and draws them */
+    assert(!watch_map_parse(cut, &m, &why));
+    assert(watch_map_parse(k_map, &m, &why) && m.lamps == 3 && m.lamp_seg == 0x3000 && !strcmp(m.lamp_fn, "ep1_lamp"));
 }
 
 static int seen[FB_OUTPUTS];
@@ -496,6 +508,21 @@ static void store8(uint32_t a, uint8_t v)
 {
     watch_write_byte(a, v);                               /* as vga.c's hook: before the store */
     g_cpu.mem[a] = v;
+}
+
+static uint16_t rd(uint32_t a) { return (uint16_t)(g_cpu.mem[a] | g_cpu.mem[a + 1] << 8); }
+
+/* A lamp's blit as the renderer makes it: its picture and its state's place
+ * in the list on the stack over the far return. The lamp it is, twice, and 1
+ * if lit; 0 if none */
+static int lamp_at(uint16_t ds, uint16_t bx, uint16_t si, uint16_t state)
+{
+    CPU c = g_cpu;
+    uint8_t *st = g_cpu.mem + (uint32_t)c.ss * 16 + c.sp;
+    c.ds = ds; c.bx = bx; c.si = si;
+    st[4] = (uint8_t)si; st[5] = (uint8_t)(si >> 8); st[6] = (uint8_t)state; st[7] = (uint8_t)(state >> 8);
+    int lit = -1, k = watch_lamp_at(&c, &lit);
+    return k ? k * 2 + lit : 0;
 }
 
 static void test_watch(void)
@@ -661,6 +688,82 @@ static void test_watch(void)
     #undef AT
     watch_table_end();
     assert(!level[FB_BALL_HELD]);
+
+    /* lamps: the blitter drawing a lamp's lit or unlit picture (DS:SI, BX its
+     * place in the table of them; on the stack over the far return, the
+     * picture and the lamp's state in the list the renderer was given), sent
+     * as levels once a frame, kept through the demo. Table 5 has lamps lit
+     * and unlit alike: by BX, not SI */
+    {
+        uint8_t *pic = g_cpu.mem + (uint32_t)(0x1000 + 0x3000) * 16 + 0x10;
+        for (int i = 0; i < 6; i++) { pic[2 * i] = (uint8_t)(8 * i); pic[2 * i + 1] = 1; }   /* 0x100, 0x108 ... */
+        pic[10] = 0x20;                                   /* lamp 3 unlit as lit: 0x120 */
+        assert(watch_map_use(&m, 0x1000));
+        assert(lamp_at(0x4000, 0, 0x100, 0x501) == 0);    /* the renderer not entered yet */
+        g_cpu.si = 0x500;
+        watch_enter(&g_cpu, "ep1_lamps");                 /* it draws the list at 500 */
+        assert(lamp_at(0x4000, 0, 0x100, 0x501) == 3 && lamp_at(0x4000, 2, 0x108, 0x501) == 2);
+        assert(lamp_at(0x4000, 10, 0x120, 0x503) == 6 && lamp_at(0x4000, 8, 0x120, 0x503) == 7);
+        assert(!lamp_at(0x4000, 12, 0x130, 0x504) && !lamp_at(0x4000, 0, 0x108, 0x501)
+               && !lamp_at(0x3FFF, 0, 0x100, 0x501) && !lamp_at(0x4000, 1, 0x100, 0x501));
+        assert(!lamp_at(0x4000, 0, 0x100, 0x502) && !lamp_at(0x4000, 0, 0x100, 0x2));  /* not from the renderer */
+        #define BLIT(DS, BX) (lamp_at(DS, BX, rd(0x40010 + (BX)), (uint16_t)(0x500 + (BX) / 4 + 1)), \
+                              g_cpu.ds = (DS), g_cpu.bx = (BX), g_cpu.si = rd(0x40010 + (BX)), watch_enter(&g_cpu, "ep1_lamp"))
+        BLIT(0x4000, 0); BLIT(0x3FFF, 4);                 /* the second: another segment's picture */
+        watch_tick();
+        assert(level[FB_LAMP_1] && seen[FB_LAMP_1] == 1 && !seen[FB_LAMP_1 + 1]);
+        BLIT(0x4000, 2); BLIT(0x4000, 0);                 /* out and in, one frame: nothing changed */
+        watch_tick();
+        assert(seen[FB_LAMP_1] == 1 && level[FB_LAMP_1]);
+        BLIT(0x4000, 2); BLIT(0x4000, 8);
+        watch_tick();
+        assert(!level[FB_LAMP_1] && level[FB_LAMP_1 + 2]);
+        BLIT(0x4000, 10);                                 /* the same picture, unlit */
+        watch_tick();
+        assert(!level[FB_LAMP_1 + 2]);
+        BLIT(0x4000, 8);
+        ds[m.demo] = 1;                                   /* the demo: not felt */
+        BLIT(0x4000, 0);
+        watch_tick();
+        assert(!level[FB_LAMP_1]);
+        ds[m.demo] = 0;                                   /* out of it: every lit lamp again */
+        watch_tick();
+        assert(level[FB_LAMP_1] && level[FB_LAMP_1 + 2] && seen[FB_LAMP_1 + 2] == 2);
+        watch_released();                                 /* the host let everything go */
+        watch_tick();
+        assert(seen[FB_LAMP_1 + 2] == 3);
+        watch_table_end();
+        assert(!level[FB_LAMP_1] && !level[FB_LAMP_1 + 2]);
+        /* tables 3 and 5: lights glowing on the palette past their lamps, by the
+         * glow function's CX (which) and BL (its state); lit at half brightness */
+        assert(!watch_glow_lit(0xFD, 0) && watch_glow_lit(0xFE, 0) && !watch_glow_lit(0x18, 0) && watch_glow_lit(0x19, 0)
+               && watch_glow_lit(0x31, 0) && watch_glow_lit(0x4A, 0) && !watch_glow_lit(0x4B, 0)
+               && !watch_glow_lit(0x31, 1) && watch_glow_lit(0x32, 1));
+        static char glow[sizeof k_map + 64];
+        const char *lf = strstr(k_map, "lamp_seg");
+        WatchMap gm;
+        snprintf(glow, sizeof glow, "%.*sglow_fn ep1_glow\nglow_from 5\nglows 2\n%s", (int)(lf - k_map), k_map, lf);
+        assert(watch_map_parse(glow, &gm, &why) && gm.glow_from == 5 && gm.glows == 2);
+        for (int bad = 0; bad < 3; bad++) {
+            static const char *const wrong[3] = { "glow_fn ep1_glow\nglow_from 3\nglows 2\n", "glow_from 5\nglows 2\n",
+                                                  "glow_fn ep1_glow\nglow_from 5\nglows 5D\n" };
+            snprintf(glow, sizeof glow, "%.*s%s%s", (int)(lf - k_map), k_map, wrong[bad], lf);
+            assert(!watch_map_parse(glow, &m, &why));
+        }
+        pic[-0x10 + 4 + 3] = 1;                           /* lamp 6 only falls */
+        assert(watch_map_use(&gm, 0x1000));
+        #define GLOW(K, BL) (g_cpu.cx = (K), g_cpu.bl = (BL), watch_enter(&g_cpu, "ep1_glow"))
+        GLOW(5, 0xFE); GLOW(6, 0x20); GLOW(7, 0xFE);      /* 7: past them, nothing */
+        watch_tick();
+        assert(level[FB_LAMP_1 + 4] && !level[FB_LAMP_1 + 5] && !seen[FB_LAMP_1 + 6]);
+        GLOW(5, 0xFD); GLOW(6, 0x40);
+        watch_tick();
+        assert(!level[FB_LAMP_1 + 4] && level[FB_LAMP_1 + 5]);
+        watch_table_end();
+        assert(!level[FB_LAMP_1 + 5]);
+        #undef GLOW
+        #undef BLIT
+    }
     pit_at = 0;
     feedback_sink(NULL);
 }

@@ -10,6 +10,7 @@
 #define WATCH_TARGETS 3
 #define WATCH_MSGS 128
 #define WATCH_BANKS 4
+#define WATCH_LAMPS 96                /* FB_LAMPS */
 
 /* A table's own features (FEATURES in tools/feedback_map.py), each with its
  * name: letters and digits, what a DOF row calls it after the table's number */
@@ -36,6 +37,16 @@ typedef struct {
     uint16_t lane_off, lane_x, lane_y, over_pull;
     uint16_t scan_x, scan_y;         /* the ball the switch handler is looking at */
     uint16_t x_min;                  /* where the game keeps a ball's x off the left edge (guard.c) */
+    /* the lamps: the renderer (SI the list of lamp states it draws), the
+     * blitter it hands each lamp's lit or unlit picture, the segment of those
+     * pictures, the table of them (a lamp's lit, then its unlit) and how many
+     * lamps there are. Tables 3 and 5 have lights of another kind past them,
+     * colours of the palette their glow function sets: lamps glow_from to
+     * glow_from + glows - 1 (0: none) */
+    uint16_t lamp_seg, lamp_table, lamps;
+    char lamp_list_fn[24], lamp_fn[24];
+    char glow_fn[24];
+    int glow_from, glows;
     char guard_fn[24];               /* what the step calls after its balls' loop: guard.c's moment */
     char step_fn[24], kicker_fn[24], switch_fn[24], msg_fn[24], msg_fn2[24];   /* a second way to show a text: table 9 */
     /* SSF (ssf.c): the table's effect function, the sound driver's voice
@@ -80,6 +91,14 @@ void watch_released(void);           /* the host let everything go (a dialog): s
 int  watch_running(void);            /* the table's physics is stepping */
 int  watch_game_over(void);          /* 1 no game runs (over), 0 one does; -1 no table followed */
 void watch_write_byte(uint32_t a, uint8_t v);                /* vga.c's write hook */
+/* The lamp the blitter is drawing as it is entered from the renderer (DS:SI
+ * its picture, BX that picture's place in the table of them; on the stack
+ * over the far return, the picture again and the lamp's state in the list
+ * the renderer was given), 1 on, and whether lit; 0 if none */
+int  watch_lamp_at(const CPU *cpu, int *lit);
+/* A glowing light as its function draws it (state 0xFD dimmed, 0xFE full,
+ * else a pulse; flag 1 a pulse that only falls): lit at half its brightness */
+int  watch_glow_lit(int state, int flag);
 const WatchMap *watch_table(uint32_t *ds, uint32_t *cs);     /* the live table, or NULL */
 /* Where the last kicker hit (kicker 1) or switch (0) was, if that recent; or
  * the more recent of the two (-1) */

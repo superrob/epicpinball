@@ -22,6 +22,7 @@
 #include "dof_pipe.h"
 #include "feedback.h"
 #include "machine.h"
+#include "watch.h"
 
 #ifdef _WIN32
 #include "win_spawn.h"
@@ -279,7 +280,10 @@ static void listen_to_it(void)
             in_len = 0;
             if (!strcmp(in, "ready")) {
                 was_ready = 1;
-                if (state == STARTING) state = RUNNING;
+                if (state == STARTING) {
+                    state = RUNNING;
+                    watch_released();        /* what is on was sent before it could hear: again */
+                }
             }
         }
     }

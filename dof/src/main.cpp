@@ -319,7 +319,8 @@ int usage()
     for (auto *e : kDofName)
         if (*e) names += std::string(" ") + e;
     say("events:" + names);
-    say("and a table's own features with its --features: t1PowerUpHole, t1LeftRamp ...");
+    say("and a table's own features with its --features: t1PowerUpHole, t1LeftRamp ...;"
+        " and its lamps, t1Lamp1 on (tools/feedback_map.py --lamps)");
     return CANNOT_START;
 }
 

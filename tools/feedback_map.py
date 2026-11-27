@@ -4,6 +4,7 @@ feedback_map.py - where each table keeps what cabinet feedback watches.
 
     python3 tools/feedback_map.py            # all thirteen; build-linux.sh runs it
     python3 tools/feedback_map.py --show     # and print what it found
+    python3 tools/feedback_map.py --lamps ep1 ...    # each table's lamps, where they are
 
 The thirteen tables are one engine at different offsets. This reads your own
 lifted C (work/gen/epN: each statement carries its instruction in a comment)
@@ -30,8 +31,9 @@ GEN = os.path.join(ROOT, 'work', 'gen')
 DATA = os.path.join(ROOT, 'original')
 OUT = os.path.join(ROOT, 'work', 'feedback')
 TABLES = 13
-VERSION = 7
+VERSION = 8
 MAX_BUMPERS = 6                 # Bumper1-Bumper6
+MAX_LAMPS = 96                  # Lamp1-Lamp96 (src/feedback.h)
 RIM = 40                        # a small run this near a bumper is part of it
 
 N = r'0x([0-9A-F]+)'            # a number, kept
@@ -95,6 +97,110 @@ def effects(f, v):
     if not m:
         raise Missing('the effects switch the effect function asks first')
     v['sfx_on'] = num(m.group(1))        # 0: SOUND FX OFF
+
+
+def lamp_sprites(module, seg, table):
+    """A table's lamps, from the sprite table the lamp renderer reads: each
+    lamp a word for its lit picture and one for its unlit, a picture's header
+    x, y (pixels on the table), width in 4-pixel bytes less one, and rows. A
+    lamp is a pair whose headers the blitter would draw, in about one place;
+    the first that is not ends them. [(on, off, x, y, width, height)]"""
+    out = []
+    while len(out) < 255:
+        at = seg * 16 + table + 4 * len(out)
+        if at + 4 > len(module):
+            break
+        on, off = struct.unpack_from('<HH', module, at)
+        if max(on, off) + 8 > 0x10000 or seg * 16 + max(on, off) + 8 > len(module):
+            break
+        a, b = (struct.unpack_from('<4H', module, seg * 16 + p) for p in (on, off))
+        if not all(h[2] <= 0x1E and 0 < h[3] <= 0x64 and h[0] < MAP_W and h[1] < MAP_H for h in (a, b)) \
+                or abs(a[0] - b[0]) > 8 or abs(a[1] - b[1]) > 8:
+            break
+        out.append((on, off, a[0], a[1], (a[2] + 1) * 4, a[3]))
+    return out
+
+
+def lamps(f, v, load, module, ds=None):
+    """The lamps, as the game draws them: one renderer on every table walks a
+    list of lamp states (1 light it, 2 put it out, 3 and 4 a blink's two
+    halves, 5 and 6 lit and out as drawn), and hands the blitter the lamp's
+    lit or unlit picture from its sprite table, BX its place there, and the
+    lamp's state in the list on the stack. watch.c follows the blitter while
+    the renderer draws: what it draws is what the player sees, light shows
+    and blinks included. As many lamps as the sprite table has, the game's
+    own list holds (the one it lights again for each player) and the
+    renderer draws (table 1 stops at 63, table 8 at 61, tables 3 and 5 at 50).
+
+    Past 50, tables 3 and 5 have lights of another kind: each a colour of the
+    palette its glow function sets, dimmed (0xFD), full (0xFE) or pulsing
+    (3 to 0x63, up and down), from a table of four bytes a light at the
+    start of the pictures' segment. They are lamps 51 on, glow_from to
+    glow_from + glows - 1, which watch.c reads as the glow function is
+    entered: CX the light's place in the list, BL its state."""
+    hits = [n for n, (t, _) in f.items()
+            if re.search(r'cmp bl, 0xFF\n', t) and 'retf' in t and re.search(r'cmp byte ds:\[si\], 0x[0-9A-F]+\n', t)
+            and re.search(rf'mov si, word ds:\[bx\+{A}\]\n', t)]
+    if len(hits) != 1:
+        raise Missing(f'lamp renderer: found {len(hits)} times, not once')
+    v['lamp_list_fn'] = hits[0]
+    if not f[hits[0]][1]:
+        raise Missing(f'{hits[0]} has no RECOMP_ENTER, so its calls cannot be seen')
+    t = f[hits[0]][0]
+    # the blitter's stack (watch.c reads it): the far return, the picture, the
+    # lamp's state in the list, DI, the game's DS
+    m = re.search(rf'push ds\npush di\npush si\n(?:.*\n){{0,3}}?mov dx, {N}\nmov ds, dx\nmov si, word ds:\[bx\+{N}\]\n'
+                  rf'push si\ncall (ep\d+_[0-9A-F]+)\n', t)
+    if not m:
+        raise Missing(f'{hits[0]}: no lamp picture handed to a blitter')
+    v['lamp_fn'] = m.group(3)
+    if not f[v['lamp_fn']][1]:
+        raise Missing(f'{v["lamp_fn"]} has no RECOMP_ENTER, so its calls cannot be seen')
+    v['lamp_seg'] = (num(m.group(1)) - load) & 0xFFFF
+    v['lamp_table'] = num(m.group(2))
+    found = lamp_sprites(module, v['lamp_seg'], v['lamp_table'])
+    most = len(found)
+    cap = re.search(rf'cmp bx, {N}\njb {A}\nmov bx, 0x\1\n', t)           # the last picture it will take
+    if cap:
+        most = min(most, num(cap.group(1)) // 4 + 1)
+    cap = re.search(rf'cmp cx, {N}\nja ', t)                                 # past this, not a lamp
+    if cap:
+        most = min(most, num(cap.group(1)))
+    glow = re.search(rf'cmp bl, 0x3\njb {A}\ncall (ep\d+_[0-9A-F]+)\nmov byte ds:\[si\], bl\n', t)
+    if bool(cap) != bool(glow):
+        raise Missing(f'{hits[0]}: lights past its lamps, but not drawn as this knows')
+    lists = {num(m.group(1)) for n, (x, _) in f.items() for m in re.finditer(
+        rf'cmp byte ds:\[di\+{N}\], 0x5\n(?:.*\n){{0,2}}?mov byte ds:\[di\+0x\1\], 0x1\n'
+        rf'(?:.*\n){{0,2}}?cmp byte ds:\[di\+0x\1\], 0x6\n', x)}
+    if len(lists) != 1:
+        raise Missing(f'the lamp list lit again for each player: found {len(lists)}, not one')
+    if ds is not None:
+        at = ds * 16 + lists.pop()
+        end = module.find(b'\xff', at + 1)
+        if end < 0:
+            raise Missing('the lamp list has no end')
+        most = min(most, end - at - 1)
+        if glow:
+            g = f[glow.group(1)][0]
+            first = num(cap.group(1)) + 1
+            if not re.search(rf'mov ax, 0x{num(m.group(1)):X}\nmov ds, ax\n(?:.*\n){{0,3}}?sub ax, 0x{first:X}\nmov di, ax\n'
+                             rf'shl di, 0x2\nadd al, {A}\ncmp bl, 0xFD\n', g) or not f[glow.group(1)][1]:
+                raise Missing(f'{glow.group(1)}: not a glow function this knows, or not seen called')
+            v['glow_fn'] = glow.group(1)
+            v['glow_from'] = first
+            v['glows'] = end - at - 1 - (first - 1)
+            if not 1 <= v['glows'] or first - 1 + v['glows'] > MAX_LAMPS:
+                raise Missing(f'{v["glows"]} glowing lights from {first}: events are made for {MAX_LAMPS} lamps')
+    found = found[:most]
+    # the table's filler: past its last lamp, entries that draw an earlier one's
+    # picture (table 5 has 9 lamps and 39 of lamp 1). One within the lamps is a
+    # lamp of the list's own (table 8's 56 and 57), drawn where another is.
+    while len(found) > 1 and any(found[-1][0] in l[:2] or found[-1][1] in l[:2] for l in found[:-1]):
+        found.pop()
+    if not 8 <= len(found) <= MAX_LAMPS:
+        raise Missing(f'{len(found)} lamps: events are made for 8 to {MAX_LAMPS}')
+    v['lamps'] = len(found)
+    return found
 
 
 FEATURES = {
@@ -983,6 +1089,7 @@ def scan(img):
         raise Missing('data segment')
     v['ds'] = (num(m.group(1)) - load) & 0xFFFF
     v['cs'] = int(v['main_fn'].split('_')[1], 16) >> 4      # the main routine opens its segment
+    lamps(f, v, load, exe_module(img, file, size), v['ds'])
 
     for k in ('step_fn', 'kicker_fn', 'flipper_fn'):
         if not f[v[k]][1]:
@@ -1265,7 +1372,33 @@ def switch_report(img):
             print('    ' + s)
 
 
+def lamp_report(img):
+    """Each lamp: its number (the event t<N>Lamp<k>), where it is drawn on the
+    table, its side of a cabinet, and the state the game starts it in"""
+    file, load, size, fnv = lifted_as(img)
+    f = read_functions(img)
+    module = exe_module(img, file, size)
+    v = {}
+    found = lamps(f, v, load, module, scan(img)['values']['ds'])
+    glows = f', and {v["glows"]} glowing lights from Lamp{v["glow_from"]}, by {v["glow_fn"]}' if 'glow_fn' in v else ''
+    print(f'{img}: {len(found)} lamps, drawn by {v["lamp_fn"]}{glows}')
+    for k, (on, off, x, y, w, h) in enumerate(found, 1):
+        cx, cy = x + w // 2, y + h // 2
+        first = next(i for i, l in enumerate(found, 1) if on in l[:2] or off in l[:2])
+        same = f'  the picture of Lamp{first}' if first < k else '  lit and unlit the same' if on == off else ''
+        print(f'  Lamp{k:<3} x {x:3}-{x + w - 1:3} y {y:3}-{y + h - 1:3}  centre {cx:3},{cy:3}  {side(cx)}{same}')
+    if 'glow_fn' in v:
+        g = f[v['glow_fn']][0]
+        colour = num(re.search(rf'add al, {N}\n', g).group(1))
+        for k in range(v['glow_from'], v['glow_from'] + v['glows']):
+            print(f'  Lamp{k:<3} glows: palette colour {colour + k - v["glow_from"]:X}')
+
+
 def main():
+    if '--lamps' in sys.argv:
+        for img in sys.argv[sys.argv.index('--lamps') + 1:]:
+            lamp_report(img)
+        return 0
     if '--switches' in sys.argv:
         for img in sys.argv[sys.argv.index('--switches') + 1:]:
             switch_report(img)

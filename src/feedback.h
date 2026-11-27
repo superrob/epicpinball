@@ -34,6 +34,9 @@ typedef enum {
     /* A table's other features, its own names for each (its lanes, loops,
      * locks, a ramp it counts no other way): on a switch, or a scoreboard text */
     FB_SWITCH_1, FB_SWITCH_24 = FB_SWITCH_1 + 23,
+    /* levels: a table's lamps, lit as the game draws them, in its own order
+     * (tools/feedback_map.py --lamps): $t1Lamp1 */
+    FB_LAMP_1, FB_LAMP_96 = FB_LAMP_1 + 95,
     FB_OUTPUTS,                              /* from here: only for the log */
     FB_TABLE_START = FB_OUTPUTS, FB_TABLE_END, FB_TABLE_LOST,
     FB_EVENTS
@@ -44,6 +47,7 @@ typedef enum {
 #define FB_ROLLOVERS 6
 #define FB_RAMPS 3
 #define FB_SWITCHES 24
+#define FB_LAMPS 96
 static inline FbEvent fb_bumper(int i) { return (FbEvent)(i < 3 ? FB_BUMPER_1 + i : FB_BUMPER_4 + i - 3); }
 
 /* What an event carries for the log: where, and what it was made of */
