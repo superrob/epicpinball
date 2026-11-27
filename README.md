@@ -47,9 +47,10 @@ conformance harness passes 154/154 on Linux.**
 | A full game, start to final ball, played by hand | ✅ |
 | Cabinet mode, `--cabinet` (Linux and Windows) | ✅ on a real cabinet (table 1) and on virtual displays; Windows on a cabinet: table 1 on its playfield display (the scoreboard on its DMD), not yet played |
 | Nudging from a cabinet: an accelerometer's shove by how hard, nudge buttons as the game's nudge (`[nudge]`, Linux and Windows) | ✅ on a real cabinet's accelerometer (a Pinscape Pico); by a scripted accelerometer on four tables and a virtual board in a window; nudge buttons not yet on a real board; Windows: the Pinscape Pico read on a cabinet, not yet played |
-| Cabinet feedback through libdof (`--dof`) and an analog plunger (`[plunger]`), Linux and Windows | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick); Windows: the helper built by `dof\build.ps1` on a cabinet and started on table 1 with DirectOutput's files, not yet played |
+| Cabinet feedback through libdof (`--dof`) and an analog plunger (`[plunger]`), Linux and Windows | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13, each with events of its own, only in a sandbox (loopback, a simulated board, a virtual joystick, four hours of `--autoplay` each); Windows: the helper built by `dof\build.ps1` on a cabinet and started on table 1 with DirectOutput's files, not yet played |
 | SSF: the board's sounds on a cabinet's exciters, 7.1 (`--ssf`, Linux and Windows) | ✅ headless on all 13 tables (eight channels measured), and on a cabinet's exciters; Windows headless under Wine, and opened in 7.1 on a cabinet, not yet heard in play |
 | Straight to a table, `--table N` | ✅ on a real cabinet; headless on all 13 tables (quit, high score, game over, play again); Windows headless under Wine |
+| Between games with `--cabinet --table N`: initials on the DMD, Start plays again | implemented: headless on table 1 and in an offscreen window; not yet on a real cabinet, nor on Windows |
 | A 128x32 DMD (`--dmd` in a window, `--dmd-device` on a real DMD through libdmdutil; Linux and Windows) | ✅ on a real cabinet with a ZeDMD, on table 1; all 13 tables headless; `--dmd-device` on Windows: the helper built by `dmd\build.ps1` on a cabinet, which found its ZeDMD and sent it table 1's frames (not yet looked at) |
 | The settings tool, `epicpinball-config` (Linux and Windows) | ✅ on a real cabinet (Linux); on Windows: on a cabinet, its pages drawn and the Pinscape Pico read live; its import, *+ press*, calibration and speaker test not yet |
 | **Conformance** ([docs](docs/conformance.md)) | **154/154** on Linux (Windows skips the 11 cabinet checks, and has not run the 10 feedback ones) |
@@ -79,7 +80,9 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   [How to set one up](docs/remaster.md#cabinet-mode).
 - **Straight to a table** (`--table N`): table N with a one-player game, in
   half a second, for a frontend; quitting the table quits the program, with
-  PINBALL saving the high scores as it always does. [How](docs/table.md).
+  PINBALL saving the high scores as it always does. In a cabinet it plays as
+  a pinball machine: initials on the DMD with the flipper buttons, then
+  GAME OVER until Start plays the table again. [How](docs/table.md).
 - **SSF** (`--ssf`): 7.1 for a cabinet with exciters. The backbox
   speakers keep the music and the callouts; bumpers, slingshots, flippers,
   drop targets and the plunger play on the exciters, top or bottom, left or
@@ -93,8 +96,8 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   with its explosions and waves; tables 1-8's leave the playfield for it.
   Between them, the table's score. [How it works](docs/dmd.md).
 - **Cabinet feedback** (`--dof`): flippers, slingshots, bumpers,
-  launch, drain, nudge and the rest go to libdof as DOF events (on table 1
-  also its holes, kickback, targets, lanes, ramps, jackpots and awards), with
+  launch, drain, nudge and the rest go to libdof as DOF events (and each
+  table's own holes, ramps, lanes, targets, loops, jackpots and awards), with
   VPinball's DOF files if there are any (a Config Tool export works as it
   is: the game's row is made from its device list, solenoids, flashers and
   MX strips with DOF's shapes included) (no limits: those are the
@@ -227,7 +230,7 @@ actions ([docs](docs/cabinet-feedback.md#keys-and-buttons)).
 | `--stretch` | with `--cabinet`: the playfield stretched to fill its display, this run |
 | `--playfield-display N` | with `--cabinet`: the display the playfield fills; they are listed at start |
 | `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard (or with `--dmd`, the DMD) window goes, this run |
-| `--table N` | straight to table N (1-13) and a one-player game; quitting it quits the program ([docs](docs/table.md)) |
+| `--table N` | straight to table N (1-13) and a one-player game; quitting it quits the program; with `--cabinet`, initials on the DMD and Start for the next game ([docs](docs/table.md)) |
 | `--ssf` | 7.1 for a cabinet with exciters: the board's sounds on the side (top) and rear (bottom) pairs; `[ssf]` in `epicpinball.ini` sets their volumes ([docs](docs/ssf.md)) |
 | `--ssf-volumes FX,ROLL` | SSF's effects and rolling volumes for this run, over `[ssf]`'s (4 is the default, 0 none) |
 | `--dmd` | a 128x32 DMD in a window of its own; in a cabinet, in place of the scoreboard window ([docs](docs/dmd.md)) |
@@ -236,6 +239,7 @@ actions ([docs](docs/cabinet-feedback.md#keys-and-buttons)).
 | `--no-cabinet`, `--no-dmd`, `--no-dmd-device`, `--no-ssf`, `--no-dof` | leave a mode out this run that `[modes]` in `epicpinball.ini` turns on (the settings tool sets it; [docs](docs/config.md)) |
 | `--joysticks` | list joysticks, their live axes and buttons pressed, to set up `[plunger]`, `[nudge]` and `[buttons]` in `saves/controller.ini`; the settings tool does it with pictures. On Windows a board may have another name, and its axes are X Y Z RX RY RZ then the sliders |
 | `--feedback-log FILE`, `--plunger-trace "ms:percent,..."`, `--nudge-trace "ms:x,y,..."`, `--nudge-velocity` | testing: what a cabinet would feel; a scripted plunger sensor; a scripted accelerometer, or with `--nudge-velocity` its velocity |
+| `--autoplay`, `--switch-log FILE` | testing: a player that flips at a ball coming down, launches, and starts game after game (with `--table`); each switch colour the ball is handled on and where, and each effect the table plays ([docs](docs/cabinet-feedback.md#finding-a-tables-features)) |
 | `--mute` | |
 | `--headless` | no window, no audio device, deterministic time — works over RDP |
 | `--record out.mp4` | video and audio through ffmpeg (with `--headless`: unattended) |

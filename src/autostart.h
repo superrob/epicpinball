@@ -9,6 +9,7 @@
 extern int g_auto_on;                 /* PINBALL is driven: RECOMP_ENTER calls autostart_enter */
 
 void autostart_wanted(int table);     /* --table N, 1-13: before the game starts */
+void autostart_arcade(int on);        /* --cabinet: between games on the DMD, Start for the next */
 /* PINBALL is loaded: its menus map (work/feedback/pin.map) is read and
  * checked against it, or the run stops with why */
 void autostart_begin(const LiftedImage *img, uint16_t load_seg);
@@ -24,10 +25,19 @@ void autostart_exec_done(void);       /* a program PINBALL ran has ended: before
  * 1 starting (Esc cancels the run), 2 leaving (nothing does); 0 the player's */
 int  autostart_busy(void);
 
+/* Between games in a cabinet (autostart_arcade): */
+int  autostart_key(int sc);           /* the player's key down (pad.c, after [keys]): 1 taken here, not the game's */
+int  autostart_quit(void);            /* the window closed: 1 when it goes out here, the initials and scores kept */
+int  autostart_between(void);         /* the table has ended: the DMD is autostart_dmd's */
+int  autostart_hold(void);            /* 1: the playfield keeps its picture (the game is over), PINBALL unseen and unheard */
+/* The DMD's picture, when it is ours: 1 changed, 0 not; -1 not ours (dmd_frame's) */
+int  autostart_dmd(uint32_t out[128 * 32]);
+
 /* The pure parts, for the self-test */
 typedef struct {
     uint32_t size, fnv;
     uint16_t key, cursor, scroll, selected, present, screen_cursor, initials, menu_frames;
+    uint16_t entry, scores, letters;  /* the new high score's place, the high scores, a letter per scan code */
     char frame_fn[24], intro_fn[24], menus_fn[24], screen_fn[24], exec_fn[24], end_fn[24];
 #define SUB_FNS 4
     int nsub;

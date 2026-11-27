@@ -3,6 +3,7 @@
  * ; comments, read and written without losing what is around a key.
  */
 #pragma once
+#include <stddef.h>
 
 /* key's value in [sec], else def; a ';' anywhere starts a comment. out is
  * returned. Names are matched ignoring case; the first match wins. */
@@ -18,3 +19,7 @@ const char *ini_get_raw(const char *path, const char *sec, const char *key, cons
  * section at the end of the file. value NULL removes the key. A value may not
  * hold ';' or a line end. 1 when written. */
 int ini_set(const char *path, const char *sec, const char *key, const char *value);
+
+/* path's whole content, written beside it and then put in its place, so it
+ * is never half written. 1 when done. */
+int file_replace(const char *path, const void *data, size_t n);

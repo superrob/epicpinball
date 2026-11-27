@@ -36,6 +36,9 @@
  *                     not this time, whatever [modes] says
  *   --feedback-log FILE  what a cabinet would feel, as a list: flippers, slings,
  *                     bumpers, launch, drain ... (docs/cabinet-feedback.md)
+ *   --autoplay        testing, with --table: flips, launches, plays game after game
+ *   --switch-log FILE testing: each switch colour the ball is handled on, and where;
+ *                     each effect the table plays (fxNN)
  *   --dmd             a 128x32 DMD of the table: with --cabinet in the
  *                     scoreboard's window, else a window of its own; the
  *                     messages of tables 1-8 leave the playfield for it
@@ -183,6 +186,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--mute")) g_opt.mute = 1;
         else if (!strcmp(a, "--trace")) g_opt.trace = 1;
         else if (!strcmp(a, "--feedback-log") && v) { g_opt.feedback_log = v; i++; }
+        else if (!strcmp(a, "--switch-log") && v) { g_opt.switch_log = v; i++; }
         else if (!strcmp(a, "--dof")) g_opt.dof = 1;
         else if (!strcmp(a, "--dmd")) g_opt.dmd = 1;
         else if (!strcmp(a, "--dmd-device")) g_opt.dmd_device = 1;
@@ -193,6 +197,7 @@ int main(int argc, char **argv)
             if (*e || n < 1 || n > 13) { fprintf(stderr, "--table: a table from 1 to 13, not %s\n", v); return 2; }
             g_opt.table = (int)n; i++;
         }
+        else if (!strcmp(a, "--autoplay")) g_opt.autoplay = 1;
         else if (!strcmp(a, "--joysticks")) list_joysticks = 1;
         else if (!strcmp(a, "--plunger-trace") && v) { g_opt.plunger_trace = v; i++; }
         else if (!strcmp(a, "--nudge-trace") && v) { g_opt.nudge_trace = v; i++; }
@@ -256,6 +261,7 @@ int main(int argc, char **argv)
         if (!feedback_log(g_opt.feedback_log)) fatal("cannot write %s", g_opt.feedback_log);
         watch_wanted();
     }
+    if (g_opt.switch_log) watch_wanted();
     if (g_opt.dof && !dof_open(DOF_HELPER, g_opt.savedir)) {
         if (!mode_ini[4]) return 2;
         mode_skip(4, "its helper did not start (above)");
@@ -268,7 +274,7 @@ int main(int argc, char **argv)
     }
     if (g_opt.dmd || g_opt.dmd_device || g_opt.cabinet) dmd_wanted();   /* a cabinet hides keyboard messages */
     if (g_opt.ssf) { ssf_wanted(); watch_wanted(); }              /* SSF places sounds by what watch.c follows */
-    if (g_opt.table) { autostart_wanted(g_opt.table); watch_wanted(); }   /* the watcher says when its game runs */
+    if (g_opt.table) { autostart_wanted(g_opt.table); autostart_arcade(g_opt.cabinet); watch_wanted(); }   /* the watcher says when its game runs */
     atexit(feedback_close);
     atexit(dmd_pipe_close);            /* fatal() does not come through host_shutdown */
     atexit(dof_close);

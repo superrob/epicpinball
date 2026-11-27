@@ -134,8 +134,8 @@ White=48,48,48
 
 [Config DOF]
 # One column per output, from 1 (an RGB column takes three).
-epicpinball,E101 50,E102 50,E103 50,E104 50
-epicpinball_ep07,E101 50,E102 50,E103 50 I32,E104 50 I32
+epicpinball,$FlipperLeft 50,$FlipperRight 50,$SlingshotLeft 50,$SlingshotRight 50
+epicpinball_ep07,$FlipperLeft 50,$FlipperRight 50,$SlingshotLeft 50 I32,$SlingshotRight 50 I32
 ```
 
 - **The file's number** is the DOF unit: 120 is Pinscape Pico unit 1, 121 is
@@ -143,61 +143,71 @@ epicpinball_ep07,E101 50,E102 50,E103 50 I32,E104 50 I32
 - **The table's name** is `epicpinball_ep01` to `epicpinball_ep13`. A table
   without a row of its own uses `epicpinball`. With neither, one is made from
   the file's header ([below](#no-row-one-is-made-from-the-header)).
-- **The events:**
+- **The events** have names, as a table without a ROM names its own: a row
+  writes them with a `$`, `$FlipperLeft`, in any case. `--test` takes the same
+  name without the `$`. These are the same on every table:
 
-| Number | `--test` name | When | Signal |
-|---|---|---|---|
-| E101, E102 | `flipper_left`, `flipper_right` | the flipper starts up (not the key: never while tilted). EP4's and EP12's extra flippers share their side | on while it is up |
-| E103, E104 | `sling_left`, `sling_right` | the slingshot kicks, by where the ball touched it. EP8 has none, EP9 only a left one | instant |
-| E105, E106, E107 | `bumper_1`, `bumper_2`, `bumper_3` | that bumper kicks: a table's bumpers are numbered from the left ([below](#the-bumpers)) | instant |
-| E108 | `launch` | the game launches the ball | instant |
-| E109 | `ball_release` | a ball arrives in the shooter lane for a new game or the next ball | instant |
-| E110 | `drain` | a ball is lost | instant |
-| E111, E112 | `nudge`, `tilt` | each one | instant |
-| E113 | `knocker` | an extra ball. The game has no replay or match, and EP1 and EP5 never give one | instant |
-| E114 | `ball_ready` | a ball waits in the shooter lane, as the plunger sees it: from its release until it leaves the lane, so a plunge too weak to get out keeps it on. Enigma: while no ball is up | on while it waits |
-| E115 | `multiball` | two balls or more rolling: each gone over 24 pixels in the last 5 seconds, so a ball parked in a lock or kickback, or waiting in the lane, does not count. A ball cradled on a flipper longer than that drops out until it moves | on while it lasts |
-| E116 | `game_start` | a game begins, with its first ball's release (Enigma: its first launch) | instant |
-| E117 | `game_over` | a game ends | instant |
-| E118, E119, E120 | `bumper_4`, `bumper_5`, `bumper_6` | as `bumper_1`; only table 5 has more than three | instant |
+| Event | When | Signal |
+|---|---|---|
+| `FlipperLeft`, `FlipperRight` | the flipper starts up (not the key: never while tilted). EP4's and EP12's extra flippers share their side | on while it is up |
+| `SlingshotLeft`, `SlingshotRight` | the slingshot kicks, by where the ball touched it. EP8 has none, EP9 only a left one | instant |
+| `Bumper1` … `Bumper6` | that bumper kicks: a table's bumpers are numbered from the left ([below](#the-bumpers)); only table 5 has more than three | instant |
+| `Launch` | the game launches the ball | instant |
+| `BallRelease` | a ball arrives in the shooter lane for a new game or the next ball | instant |
+| `Drain` | a ball is lost | instant |
+| `Nudge`, `Tilt` | each one | instant |
+| `ExtraBall` | an extra ball, for the knocker. The game has no replay or match, and EP1 and EP5 never give one | instant |
+| `BallReady` | a ball waits in the shooter lane, as the plunger sees it: from its release until it leaves the lane, so a plunge too weak to get out keeps it on. Enigma: while no ball is up | on while it waits |
+| `Multiball` | two balls or more rolling: each gone over 24 pixels in the last 5 seconds, so a ball parked in a lock or kickback, or waiting in the lane, does not count. A ball cradled on a flipper longer than that drops out until it moves | on while it lasts |
+| `GameStart` | a game begins, with its first ball's release (Enigma: its first launch) | instant |
+| `GameOver` | a game ends | instant |
 
-A table's own features come next, numbered left to right on the table, top first
-on a tie. **Only table 1 sends them so far** ([below](#table-1-super-android));
-on other tables they never fire.
+On a table with features of its own, also:
 
-| Number | `--test` name | When | Signal |
-|---|---|---|---|
-| E121-E125 | `hole_1` … `hole_5` | that hole kicks its ball out (also when multiball takes it) | instant |
-| E126 | `ball_held` | a hole holds a ball | on while it does |
-| E127 | `kickback` | the kickback fires | instant |
-| E128-E130 | `target_1` … `target_3` | a drop target goes down | instant |
-| E131 | `targets_down` | the bank's last one goes down and the bank resets | instant |
-| E132-E137 | `rollover_1` … `rollover_6` | the ball rolls over it, every pass | instant |
-| E138 | `lanes_lit` | a set of lanes complete, lit by the ball | instant |
-| E139 | `skill_shot` | a skill shot | instant |
-| E140-E142 | `ramp_1` … `ramp_3` | a ramp made, as the game counts it | instant |
-| E143 | `jackpot` | a jackpot | instant |
-| E144 | `super_jackpot` | a bigger one: double, super | instant |
-| E145 | `award` | a mode or progress award the scoreboard announces | instant |
+| Event | When | Signal |
+|---|---|---|
+| `BallHeld` | a hole holds a ball | on while it does |
+| `LanesLit` | a set of lanes complete, lit by the ball | instant |
+| `SkillShot` | a skill shot | instant |
+| `Jackpot` | a jackpot | instant |
+| `SuperJackpot` | a bigger one: double, super | instant |
+| `Award` | a mode or progress award the scoreboard announces | instant |
+
+A table's own holes, kickback, drop targets, rollovers and ramps are named by
+the table: `t`, its number, and the feature's name, so `$t1PowerUpHole` is
+table 1's power-up hole and nothing on any other table. Every table has them
+([below](#table-1-super-android)); tables 3 and 5 show no texts of their own,
+so they have no `Jackpot`, `SkillShot` or `Award`.
+
+| Feature | When | Signal |
+|---|---|---|
+| a hole | it kicks its ball out (also when multiball takes it) | instant |
+| a kickback | it fires | instant |
+| a drop target | it goes down | instant |
+| a bank's targets all down (its name and `Down`) | the bank's last one goes down and the bank resets | instant |
+| a rollover | the ball rolls over it, every pass | instant |
+| a ramp | made, as the game counts it (or, on a table that counts none, its switch) | instant |
+| another switch, a lane, a loop, a lock | the ball rolls over it, or the scoreboard says it happened | instant |
+| a bank of targets (table 6) | all down, as it resets | instant |
 
 #### Table 1 (Super Android)
 
 | Event | Is |
 |---|---|
-| `hole_1` | the test hole, top left |
-| `hole_2` | the left hole (android millions), on the left side |
-| `hole_3` | the power-up hole, centre |
-| `hole_4` | the physical-systems hole, right |
-| `hole_5` | the right hole, at the end of the centre ramp |
-| `kickback` | the left outlane |
-| `target_1` … `target_3` | the drop targets 1, 2, 3 on the left |
-| `rollover_1` | the star rollover, left of centre |
-| `rollover_2` | the left lane (its jackpot) |
-| `rollover_3` … `rollover_6` | the four top lanes, left to right; all four lit is `lanes_lit` |
-| `ramp_1`, `ramp_2`, `ramp_3` | the left, centre and right ramps. The centre one also kicks out of `hole_5` |
-| `jackpot` | JACKPOT |
-| `super_jackpot` | DOUBLE JACKPOT, SUPER JACKPOT |
-| `award` | POWER UP, FULL POWER, I.Q. UPGRADE, BUMPER VALUE, COMPUTER LINK, the physical systems, BASIC IO / AI / AI2 / DATABASE INSTALLED, ANDROID IS ACTIVATED, VIRUS FLUSHED OUT, ANDROID MILLIONS, each arm, leg, head and torso, and each LEVEL 1 test |
+| `t1TestHole` | the test hole, top left |
+| `t1LeftHole` | the left hole (android millions), on the left side |
+| `t1PowerUpHole` | the power-up hole, centre |
+| `t1PhysicalSystemsHole` | the physical-systems hole, right |
+| `t1RightHole` | the right hole, at the end of the centre ramp |
+| `t1Kickback` | the left outlane |
+| `t1DropTarget1` … `t1DropTarget3` | the drop targets 1, 2, 3 on the left; all three down is `t1DropTargetsDown` |
+| `t1Star` | the star rollover, left of centre |
+| `t1LeftLane` | the left lane (its jackpot) |
+| `t1TopLane1` … `t1TopLane4` | the four top lanes, left to right; all four lit is `LanesLit` |
+| `t1LeftRamp`, `t1CentreRamp`, `t1RightRamp` | the ramps. The centre one also kicks out of `t1RightHole` |
+| `Jackpot` | JACKPOT |
+| `SuperJackpot` | DOUBLE JACKPOT, SUPER JACKPOT |
+| `Award` | POWER UP, FULL POWER, I.Q. UPGRADE, BUMPER VALUE, COMPUTER LINK, the physical systems, BASIC IO / AI / AI2 / DATABASE INSTALLED, ANDROID IS ACTIVATED, VIRUS FLUSHED OUT, ANDROID MILLIONS, each arm, leg, head and torso, and each LEVEL 1 test |
 
 They come from the game's own code: the switch handler it calls with the colour
 of the switch under the ball, what that code keeps (a hole's hold timer, the
@@ -208,8 +218,279 @@ RAMPS and LEFT LANES among them) over four hours of its demo. What the handler
 turns back is not sent either: tilted it handles only a few colours, and with
 the ball on a ramp's wire, over the top lanes, only the ramps' own.
 
-E105 to E107 meant the left, centre and right of the table until the per-bumper
-events came; on a table with three bumpers that is still what they are.
+#### Table 2 (Pot of Gold)
+
+| Event | Is |
+|---|---|
+| `t2TreasureHole` | the treasure hole, centre, under the bumpers |
+| `t2Cave` | the cave, far left: where the balls are locked |
+| `t2SkyRamp` | the crossing ramps made, as the scoreboard says SKY RAMP |
+| `t2LeftCloverLane`, `t2RightCloverLane` | the lanes down each side (the 4 leaf clover) |
+| `t2CaveLane` | the lane into the cave |
+| `t2TopLeprechaun`, `t2RightLeprechaun` | the leprechauns' switches, at the top left and on the right |
+| `t2RainbowRight` | the rainbow lane's right end |
+| `t2RainbowLane` | both ends of the rainbow lane made: RAINBOW LANE |
+| `t2BallLock` | BALL 1 LOCKED, BALL 2 LOCKED |
+| `t2LeprechaunCaught` | YOU CAUGHT A LEPRECHAUN! |
+| `t2RabbitFoot` | FOUND RABBIT FOOT, RABBIT FOOT FOUND IN CAVE |
+| `SkillShot`, `Jackpot` | SKILL SHOT, JACKPOT!!! |
+| `LanesLit` | the four top lanes lit |
+| `Award` | LEPRECHAUN BONUS, LUCKY RABBIT FOOT, TREASURE - 300K, 4 LEAF CLOVER BONUS, LEPRECHAUNS - SHOOT TREASURE |
+
+Four hours of `--autoplay` (111 games) fired every one of them but
+`Jackpot`: the locks came, multiball did not.
+
+#### Table 3 (Excalibur)
+
+It shows no texts of its own, so it has no `Jackpot`, `SkillShot` or
+`Award`.
+
+| Event | Is |
+|---|---|
+| `t3BlackHole` | the black hole, at the head of the right lane |
+| `t3LaneS`, `t3LaneW`, `t3LaneO`, `t3LaneR`, `t3LaneD` | SWORD, the top lanes; all five lit is `LanesLit` |
+| `t3LeftLoop`, `t3RightLoop` | the lanes by the axe and the spear; both made advance the multiplier |
+| `t3LeftLane`, `t3RightLane` | the lanes that light the kickbacks |
+| `t3LeftOutlane`, `t3RightOutlane` | the outlanes, which kick a ball back when lit |
+| `t3LeftOrbit`, `t3RightOrbit` | the top corners, by the shields |
+| `t3LeftTarget`, `t3RightTarget` | the red capsule, left; the blue one by XTRA BALL, right |
+| `t3Lane1k`, `t3Lane5k`, `t3Lane10k` | the switches down the right U lane |
+| `t3Spinner` | the spinner, left, under the top bumper |
+
+Four hours of `--autoplay` (154 games) fired every one of them.
+
+#### Table 4 (Crash and Burn)
+
+| Event | Is |
+|---|---|
+| `t4LeftScoop`, `t4TopScoop` | the scoops left and top right, toward the extra ball |
+| `t4PitStop` | the pit, centre |
+| `t4DeadManCurve` | the hole at the foot of Dead Man Curve, right: the ball lock |
+| `t4BlowOut` | the tyre's hub, top |
+| `t4RaceTrack` | ONTO THE RACE TRACK: the race track ramp |
+| `t4DriverD` … `t4DriverR2` | DRIVER, the targets down the right, top to bottom |
+| `t4LeftOrbit`, `t4RightOrbit` | the orbits |
+| `t4LeftOutlane`, `t4RightOutlane` | the outlanes |
+| `t4LeftGreenLane`, `t4RightGreenLane` | the lanes by the slingshots: GO - GREEN LIGHT |
+| `t4BallLock` | BALL 1 LOCKED |
+| `Jackpot`, `SuperJackpot` | JACKPOT!!, DOUBLE JACKPOT |
+| `Award` | ALL GREEN LIGHTS - 5M, MPH MULTIPLIER INCREASE, REFUELED-15M, NEW TIRES-10M, TUNE UP-5M, MYSTERY BONUS, PIT STOP |
+
+Four hours of `--autoplay` (139 games) fired every one of them but the
+jackpots.
+
+#### Table 5 (Magic)
+
+It shows no texts of its own, so it has no `Jackpot`, `SkillShot` or
+`Award`. Its holes and lanes are drawn into its collision map as it runs.
+
+| Event | Is |
+|---|---|
+| `t5TopHole` | the hole under the top arch |
+| `t5LaneM`, `t5LaneA`, `t5LaneG`, `t5LaneI`, `t5LaneC` | MAGIC, the top lanes |
+| `t5LeftLane` | the lane on the left: 50, 75, 100 |
+| `t5CentreTarget` | the red target under the top hat |
+| `t5YellowBumpers` | the target that lights the yellow bumpers, left |
+| `t5LeftOutlane`, `t5RightOutlane` | the outlanes |
+| `t5RightOrbit` | the orbit by the scarf, top right |
+
+Four hours of `--autoplay` (153 games) fired every one of them.
+
+#### Table 6 (Jungle Pinball)
+
+| Event | Is |
+|---|---|
+| `t6StarHole` | the hole by the star, top left |
+| `t6SwordHole` | the hole by the swords, top right |
+| `t6NestHole` | the nest, right: FROG and ANT millions |
+| `t6LeftRamp`, `t6RightRamp` | the vine ramps |
+| `t6TopLane1` … `t6TopLane4` | the top lanes, left to right |
+| `t6SerpentPath` | the serpent's path, top left |
+| `t6SwordTarget1` … `t6SwordTarget3` | the targets under the nest, I I I |
+| `t6BlueTarget1` … `t6BlueTarget4` | the blue targets down the right, top first |
+| `t6LeftTarget1`, `t6LeftTarget2` | the targets on the left (the death blade hole) |
+| `t6LeftOutlane`, `t6RightOutlane`, `t6LeftInlane`, `t6RightInlane` | the lanes by the flippers |
+| `t6SwordTargetsDown`, `t6BlueTargetsDown`, `t6LeftTargetsDown` | each bank's targets all down: it resets |
+| `t6AppleFalls` | AN APPLE FALLS |
+| `Jackpot` | JACKPOT!!! |
+| `Award` | CONSECUTIVE TARGETS- 5MIL, FROG MILLIONS, ANT MILLIONS, BONUS WILL BE DOUBLED |
+
+A target fires as its switch, each hit; its bank is watched by the game's
+flags for it (`bankset` in the map), which go down one by one and are cleared
+together. Four hours of `--autoplay` (160 games) fired every one of them but
+`Jackpot`: the blue bank reset 26 times, as many as AN APPLE FALLS, which the
+game says when it does.
+
+#### Table 7 (Deep Sea)
+
+| Event | Is |
+|---|---|
+| `t7EelNest`, `t7SunkenShip` | the holes left, by the eel, and right, the wreck |
+| `t7ReefHole` | the hole in the reef, centre |
+| `t7AirTanks` | the hole on the right that fills the air tanks |
+| `t7LeftRamp`, `t7RightRamp` | the ramps made: 1 OF 3 RAMPS ... |
+| `t7Seahorse1` … `t7Seahorse4` | the top lanes, left to right: the skill shot |
+| `t7Stingray` | the stingray, top left |
+| `t7LeftInlane`, `t7RightInlane`, `t7LeftOutlane`, `t7RightOutlane` | the lanes by the flippers |
+| `t7TopLoop`, `t7RightOrbit` | the loop at the top, the orbit on the right |
+| `t7TreasureTarget1` … `t7TreasureTarget4` | 1M ADDED TO TREASURE, left first |
+| `t7DiverEnters` | ANOTHER DIVER ENTERS |
+| `SkillShot`, `Jackpot` | SKILL SHOT, JACKPOT! |
+| `Award` | ALL RAMPS COMPLETE, SUNKEN SHIP GOLD FOUND, SECRET TREASURE, STINGRAY, MYSTERY HOLE FOUND, REFILL OF AIR, SHARK LEAVES |
+
+Four hours of `--autoplay` (120 games) fired every one of them but
+`Jackpot`.
+
+#### Table 8 (Enigma)
+
+Each level draws switches of its own as it runs, so most of Enigma's events
+are its scoreboard's.
+
+| Event | Is |
+|---|---|
+| `t8LockHole` | the hole that locks the ball: BALL LOCKED is `t8BallLock` |
+| `t8SpikedPit`, `t8Spring` | the spiked pit and the spring, as their levels draw them |
+| `t8AlphaRamp`, `t8BetaRamp` | the wire loops on the left, as the scoreboard names them |
+| `t8DeltaRamp`, `t8GammaRamp` | the loops on the right |
+| `t8Mine` | DESTROYED BY A MINE |
+| `t8EnigmaComes` | THE ENIGMA HAS COME |
+| `SuperJackpot` | SUPER JACKPOT AWARDED |
+| `Award` | LEVEL 1, 2, 3 COMPLETE, MYSTIC SCROLL, GOLD BEAR, LOLLY POP, SPRING, TEDDY WAS RUN OVER, BRAINS!!, A HAND FOR 12M |
+
+Eight hours of `--autoplay` (224 games) fired every one of them but
+`t8Spring`, `t8EnigmaComes` and `SuperJackpot`, from levels it did not
+reach.
+
+#### Table 9 (Cyborgirl)
+
+| Event | Is |
+|---|---|
+| `t9TenseDeck` | the hole bottom left |
+| `t9CpuHog` | the hole on the right |
+| `t9LaneI`, `t9LaneC`, `t9LaneE` | ICE, the top lanes |
+| `t9Reboot` | sync and reboot, right |
+| `t9CentreLane`, `t9RightLane` | the lanes under the top lanes |
+| `t9IslandLeft`, `t9IslandRight` | the switches under the bumpers' island |
+| `t9LeftUpperTarget`, `t9LeftLowerTarget`, `t9RightUpperTarget`, `t9RightLowerTarget` | the side targets: MULTIPLIER ADVANCE, KERNEL PANIC! |
+| `t9LeftInlane`, `t9RightInlane` | the inlanes |
+| `t9IceBreaker` | the ice breaker, left |
+| `t9ImplantLane` | the lanes into the cybernetic implants, top left |
+| `t9Implant` | CYBERNETIC IMPLANT |
+| `t9KernelPanic` | KERNEL PANIC! |
+| `Award` | SUPER IMPLANT, MULTIPLIER ADVANCE, CPU MAXED OUT, SUPER TENSE DECK |
+
+Four hours of `--autoplay` (129 games) fired every one of them but
+`t9IceBreaker` and `t9KernelPanic`.
+
+#### Table 10 (Pangaea)
+
+| Event | Is |
+|---|---|
+| `t10Cavern` | the cavern, top right: the ball lock |
+| `t10Stegosaurus`, `t10Allosaurus` | the holes left and right |
+| `t10LeftSaucer`, `t10JackpotHole` | the holes top left and centre |
+| `t10LeftTargets`, `t10RightTargets` | the columns of lights down each side |
+| `t10LeftOrbit`, `t10RightOrbit` | the orbits |
+| `t10Bullseye` | the bullseye, right |
+| `t10LeftOutlane`, `t10RightOutlane` | the outlanes |
+| `t10LeftLoop`, `t10RightLoop` | the volcano loop's ends |
+| `t10VolcanoLoop` | VOLCANO LOOP 2M |
+| `t10BallLock` | BALL LOCKED |
+| `t10Egg` | PTERODACTYL EGG, T-REX EGG |
+| `SkillShot`, `Jackpot` | SKILL SHOT 2M, JACKPOT  JACKPOT |
+| `Award` | MILLION CAVERN, STEGOSAURUS, ALLOSAURUS, EARTHQUAKE, T-REX ATTACK, EGG NEST, VOLCANO ERUPTION, BULLSEYE MILLIONS, MULTIPLIER ADVANCE, COLLECT T-REX BONUS |
+
+Four hours of `--autoplay` (172 games) fired every one of them but
+`SkillShot` and `Jackpot`.
+
+#### Table 11 (Space Journey)
+
+| Event | Is |
+|---|---|
+| `t11LockHole` | the lock, centre right: BALL LOCKED is `t11BallLock` |
+| `t11ExtraBallHole` | the hole on the left, by Mars |
+| `t11Abyss` | INTO THE ABYSS, bottom left |
+| `t11AsteroidRamp`, `t11Hyperspace` | the ramps, as the scoreboard names them |
+| `t11LaneS`, `t11LaneT`, `t11LaneA`, `t11LaneR` | STAR, the lanes under Pluto |
+| `t11SpaceStation` | SPACE STATION FLYBY |
+| `t11RightOrbit` | the lane top right |
+| `t11LeftOutlane`, `t11RightOutlane` | the outlanes |
+| `t11LeftTarget`, `t11CentreTarget`, `t11RightTarget` | the targets that light the lock, the comet and the asteroid |
+| `Jackpot`, `SuperJackpot` | JACKPOT  JACKPOT, SUPER JACKPOT! 50MIL |
+| `Award` | 10 MILLION, PLANET ADVANCED, MULTIPLIER ADVANCE, 2 MILLION AND ADVANCE, 1 MILLION! |
+
+Four hours of `--autoplay` (163 games) fired every one of them but the
+jackpots.
+
+#### Table 12 (Toy Factory)
+
+| Event | Is |
+|---|---|
+| `t12JunkHeap` | INTO THE JUNK HEAP, left |
+| `t12LockHole` | the lock, centre: BALL LOCKED is `t12BallLock` |
+| `t12Superball` | the hole on the right: SUPERBALL |
+| `t12Joystick` | the joystick, centre: the extra ball |
+| `t12SkateboardRamp` | SKATEBOARD RAMP |
+| `t12TopLane1` … `t12TopLane4` | the top lanes, left to right |
+| `t12ExpressLeft`, `t12ExpressRight` | the toy express loop's ends |
+| `t12ToyExpress` | TOY EXPRESS-2M: the loop made |
+| `t12ToyChest` | the toy chest's targets, left |
+| `t12DisplayCase` | HIT THE DISPLAY CASE!, left |
+| `t12PaintShop` | the paint shop |
+| `t12LeftOrbit` | the orbit top left |
+| `t12LeftOutlane`, `t12RightOutlane` | the outlanes |
+| `Jackpot`, `SuperJackpot` | JACKPOT  JACKPOT, SUPER JACKPOT! 50MIL |
+| `Award` | SKATEBOARD MILLIONS, MULTIPLIER ADVANCE, SUPERBALL |
+
+Four hours of `--autoplay` (163 games) fired every one of them but the
+jackpots.
+
+#### Table 13 (African Safari)
+
+| Event | Is |
+|---|---|
+| `t13WaterHole`, `t13BaseCamp` | the water hole, right, and the base camp, left |
+| `t13LockHole` | the lock by MULTI BALL: BALL LOCKED is `t13BallLock` |
+| `t13LionsDen` | the lion's den |
+| `t13LaneB`, `t13LaneI`, `t13LaneR`, `t13LaneD` | BIRD, the top lanes |
+| `t13MountainLeft`, `t13MountainRight` | the mountain path's ends |
+| `t13MountainPath` | MOUNTAIN PATH-2M: the path made |
+| `t13TargetC`, `t13TargetA`, `t13TargetT` | CAT, on the left |
+| `t13SnakePit` | the snake pit |
+| `t13LostCaves` | the lost caves, right |
+| `t13BaseCampLane` | GO FOR THE BASE CAMP, the lane on the right |
+| `t13LeftOutlane`, `t13RightOutlane` | the outlanes |
+| `Jackpot`, `SuperJackpot` | JACKPOT  JACKPOT, SUPER JACKPOT! 50MIL |
+| `Award` | WATER HOLE 1M, SNAKE PIT MILLIONS, LION`S MILLIONS, MULTIPLIER ADVANCE |
+
+Four hours of `--autoplay` (172 games) fired every one of them but
+`t13BallLock` and the jackpots: the lock hole fired 71 times, but it never
+said BALL LOCKED.
+
+The names are in `FEATURES` in `tools/feedback_map.py`, which writes them into
+the table's map; the game passes them to the helper with `--features`.
+
+#### Finding a table's features
+
+Every table has one switch handler: the ball scan hands it the collision map's
+colour under the ball, and it branches to the table's own code for that
+colour, through a jump table. `python3 tools/feedback_map.py --switches epN`
+prints each colour that has code of its own: where it is drawn, and that code,
+with the scoreboard texts it shows. A colour's code often tells places apart by
+the ball's X and Y. Then a long run of play shows where the ball meets each:
+
+```sh
+./epicpinball.sh --headless --mute --table 2 --autoplay --seconds 14400 \
+  --feedback-log events.log --switch-log switches.log
+```
+
+`--autoplay` flips at a ball coming down near the flippers, launches a ball
+waiting in the lane, nudges a ball that has not moved for ten seconds, and
+after a game over types initials and plays again: four hours of a table in a
+couple of minutes. A feature is then a zone (a colour,
+where the ball is), a hole's hold timer, or a scoreboard text: the game's own
+"BALL 1 LOCKED" or "SKY RAMP" fires a named feature with no switch of its
+own.
 
 #### The bumpers
 
@@ -232,12 +513,12 @@ An instant event is a 1 and at once a 0, so the row gives it its length:
 
 | Setting | What comes out |
 |---|---|
-| `E103` | libdof's default minimum, 60 ms |
-| `E103 50` | 50 ms; a hit during it starts the 50 ms again |
-| `E103 M1` | **nothing**: 1 ms is over before it is sent |
-| `E103 50 I32` | 50 ms at two thirds of full |
-| `E101 50` | a 50 ms pulse as the flipper starts up |
-| `E101` | on for as long as the flipper is up |
+| `$SlingshotLeft` | libdof's default minimum, 60 ms |
+| `$SlingshotLeft 50` | 50 ms; a hit during it starts the 50 ms again |
+| `$SlingshotLeft M1` | **nothing**: 1 ms is over before it is sent |
+| `$SlingshotLeft 50 I32` | 50 ms at two thirds of full |
+| `$FlipperLeft 50` | a 50 ms pulse as the flipper starts up |
+| `$FlipperLeft` | on for as long as the flipper is up |
 
 ### No row: one is made from the header
 
@@ -257,24 +538,24 @@ at every table start; nothing is written into the DOF folder. For the header
 above:
 
 ```ini
-epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113
+epicpinball_ep07,$FlipperLeft,$FlipperRight,$SlingshotLeft,$SlingshotRight,0,ON,ON EpMain,$ExtraBall
 ```
 
 | Device | Gets |
 |---|---|
-| `Flipper Left`, `Flipper Right` | `E101`, `E102`: on while the flipper is up |
-| `Slingshot Left`, `Slingshot Right` | `E103`, `E104` |
-| `10 Bumper Back Left`, `Center`, `Right` | every bumper of the table on that side: on table 5, `E105/E106` on the left |
+| `Flipper Left`, `Flipper Right` | `$FlipperLeft`, `$FlipperRight`: on while the flipper is up |
+| `Slingshot Left`, `Slingshot Right` | `$SlingshotLeft`, `$SlingshotRight` |
+| `10 Bumper Back Left`, `Center`, `Right` | every bumper of the table on that side: on table 5, `$Bumper1/$Bumper2` on the left |
 | `10 Bumper Middle ...`, `8 Bumper Left`, `Center`, `Right` | the same, only where there is no such back-row device |
-| `10 Bumper Middle Right`, `8 Bumper Right` | also `E108`: the launch |
-| `Launch Button` | `E114`: lit while a ball waits in the lane |
-| `Knocker` | `E113`: an extra ball (not game over) |
-| `10 Bumper Middle Left`, `Center`, `Right` | also the table's own solenoids on that side: hole kick-outs, the kickback, the drop target bank resetting. On table 1, Middle Left gets `E121/E122/E127/E131`, Center `E123`, Right `E108/E124/E125` |
+| `10 Bumper Middle Right`, `8 Bumper Right` | also `$Launch` |
+| `Launch Button` | `$BallReady`: lit while a ball waits in the lane |
+| `Knocker` | `$ExtraBall` (not game over) |
+| `10 Bumper Middle Left`, `Center`, `Right` | also the table's own solenoids on that side: hole kick-outs, the kickback, the drop target bank resetting. On table 1, Middle Left gets `$t1TestHole/$t1LeftHole/$t1Kickback/$t1DropTargetsDown`, Center `$t1PowerUpHole`, Right `$Launch/$t1PhysicalSystemsHole/$t1RightHole` |
 | `8 Bumper Left`, `Center`, `Right` | the same, where there is no `10 Bumper Middle` device on that side |
-| `Beacon` | `E113 2000`; on a table with features of its own, jackpots too: `E113 2000/E143 2000/E144 2000` |
-| `Shaker` | `E111 300 I32/E112 600 I32` |
+| `Beacon` | `$ExtraBall 2000`; on a table with features of its own, jackpots too: `$ExtraBall 2000/$Jackpot 2000/$SuperJackpot 2000` |
+| `Shaker` | `$Nudge 300 I32/$Tilt 600 I32` |
 | `Start Button`, `Exit`, `Coin` | `ON` |
-| `RGB Flippers` | `ON White` |
+| `RGB Flippers` | `ON EpMain` |
 | `5 Flasher ...`, `3 Flasher ...`, `Back MX` | colours for events: [flashers](#flashers) |
 | `Left MX`, `Right MX` | slingshots, ramps, kick-outs and the kickback on their side; ball ready breathing at the bottom of the right one: [the side MXs](#the-side-mxs) |
 | everything else | `0` |
@@ -284,13 +565,13 @@ epicpinball_ep07,E101,E102,E103,E104,0,ON,ON White,E113
 - **Ball release has no device,** and drain, tilt, multiball, game start and
   game over reach a made row only through flashers (below): write a row if you
   want them on something else.
-- **Not in made rows:** single drop targets, rollovers and `ball_held`. They
+- **Not in made rows:** single drop targets, rollovers and `BallHeld`. They
   are there for your own rows.
 - **The table's bumpers come from the game,** which tells the helper their
   sides when it starts it (`--bumpers LLCCRR` for table 5). A side the table
-  has no bumper on gets none. So do its own features' sides, by where each is
-  drawn in thirds of the table (`--sides "hole:LLCRR ramp:LRR kickback:L
-  target:LLL"` for table 1).
+  has no bumper on gets none. So do its own features' names and sides, by
+  where each is drawn in thirds of the table (`--features "hole1=TestHole:L
+  hole2=LeftHole:L ... bank=DropTargets"` for table 1).
 - **Only the header is read.** Intensities and times the Config Tool puts in
   other games' rows are not copied.
 - **The helper says** which file it used, how many outputs got something, and
@@ -313,20 +594,45 @@ cabinet, left to right:
 
 | Event | Spots | Effect |
 |---|---|---|
-| `multiball` E115 | all | white, blinking while it lasts |
-| a bumper | the spots on its side: left two, centre, right two | yellow, 80 ms |
-| a hole kicking out, the kickback | the spots on its side | orange, 120 ms |
-| a ramp made | the spots on its side | cyan, 150 ms |
-| `skill_shot` E139 | all | cyan, three flashes |
-| `award` E145 | all | orange, three flashes |
-| `lanes_lit` E138 | all | white, three flashes |
-| `jackpot` E143 | all | magenta, three flashes |
-| `super_jackpot` E144 | all | magenta, six flashes |
-| `knocker` E113 (extra ball) | all | white, three flashes |
-| `game_start` E116 | all | green, three flashes |
-| `game_over` E117 | all | blue, three flashes |
-| `drain` E110 | centre | red, 300 ms |
-| `tilt` E112 | all | red, 600 ms |
+| `Multiball` | all | *glow*, blinking while it lasts |
+| a bumper | the spots on its side: left two, centre, right two | *main*, 80 ms |
+| a hole kicking out, the kickback | the spots on its side | *feature*, 120 ms |
+| a ramp made | the spots on its side | *ramp*, 150 ms |
+| `SkillShot` | all | *ramp*, three flashes |
+| `Award` | all | *feature*, three flashes |
+| `LanesLit` | all | *glow*, three flashes |
+| `Jackpot` | all | *jackpot*, three flashes |
+| `SuperJackpot` | all | *jackpot*, six flashes |
+| `ExtraBall` | all | *glow*, three flashes |
+| `GameStart` | all | *start*, three flashes |
+| `GameOver` | all | *over*, three flashes |
+| `Drain` | centre | *danger*, 300 ms |
+| `Tilt` | all | *danger*, 600 ms |
+
+#### Colours
+
+A made row names its colours by what they are for, `EpGlow` to `EpDanger`
+in its `[Colors DOF]`, and each table's file gives them that table's own
+colours, from its playfield art, bright enough for LEDs. Danger stays red on
+every table, so a drain and a tilt read as a warning. A name not of the game
+(`saves/dof/auto/` with no table, a test) gets plain colours: white, yellow,
+orange, cyan, magenta, green, blue, red.
+
+| Table | *glow* | *main* | *feature* | *ramp* | *jackpot* | *start* | *over* |
+|---|---|---|---|---|---|---|---|
+| 1 Super Android | `#FFD27A` | `#FF9A00` | `#FF4000` | `#2848FF` | `#6A3CFF` | `#2848FF` | `#FF9A00` |
+| 2 Pot of Gold | `#FFE680` | `#FFC000` | `#FF5A00` | `#1E7BFF` | `#00E040` | `#00E040` | `#1E7BFF` |
+| 3 Excalibur | `#FFE0A0` | `#FFA030` | `#FF6A10` | `#B8C8FF` | `#9A30FF` | `#FFA030` | `#9A30FF` |
+| 4 Crash and Burn | `#FFFFFF` | `#FF6A00` | `#FFD000` | `#1048FF` | `#FF0040` | `#FFFFFF` | `#1048FF` |
+| 5 Magic | `#FFF0D0` | `#FFB830` | `#FF1E1E` | `#2040FF` | `#20C040` | `#FFB830` | `#2040FF` |
+| 6 Jungle Pinball | `#C0FF80` | `#40E000` | `#FF2000` | `#2060FF` | `#FFC000` | `#40E000` | `#FF6000` |
+| 7 Deep Sea | `#A0F0FF` | `#00C8FF` | `#FF8040` | `#0040FF` | `#00FFB0` | `#00C8FF` | `#0040FF` |
+| 8 Enigma | `#FFC8A0` | `#FF4A10` | `#FF8A30` | `#FFC060` | `#FF2000` | `#FF8A30` | `#B01800` |
+| 9 Cyborgirl | `#E0E8FF` | `#FF3A20` | `#FFB040` | `#40A0FF` | `#FF4080` | `#40A0FF` | `#FF3A20` |
+| 10 Pangaea | `#FFC080` | `#FF6A00` | `#20E020` | `#6020FF` | `#FF1040` | `#20E020` | `#FF6A00` |
+| 11 Space Journey | `#D8C8FF` | `#7A3CFF` | `#FF1020` | `#2040FF` | `#FF30D0` | `#2040FF` | `#7A3CFF` |
+| 12 Toy Factory | `#FFD0F8` | `#FF40E0` | `#80D020` | `#40A0FF` | `#8030FF` | `#80D020` | `#8030FF` |
+| 13 African Safari | `#FFE0A0` | `#FF8000` | `#FFD800` | `#00C000` | `#FF4000` | `#00C000` | `#FF8000` |
 
 Lower in the list draws over higher: a bumper's flash shows through the
 multiball blink, and a tilt covers everything. The table's own rows are on
@@ -361,12 +667,12 @@ it carries no variables. The colours and times above stay; these change:
 | Event | On the Back MX |
 |---|---|
 | a bumper | its own circles: a side's bumpers share its spots from the left, so table 1's left bumper has the two left circles and table 5's have one each, but for the two in the centre |
-| `skill_shot` E139 | `SHPCirclePulse`, cyan, 600 ms, on all five |
-| `award` E145 | `SHPDiamondBoxPulse`, orange, 1 s, on all five |
-| `lanes_lit` E138 | `SHPFillLeftRight`, white, 600 ms, across the whole width |
-| `jackpot` E143 | `SHPRoundAndRound`, magenta, 1.2 s, on all five |
-| `super_jackpot` E144 | the same for 2.4 s, and the two strobe circles (`strblft`, `strbrgt`) flashing white six times |
-| `knocker` E113 (extra ball) | `SHPCrossPulse`, white, 900 ms, on all five |
+| `SkillShot` | `SHPCirclePulse`, *ramp*, 600 ms, on all five |
+| `Award` | `SHPDiamondBoxPulse`, *feature*, 1 s, on all five |
+| `LanesLit` | `SHPFillLeftRight`, *glow*, 600 ms, across the whole width |
+| `Jackpot` | `SHPRoundAndRound`, *jackpot*, 1.2 s, on all five |
+| `SuperJackpot` | the same for 2.4 s, and the two strobe circles (`strblft`, `strbrgt`) flashing *glow* six times |
+| `ExtraBall` | `SHPCrossPulse`, *glow*, 900 ms, on all five |
 
 Without the shapes file and its `.png`, a shape draws nothing, so the `Back MX`
 gets the bands instead, and the helper says `no DirectOutputShapes.xml and .png
@@ -381,10 +687,10 @@ the list drawing over higher:
 
 | Event | MX | Effect |
 |---|---|---|
-| `ball_ready` E114 | right | the bottom 15% breathes yellow, dark to full every two seconds, while a ball waits: `AT85 AH15 F500 BLINK 2000` |
-| `sling_left` E103, `sling_right` E104 | its side | yellow, rising up the side: `M50 MAX50 ADU AS300` |
-| a hole kicking out, the kickback | its side | orange, down the side: `75 ADD AS300` |
-| a ramp made | its side | cyan, down the side: `75 ADD AS300` |
+| `BallReady` | right | the bottom 15% breathes *main*, dark to full every two seconds, while a ball waits: `AT85 AH15 F500 BLINK 2000` |
+| `SlingshotLeft`, `SlingshotRight` | its side | *main*, rising up the side: `M50 MAX50 ADU AS300` |
+| a hole kicking out, the kickback | its side | *feature*, down the side: `75 ADD AS300` |
+| a ramp made | its side | *ramp*, down the side: `75 ADD AS300` |
 
 A feature in the centre third of the table goes down both. On table 1 the
 left MX gets the test and left holes, the power-up hole, the kickback and the
@@ -401,16 +707,21 @@ between dim and about two thirds. `RGB Undercab Complex MX` stays 0.
 With the game closed:
 
 ```sh
-dof/build/epicpinball-dof --table ep5 --bumpers LLCCRR --test bumper_4
+dof/build/epicpinball-dof --table ep5 --bumpers LLCCRR --test Bumper4
 ```
 
 It sends that one event (a flipper or another level is held half a second),
 waits three seconds and switches off. `--bumpers` is the table's sides from the
 table [above](#the-bumpers); without it a made row assumes three, `LCR`. For
-table 1's own events, also give its features' sides:
+table 1's own events, also give its features, as the game does (from the
+`zone`, `target` and `bank` lines of `work/feedback/ep1.map`):
 
 ```sh
-dof/build/epicpinball-dof --table ep1 --bumpers LR --sides "hole:LLCRR ramp:LRR kickback:L target:LLL" --test hole_3
+dof/build/epicpinball-dof --table ep1 --bumpers LR --test t1PowerUpHole --features "hole1=TestHole:L \
+  hole2=LeftHole:L hole3=PowerUpHole:C hole4=PhysicalSystemsHole:R hole5=RightHole:R kickback1=Kickback:L \
+  rollover1=Star:L rollover2=LeftLane:L rollover3=TopLane1:C rollover4=TopLane2:C rollover5=TopLane3:R \
+  rollover6=TopLane4:R ramp1=LeftRamp:L ramp2=CentreRamp:R ramp3=RightRamp:R target1=DropTarget1:L \
+  target2=DropTarget2:L target3=DropTarget3:L bank=DropTargets"
 ```
 
 ### 6. Play
@@ -430,6 +741,9 @@ The demo and the menus send no events, though `ON` outputs (button lamps in
 a made row) stay lit whenever a table is up, the demo's included. A pause, a
 prompt and the settings dialog let go of held flippers. `--feedback-log FILE` lists every event with
 its time, marked `felt` or `muted`, and needs neither a board nor the helper.
+It uses the game's own names, `flipper_left`, `knocker`, `hole_3`, which the
+helper turns into the DOF names above (`dof/src/events.h`): `FlipperLeft`,
+`ExtraBall`, and table 1's third hole `t1PowerUpHole`.
 
 ## What to watch for in DOF
 
@@ -731,6 +1045,13 @@ Without hardware, in a sandbox with no devices:
   helper's Windows half was then built by `dof\build.ps1` on a cabinet's
   Windows and started with table 1: it read DirectOutput's files
   (`C:\DirectOutput\Config`) and made table 1's rows from their headers.
+- events by name, through libdof's master and the helper on ArtNet over
+  loopback: `--test` with an event of every table, a table 1 feature
+  (`t1PowerUpHole`, any case), the bank's `t1DropTargetsDown` and
+  `ExtraBall`, each on its own output for its row's time, and an old `E101`
+  column left dark. A row made from a header on table 1, and from the game on
+  table 1, `Bumper1` and `t1TopLane1` lighting their outputs each time the
+  game sent them. Named events are not yet tried on the real cabinet.
 
 Not tested: tables 2 to 13 on a cabinet, other controllers and other
 cabinets' Config Tool headers, Flatpak and portable VPX, play on a

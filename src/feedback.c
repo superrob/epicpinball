@@ -23,6 +23,9 @@ static const char *const names[FB_EVENTS] = {
     "rollover_1", "rollover_2", "rollover_3", "rollover_4", "rollover_5", "rollover_6",
     "lanes_lit", "skill_shot", "ramp_1", "ramp_2", "ramp_3",
     "jackpot", "super_jackpot", "award",
+    "switch_1", "switch_2", "switch_3", "switch_4", "switch_5", "switch_6", "switch_7", "switch_8",
+    "switch_9", "switch_10", "switch_11", "switch_12", "switch_13", "switch_14", "switch_15", "switch_16",
+    "switch_17", "switch_18", "switch_19", "switch_20", "switch_21", "switch_22", "switch_23", "switch_24",
     "table_start", "table_end", "table_lost",
 };
 
@@ -47,13 +50,13 @@ int feedback_log(const char *path)
 
 void feedback_sink(const FbSink *sink) { out = sink; }
 
-void feedback_table(double ms, const char *name, const char *bumpers, const char *sides)
+void feedback_table(double ms, const char *name, const char *bumpers, const char *features)
 {
     muted = 0;
     if (!name && *table) feedback_event(ms, FB_TABLE_END, 1, (FbDetail){ 0, 0, 0, 0 });
     if (out) {
         out->all_off();
-        out->table(name, name ? bumpers : NULL, name ? sides : NULL);
+        out->table(name, name ? bumpers : NULL, name ? features : NULL);
     }
     snprintf(table, sizeof table, "%s", name ? name : "");
     if (name) feedback_event(ms, FB_TABLE_START, 1, (FbDetail){ 0, 0, 0, 0 });

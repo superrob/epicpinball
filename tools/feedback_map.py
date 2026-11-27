@@ -30,8 +30,8 @@ GEN = os.path.join(ROOT, 'work', 'gen')
 DATA = os.path.join(ROOT, 'original')
 OUT = os.path.join(ROOT, 'work', 'feedback')
 TABLES = 13
-VERSION = 5
-MAX_BUMPERS = 6                 # E105-E107 and E118-E120
+VERSION = 6
+MAX_BUMPERS = 6                 # Bumper1-Bumper6
 RIM = 40                        # a small run this near a bumper is part of it
 
 N = r'0x([0-9A-F]+)'            # a number, kept
@@ -53,7 +53,20 @@ SLINGS_BELOW = 270              # on every table they sit just over the flippers
 # slingshot, thud or kickback, flipper, the ball in the shooter lane, the
 # plunger); some tables have more. Award and jackpot calls stay on the front.
 BOARD_EFFECTS = list(range(7))
-BOARD_MORE = {'ep1': [0xB, 0x11]}          # its holes, its rubber posts
+# Beyond them, each table's own: table 1's hole and rubber post samples, which
+# the other tables carry too (byte for byte, in other slots), and table 11's
+# target. The rest are the speaker's: tones, calls, and samples that follow no
+# one switch. Found by sample (docs/ssf.md).
+BOARD_MORE = {
+    'ep1': [0xB, 0x11],                         # its holes, its rubber posts
+    'ep2': [0xB], 'ep3': [0xA], 'ep4': [0xB], 'ep6': [0xB], 'ep7': [0xB],   # their holes
+    'ep8': [0x8, 0xB],                          # a post, its holes
+    'ep9': [0xB, 0xE],                          # its holes (the sample twice)
+    'ep10': [0xB, 0x11],                        # as table 1
+    'ep11': [0x8, 0xB, 0xE],                    # its three targets, its holes
+    'ep12': [0xB, 0xF],                         # its holes, a post
+    'ep13': [0xB],
+}
 
 
 def sound_driver(v):
@@ -85,25 +98,361 @@ def effects(f, v):
 
 
 FEATURES = {
-    'ep1': dict(                                       # Super Android
+    'ep13': dict(                                      # African Safari
         zones=[
-            ('hole', 1, 0xF5, 0, 0, 319, 399),          # test hole, top left
-            ('hole', 2, 0xF8, 0, 0, 50, 320),           # left hole
-            ('hole', 3, 0xF6, 0, 0, 219, 399),          # power-up hole
-            ('hole', 4, 0xF8, 145, 0, 319, 399),        # physical-systems hole
-            ('hole', 5, 0xF6, 220, 0, 319, 399),        # right hole, the centre ramp's end
-            ('kickback', 1, 0xF8, 0, 321, 50, 399),     # left outlane
-            ('rollover', 1, 0xF8, 51, 0, 144, 399),     # star
-            ('rollover', 2, 0xFB, 0, 0, 319, 399),      # left lane
-            ('rollover', 3, 0xFA, 0, 0, 179, 399),      # the top four lanes
-            ('rollover', 4, 0xFA, 180, 0, 209, 399),
-            ('rollover', 5, 0xFA, 210, 0, 242, 399),
-            ('rollover', 6, 0xFA, 243, 0, 319, 399),
-            ('ramp', 1, 0xF9, 0, 0, 74, 399),           # left ramp
-            ('ramp', 2, 0xF6, 220, 0, 319, 399),        # centre ramp, counted in the right hole
-            ('ramp', 3, 0xF9, 281, 0, 319, 399),        # right ramp
+            ('hole', 1, 'WaterHole', 0xBC, 0, 0, 319, 399),           # right
+            ('hole', 2, 'BaseCamp', 0xBF, 0, 0, 319, 399),            # left
+            ('hole', 3, 'LockHole', 0xC4, 0, 0, 319, 399),            # by MULTI BALL: BALL LOCKED
+            ('hole', 4, 'LionsDen', 0xC6, 0, 0, 319, 399),
+            ('rollover', 1, 'LaneB', 0xC1, 0, 0, 120, 399),           # BIRD, the top lanes
+            ('rollover', 2, 'LaneI', 0xC1, 121, 0, 143, 399),
+            ('rollover', 3, 'LaneR', 0xC1, 144, 0, 170, 399),
+            ('rollover', 4, 'LaneD', 0xC1, 171, 0, 319, 399),
+            ('switch', 1, 'MountainLeft', 0xBA, 0, 0, 319, 399),      # the mountain path's ends
+            ('switch', 2, 'MountainRight', 0xBB, 0, 0, 319, 399),
+            ('switch', 3, 'TargetC', 0xC0, 0, 0, 319, 224),           # CAT, on the left, top first
+            ('switch', 4, 'TargetA', 0xC0, 0, 225, 319, 237),
+            ('switch', 5, 'TargetT', 0xC0, 0, 238, 319, 399),
+            ('switch', 6, 'SnakePit', 0xC2, 0, 0, 319, 399),
+            ('switch', 7, 'LostCaves', 0xC3, 0, 0, 319, 399),         # right
+            ('switch', 8, 'BaseCampLane', 0xC5, 0, 0, 319, 399),      # GO FOR THE BASE CAMP, right
+            ('switch', 9, 'LeftOutlane', 0xCC, 0, 0, 159, 399),
+            ('switch', 10, 'RightOutlane', 0xCC, 160, 0, 319, 399),
         ],
-        targets=True,                                   # drop targets: F2-F4
+        named=[('switch', 11, 'MountainPath', 'R'), ('switch', 12, 'BallLock', 'C')],
+        messages=[
+            ('jackpot', 'JACKPOT  JACKPOT'), ('super_jackpot', 'SUPER JACKPOT! 50MIL'),
+            ('switch11', 'MOUNTAIN PATH-2M'), ('switch12', 'BALL LOCKED'),
+            ('award', 'WATER HOLE 1M'), ('award', 'SNAKE PIT MILLIONS'), ('award', 'LION`S MILLIONS'),
+            ('award', 'MULTIPLIER ADVANCE'),
+        ],
+    ),
+    'ep12': dict(                                      # Toy Factory
+        zones=[
+            ('hole', 1, 'JunkHeap', 0xBF, 0, 0, 319, 399),            # left: INTO THE JUNK HEAP
+            ('hole', 1, 'JunkHeap', 0xC7, 0, 0, 319, 399),            # (its other way in, the same timer)
+            ('hole', 2, 'LockHole', 0xC4, 0, 0, 319, 399),            # centre: BALL LOCKED
+            ('hole', 3, 'Superball', 0xC5, 0, 0, 319, 399),           # right
+            ('hole', 4, 'Joystick', 0xC6, 0, 0, 319, 399),            # centre: the extra ball
+            ('rollover', 1, 'TopLane1', 0xC1, 0, 0, 125, 399),        # the top lanes, left to right
+            ('rollover', 2, 'TopLane2', 0xC1, 126, 0, 151, 399),
+            ('rollover', 3, 'TopLane3', 0xC1, 152, 0, 176, 399),
+            ('rollover', 4, 'TopLane4', 0xC1, 177, 0, 319, 399),
+            ('switch', 1, 'ExpressLeft', 0xB6, 0, 0, 319, 399),       # the toy express loop's ends
+            ('switch', 2, 'ExpressRight', 0xB5, 0, 0, 319, 399),
+            ('switch', 3, 'ToyChest', 0xBB, 0, 0, 319, 399),          # the toy chest's targets, left
+            ('switch', 3, 'ToyChest', 0xBC, 0, 0, 319, 399),
+            ('switch', 3, 'ToyChest', 0xBD, 0, 0, 319, 399),
+            ('switch', 3, 'ToyChest', 0xBE, 0, 0, 319, 399),
+            ('switch', 4, 'DisplayCase', 0xC0, 0, 0, 319, 399),       # HIT THE DISPLAY CASE!
+            ('switch', 5, 'PaintShop', 0xC3, 0, 0, 319, 399),
+            ('switch', 6, 'LeftOrbit', 0xC8, 0, 0, 319, 399),
+            ('switch', 7, 'LeftOutlane', 0xCC, 0, 0, 159, 399),
+            ('switch', 8, 'RightOutlane', 0xCC, 160, 0, 319, 399),
+        ],
+        named=[('ramp', 1, 'SkateboardRamp', 'C'), ('switch', 9, 'ToyExpress', 'C'), ('switch', 10, 'BallLock', 'C')],
+        messages=[
+            ('jackpot', 'JACKPOT  JACKPOT'), ('super_jackpot', 'SUPER JACKPOT! 50MIL'),
+            ('ramp1', 'SKATEBOARD RAMP'), ('switch9', 'TOY EXPRESS-2M'), ('switch10', 'BALL LOCKED'),
+            ('award', 'SKATEBOARD MILLIONS'), ('award', 'MULTIPLIER ADVANCE'), ('award', 'SUPERBALL'),
+        ],
+    ),
+    'ep11': dict(                                      # Space Journey
+        zones=[
+            ('hole', 1, 'LockHole', 0xC4, 0, 0, 319, 399),            # centre right: BALL LOCKED
+            ('hole', 2, 'ExtraBallHole', 0xC6, 0, 0, 319, 399),       # left, by Mars
+            ('hole', 3, 'Abyss', 0xC7, 0, 0, 319, 399),               # bottom left: INTO THE ABYSS
+            ('rollover', 1, 'LaneS', 0xC1, 0, 0, 111, 399),           # STAR, under Pluto
+            ('rollover', 2, 'LaneT', 0xC1, 112, 0, 134, 399),
+            ('rollover', 3, 'LaneA', 0xC1, 135, 0, 156, 399),
+            ('rollover', 4, 'LaneR', 0xC1, 157, 0, 319, 399),
+            ('switch', 1, 'SpaceStation', 0xC5, 0, 0, 319, 399),      # SPACE STATION FLYBY
+            ('switch', 2, 'RightOrbit', 0xC8, 0, 0, 319, 399),
+            ('switch', 3, 'LeftOutlane', 0xCC, 0, 0, 144, 399),
+            ('switch', 4, 'RightOutlane', 0xCC, 145, 0, 319, 399),
+            ('switch', 5, 'CentreTarget', 0xCD, 0, 0, 319, 399),      # the lock, the comet, the asteroid
+            ('switch', 6, 'RightTarget', 0xCE, 0, 0, 319, 399),
+            ('switch', 7, 'LeftTarget', 0xCF, 0, 0, 319, 399),
+        ],
+        named=[('ramp', 1, 'AsteroidRamp', 'L'), ('ramp', 2, 'Hyperspace', 'R'), ('switch', 8, 'BallLock', 'C')],
+        messages=[
+            ('jackpot', 'JACKPOT  JACKPOT'), ('super_jackpot', 'SUPER JACKPOT! 50MIL'),
+            ('ramp1', 'ASTEROID RAMP'), ('ramp2', 'HYPERSPACE'), ('switch8', 'BALL LOCKED'),
+            ('award', '10 MILLION'), ('award', 'PLANET ADVANCED'), ('award', 'MULTIPLIER ADVANCE'),
+            ('award', '2 MILLION AND ADVANCE'), ('award', '1 MILLION!'),
+        ],
+    ),
+    'ep10': dict(                                      # Pangaea
+        zones=[
+            ('hole', 1, 'Cavern', 0xC7, 0, 0, 319, 399),              # top right: the lock
+            ('hole', 2, 'Stegosaurus', 0xCC, 0, 0, 139, 399),         # left
+            ('hole', 3, 'Allosaurus', 0xCC, 140, 0, 319, 399),        # right
+            ('hole', 4, 'LeftSaucer', 0xCD, 0, 0, 139, 399),          # top left
+            ('hole', 5, 'JackpotHole', 0xCD, 140, 0, 319, 399),       # centre
+            ('switch', 1, 'LeftTargets', 0xCB, 0, 0, 144, 399),       # the columns of lights down each side
+            ('switch', 2, 'RightTargets', 0xCB, 145, 0, 319, 399),
+            ('switch', 3, 'LeftOrbit', 0xCE, 0, 0, 139, 399),
+            ('switch', 4, 'RightOrbit', 0xCE, 140, 0, 319, 399),
+            ('switch', 5, 'Bullseye', 0xCF, 0, 0, 319, 219),          # right
+            ('switch', 6, 'LeftOutlane', 0xCF, 0, 220, 159, 399),
+            ('switch', 7, 'RightOutlane', 0xCF, 160, 220, 319, 399),
+            ('switch', 8, 'LeftLoop', 0xD0, 0, 0, 144, 399),          # the volcano loop's ends
+            ('switch', 9, 'RightLoop', 0xD0, 145, 0, 319, 399),
+        ],
+        named=[('switch', 10, 'VolcanoLoop', 'C'), ('switch', 11, 'BallLock', 'C'), ('switch', 12, 'Egg', 'C')],
+        messages=[
+            ('jackpot', 'JACKPOT  JACKPOT'), ('skill_shot', 'SKILL SHOT 2M'), ('switch10', 'VOLCANO LOOP 2M'),
+            ('switch11', 'BALL LOCKED'), ('switch12', 'PTERODACTYL EGG'), ('switch12', 'T-REX EGG - 700K'),
+            ('award', '  MILLION CAVERN'), ('award', 'STEGOSAURUS 1M'), ('award', 'ALLOSAURUS 2M'),
+            ('award', 'EARTHQUAKE 20M'), ('award', 'T-REX ATTACK 15M'), ('award', 'EGG NEST - 8M'),
+            ('award', 'VOLCANO ERUPTION 12M'), ('award', 'BULLSEYE MILLIONS'), ('award', 'MULTIPLIER ADVANCE'),
+            ('award', 'COLLECT T-REX BONUS'),
+        ],
+    ),
+    'ep9': dict(                                       # Cyborgirl
+        zones=[
+            ('hole', 1, 'TenseDeck', 0xCB, 0, 0, 139, 399),           # bottom left
+            ('hole', 2, 'CpuHog', 0xCB, 140, 0, 319, 399),            # right
+            ('rollover', 1, 'LaneI', 0xC6, 0, 0, 173, 99),            # ICE, the top lanes
+            ('rollover', 2, 'LaneC', 0xC6, 174, 0, 201, 99),
+            ('rollover', 3, 'LaneE', 0xC6, 202, 0, 319, 99),
+            ('switch', 1, 'Reboot', 0xC6, 0, 100, 319, 399),          # sync and reboot, right
+            ('switch', 2, 'CentreLane', 0xC7, 0, 0, 184, 399),
+            ('switch', 3, 'RightLane', 0xC7, 185, 0, 319, 399),
+            ('switch', 4, 'IslandLeft', 0xC8, 0, 0, 150, 399),        # under the bumpers' island
+            ('switch', 5, 'IslandRight', 0xC8, 151, 0, 319, 399),
+            ('switch', 6, 'LeftUpperTarget', 0xC9, 0, 0, 144, 399),   # MULTIPLIER ADVANCE, KERNEL PANIC!
+            ('switch', 7, 'RightUpperTarget', 0xC9, 145, 0, 319, 399),
+            ('switch', 8, 'LeftLowerTarget', 0xCA, 0, 0, 144, 399),
+            ('switch', 9, 'RightLowerTarget', 0xCA, 145, 0, 319, 399),
+            ('switch', 10, 'LeftInlane', 0xCC, 0, 0, 144, 399),
+            ('switch', 11, 'RightInlane', 0xCC, 145, 0, 319, 399),
+            ('switch', 12, 'IceBreaker', 0xCD, 0, 0, 319, 399),
+            ('switch', 13, 'ImplantLane', 0xC0, 0, 0, 319, 399),      # into the cybernetic implants
+            ('switch', 13, 'ImplantLane', 0xC5, 0, 0, 319, 399),
+        ],
+        named=[('switch', 14, 'Implant', 'L'), ('switch', 15, 'KernelPanic', 'C')],
+        messages=[
+            ('switch14', 'CYBERNETIC IMPLANT'), ('switch15', 'KERNEL PANIC!'),
+            ('award', 'SUPER IMPLANT'), ('award', 'MULTIPLIER ADVANCE'), ('award', 'CPU MAXED OUT'),
+            ('award', 'SUPER TENSE DECK'),
+        ],
+    ),
+    'ep8': dict(                                       # Enigma: its levels draw their own switches
+        stamped=[0xE3, 0xE7, 0xE8],
+        zones=[
+            ('hole', 1, 'LockHole', 0xE3, 0, 0, 319, 399),            # BALL LOCKED
+            ('hole', 2, 'SpikedPit', 0xE7, 0, 0, 319, 399),
+            ('hole', 3, 'Spring', 0xE8, 0, 0, 319, 399),
+        ],
+        named=[                                         # the four wire loops, as the scoreboard names them
+            ('switch', 1, 'AlphaRamp', 'L'), ('switch', 2, 'BetaRamp', 'L'),
+            ('switch', 3, 'DeltaRamp', 'R'), ('switch', 4, 'GammaRamp', 'R'),
+            ('switch', 5, 'BallLock', 'L'), ('switch', 6, 'Mine', 'C'), ('switch', 7, 'EnigmaComes', 'C'),
+        ],
+        messages=[
+            ('switch1', 'ALPHA RAMP'), ('switch2', 'BETA RAMP'), ('switch3', 'DELTA RAMP'), ('switch4', 'GAMMA RAMP'),
+            ('switch5', 'BALL LOCKED'), ('switch6', 'DESTROYED BY A MINE'), ('switch7', 'THE ENIGMA HAS COME'),
+            ('super_jackpot', 'SUPER JACKPOT AWARDED- 100M'),
+            ('award', 'LEVEL 1 COMPLETE'), ('award', 'LEVEL 2 COMPLETE'), ('award', 'LEVEL 3 COMPLETE'),
+            ('award', 'MYSTIC SCROLL-1M'), ('award', 'GOLD BEAR 3M'), ('award', 'LOLLY POP 2M'),
+            ('award', 'SPRING - 15M'), ('award', 'TEDDY WAS RUN OVER 15M'), ('award', 'BRAINS!! - 12M'),
+            ('award', 'A HAND FOR 12M'),
+        ],
+    ),
+    'ep7': dict(                                       # Deep Sea
+        zones=[
+            ('hole', 1, 'EelNest', 0xDA, 0, 0, 144, 399),             # left, by the eel
+            ('hole', 2, 'SunkenShip', 0xDA, 145, 0, 319, 399),        # right, the wreck
+            ('hole', 3, 'ReefHole', 0xDD, 0, 0, 319, 399),            # centre, in the reef
+            ('hole', 4, 'AirTanks', 0xE0, 0, 0, 319, 399),            # right: filling the air tanks
+            ('ramp', 1, 'LeftRamp', 0xDC, 0, 0, 139, 399),            # their ends: 1 OF 3 RAMPS
+            ('ramp', 2, 'RightRamp', 0xDC, 140, 0, 319, 399),
+            ('rollover', 1, 'Seahorse1', 0xE1, 0, 0, 176, 399),       # the top lanes: the skill shot
+            ('rollover', 2, 'Seahorse2', 0xE1, 177, 0, 198, 399),
+            ('rollover', 3, 'Seahorse3', 0xE1, 199, 0, 219, 399),
+            ('rollover', 4, 'Seahorse4', 0xE1, 220, 0, 319, 399),
+            ('switch', 1, 'Stingray', 0xDE, 0, 0, 319, 199),          # top left
+            ('switch', 2, 'LeftInlane', 0xDE, 0, 200, 159, 399),
+            ('switch', 3, 'RightInlane', 0xDE, 160, 200, 319, 399),
+            ('switch', 4, 'LeftOutlane', 0xDF, 0, 0, 159, 399),
+            ('switch', 5, 'RightOutlane', 0xDF, 160, 0, 319, 399),
+            ('switch', 6, 'TopLoop', 0xDB, 0, 0, 199, 399),
+            ('switch', 7, 'RightOrbit', 0xDB, 200, 0, 319, 399),
+            ('switch', 8, 'TreasureTarget1', 0xE2, 0, 0, 40, 399),    # 1M ADDED TO TREASURE, left first
+            ('switch', 9, 'TreasureTarget2', 0xE2, 41, 0, 58, 399),
+            ('switch', 10, 'TreasureTarget3', 0xE2, 59, 0, 119, 399),
+            ('switch', 11, 'TreasureTarget4', 0xE2, 120, 0, 319, 399),
+        ],
+        named=[('switch', 12, 'DiverEnters', 'C')],     # ANOTHER DIVER ENTERS
+        messages=[
+            ('jackpot', 'JACKPOT!'), ('skill_shot', 'SKILL SHOT'), ('switch12', 'ANOTHER DIVER ENTERS'),
+            ('award', 'ALL RAMPS COMPLETE-7M'), ('award', 'SUNKEN SHIP GOLD FOUND - 8M'),
+            ('award', 'SECRET TREASURE - 15M'), ('award', 'STINGRAY - 5,000,000'),
+            ('award', 'MYSTERY HOLE FOUND - 10M'), ('award', 'REFILL OF AIR - 8M'), ('award', 'SHARK LEAVES - 10M'),
+        ],
+    ),
+    'ep6': dict(                                       # Jungle Pinball
+        stamped=[0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF, 0xF2, 0xFC, 0xFE],
+        zones=[
+            ('hole', 1, 'StarHole', 0xF2, 0, 0, 319, 399),            # top left, by the star
+            ('hole', 2, 'SwordHole', 0xFC, 0, 0, 319, 399),           # top right, by the swords
+            ('hole', 3, 'NestHole', 0xFD, 0, 0, 319, 399),            # right: FROG and ANT millions
+            ('ramp', 1, 'LeftRamp', 0xCA, 0, 0, 159, 399),            # the vines, left
+            ('ramp', 2, 'RightRamp', 0xCB, 160, 0, 319, 399),
+            ('rollover', 1, 'TopLane1', 0xCF, 0, 0, 319, 399),        # the top lanes, left to right
+            ('rollover', 2, 'TopLane2', 0xCE, 0, 0, 319, 399),
+            ('rollover', 3, 'TopLane3', 0xCD, 0, 0, 319, 399),
+            ('rollover', 4, 'TopLane4', 0xCC, 0, 0, 319, 399),
+            ('switch', 1, 'SerpentPath', 0xFE, 0, 0, 319, 399),       # the snake, top left
+            ('switch', 2, 'SwordTarget1', 0xF3, 0, 0, 319, 399),      # I I I, under the nest
+            ('switch', 3, 'SwordTarget2', 0xF4, 0, 0, 319, 399),
+            ('switch', 4, 'SwordTarget3', 0xF5, 0, 0, 319, 399),
+            ('switch', 5, 'BlueTarget1', 0xF6, 0, 0, 319, 399),       # down the right, top first
+            ('switch', 6, 'BlueTarget2', 0xF7, 0, 0, 319, 399),
+            ('switch', 7, 'BlueTarget3', 0xF8, 0, 0, 319, 399),
+            ('switch', 8, 'BlueTarget4', 0xF9, 0, 0, 319, 399),
+            ('switch', 9, 'LeftTarget1', 0xFA, 0, 0, 319, 399),       # light the death blade hole
+            ('switch', 10, 'LeftTarget2', 0xFB, 0, 0, 319, 399),
+            ('switch', 11, 'LeftOutlane', 0xC8, 0, 0, 159, 399),
+            ('switch', 12, 'RightOutlane', 0xC8, 160, 0, 319, 399),
+            ('switch', 13, 'LeftInlane', 0xC9, 0, 0, 159, 399),
+            ('switch', 14, 'RightInlane', 0xC9, 160, 0, 319, 399),
+        ],
+        named=[('switch', 15, 'AppleFalls', 'C'), ('switch', 16, 'SwordTargetsDown', 'R'),
+               ('switch', 17, 'BlueTargetsDown', 'R'), ('switch', 18, 'LeftTargetsDown', 'L')],
+        banks=[(0xF3, 'switch16'), (0xF6, 'switch17'), (0xFA, 'switch18')],    # all down, they reset
+        messages=[
+            ('jackpot', 'JACKPOT!!!'), ('switch15', 'AN APPLE FALLS'),
+            ('award', 'CONSECUTIVE TARGETS- 5MIL'), ('award', 'FROG MILLIONS'), ('award', 'ANT MILLIONS'),
+            ('award', 'BONUS WILL BE DOUBLED'),
+        ],
+    ),
+    'ep5': dict(                                       # Magic: no scoreboard texts of its own
+        stamped=[0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xFB, 0xFC],     # drawn as it runs
+        zones=[
+            ('hole', 1, 'TopHole', 0xF2, 100, 0, 180, 80),            # under the top arch
+            ('rollover', 1, 'LaneM', 0xF3, 0, 0, 319, 399),           # MAGIC, the top lanes
+            ('rollover', 2, 'LaneA', 0xF4, 0, 0, 319, 399),
+            ('rollover', 3, 'LaneG', 0xF5, 0, 0, 319, 399),
+            ('rollover', 4, 'LaneI', 0xF6, 0, 0, 319, 399),
+            ('rollover', 5, 'LaneC', 0xF7, 0, 0, 319, 399),
+            ('switch', 1, 'LeftLane', 0xF8, 0, 0, 319, 399),          # 50, 75, 100 on the left
+            ('switch', 2, 'CentreTarget', 0xF9, 0, 0, 319, 399),      # the red one under the hat
+            ('switch', 3, 'YellowBumpers', 0xFA, 0, 0, 319, 399),     # lights them
+            ('switch', 4, 'LeftOutlane', 0xFB, 0, 300, 100, 399),
+            ('switch', 5, 'RightOutlane', 0xFC, 220, 300, 319, 399),
+            ('switch', 6, 'RightOrbit', 0xFE, 0, 0, 319, 399),        # by the scarf, top right (FD: none drawn)
+        ],
+    ),
+    'ep4': dict(                                       # Crash and Burn
+        zones=[
+            ('hole', 1, 'LeftScoop', 0xCC, 0, 0, 139, 399),           # left: toward the extra ball
+            ('hole', 2, 'TopScoop', 0xCC, 140, 0, 319, 399),          # top right, by the tyre
+            ('hole', 3, 'PitStop', 0xCD, 0, 0, 199, 399),             # the pit, centre
+            ('hole', 4, 'DeadManCurve', 0xCD, 200, 0, 319, 399),      # right: the ball lock
+            ('hole', 5, 'BlowOut', 0xCE, 0, 0, 319, 399),             # the tyre's hub, top
+            ('switch', 1, 'DriverD', 0xCB, 0, 0, 319, 154),           # DRIVER, down the right
+            ('switch', 2, 'DriverR', 0xCB, 0, 155, 319, 167),
+            ('switch', 3, 'DriverI', 0xCB, 0, 168, 319, 180),
+            ('switch', 4, 'DriverV', 0xCB, 0, 181, 319, 193),
+            ('switch', 5, 'DriverE', 0xCB, 0, 194, 319, 206),
+            ('switch', 6, 'DriverR2', 0xCB, 0, 207, 319, 399),
+            ('switch', 7, 'LeftOrbit', 0xCF, 0, 0, 139, 399),
+            ('switch', 8, 'RightOrbit', 0xCF, 140, 0, 319, 399),
+            ('switch', 9, 'LeftOutlane', 0xD0, 0, 0, 159, 399),
+            ('switch', 10, 'RightOutlane', 0xD0, 160, 0, 319, 399),
+            ('switch', 11, 'LeftGreenLane', 0xC7, 0, 0, 159, 399),    # GO - GREEN LIGHT
+            ('switch', 12, 'RightGreenLane', 0xC7, 160, 0, 319, 399),
+        ],
+        named=[
+            ('ramp', 1, 'RaceTrack', 'C'),              # ONTO THE RACE TRACK
+            ('switch', 13, 'BallLock', 'R'),            # at Dead Man Curve
+        ],
+        messages=[
+            ('jackpot', 'JACKPOT!!'), ('super_jackpot', 'DOUBLE JACKPOT'),
+            ('ramp1', 'ONTO THE RACE TRACK'), ('switch13', 'BALL 1 LOCKED'),
+            ('award', 'ALL GREEN LIGHTS - 5M'), ('award', 'MPH MULTIPLIER INCREASE'), ('award', 'REFUELED-15M'),
+            ('award', 'NEW TIRES-10M'), ('award', 'TUNE UP-5M'), ('award', 'MYSTERY BONUS'), ('award', 'PIT STOP'),
+        ],
+    ),
+    'ep3': dict(                                       # Excalibur: no scoreboard texts of its own
+        zones=[
+            ('hole', 1, 'BlackHole', 0xFA, 0, 0, 319, 399),           # at the head of the right lane
+            ('rollover', 1, 'LaneS', 0xF4, 0, 0, 119, 399),           # SWORD, the top lanes
+            ('rollover', 2, 'LaneW', 0xF4, 120, 0, 144, 399),
+            ('rollover', 3, 'LaneO', 0xF4, 145, 0, 168, 399),
+            ('rollover', 4, 'LaneR', 0xF4, 169, 0, 193, 399),
+            ('rollover', 5, 'LaneD', 0xF4, 194, 0, 319, 399),
+            ('switch', 1, 'LeftLoop', 0xF2, 0, 0, 144, 399),          # by the axe; both: the multiplier
+            ('switch', 2, 'RightLoop', 0xF2, 145, 0, 319, 399),       # by the spear
+            ('switch', 3, 'LeftLane', 0xF3, 0, 0, 144, 399),          # light the kickback below
+            ('switch', 4, 'RightLane', 0xF3, 145, 0, 319, 399),
+            ('switch', 5, 'LeftOutlane', 0xFC, 0, 0, 144, 399),       # its kickback, when lit
+            ('switch', 6, 'RightOutlane', 0xFC, 145, 0, 319, 399),
+            ('switch', 7, 'LeftOrbit', 0xFD, 0, 0, 319, 399),         # the top corners, by the shields
+            ('switch', 8, 'RightOrbit', 0xFE, 0, 0, 319, 399),
+            ('switch', 9, 'LeftTarget', 0xF6, 0, 0, 319, 399),        # the red capsule
+            ('switch', 10, 'RightTarget', 0xF5, 0, 0, 319, 399),      # the blue one, by XTRA BALL
+            ('switch', 11, 'Lane1k', 0xF7, 0, 0, 319, 399),           # down the right U lane
+            ('switch', 12, 'Lane5k', 0xF8, 0, 0, 319, 399),
+            ('switch', 13, 'Lane10k', 0xF9, 0, 0, 319, 399),
+            ('switch', 14, 'Spinner', 0xFB, 0, 0, 319, 399),          # left, under the top bumper
+        ],
+        lanes=True,                                     # SWORD lit
+    ),
+    'ep2': dict(                                       # Pot of Gold
+        zones=[
+            ('hole', 1, 'TreasureHole', 0xB1, 85, 121, 319, 188),     # centre, under the bumpers
+            ('hole', 2, 'Cave', 0xB1, 0, 121, 84, 399),               # far left: the locks
+            ('switch', 1, 'TopLeprechaun', 0xB2, 0, 0, 144, 170),     # top left of the rainbow
+            ('switch', 2, 'RainbowRight', 0xB2, 145, 0, 319, 170),    # the rainbow lane's right end
+            ('switch', 3, 'CaveLane', 0xB2, 0, 171, 85, 399),         # into the cave
+            ('switch', 4, 'RightLeprechaun', 0xB2, 86, 171, 319, 399),
+            ('rollover', 1, 'LeftCloverLane', 0xB3, 0, 200, 149, 399),  # a lane, two switches
+            ('rollover', 1, 'LeftCloverLane', 0xB4, 0, 0, 149, 399),
+            ('rollover', 2, 'RightCloverLane', 0xB3, 150, 200, 319, 399),
+            ('rollover', 2, 'RightCloverLane', 0xB4, 150, 0, 319, 399),
+        ],
+        quiet=[(0xB3, 150, 0, 319, 199)],               # the right ramp's gate: no code of its own
+        named=[                                         # fired by the scoreboard
+            ('ramp', 1, 'SkyRamp', 'C'),                # the crossing ramps
+            ('switch', 5, 'RainbowLane', 'C'),          # both ends of the rainbow
+            ('switch', 6, 'BallLock', 'L'),
+            ('switch', 7, 'LeprechaunCaught', 'C'),
+            ('switch', 8, 'RabbitFoot', 'L'),
+        ],
+        lanes=True,                                     # the top lanes' lights
+        messages=[
+            ('jackpot', 'JACKPOT!!!'), ('skill_shot', 'SKILL SHOT'),
+            ('ramp1', 'SKY RAMP'), ('switch5', 'RAINBOW LANE'),
+            ('switch6', 'BALL 1 LOCKED'), ('switch6', 'BALL 2 LOCKED'),
+            ('switch7', 'YOU CAUGHT A LEPRECHAUN!'),
+            ('switch8', 'FOUND RABBIT FOOT'), ('switch8', 'RABBIT FOOT FOUND IN CAVE'),
+            ('award', 'LEPRECHAUN BONUS'), ('award', 'LUCKY RABBIT FOOT'), ('award', 'TREASURE - 300K'),
+            ('award', '4 LEAF CLOVER BONUS'), ('award', 'LEPRECHAUNS - SHOOT TREASURE'),
+        ],
+    ),
+    'ep1': dict(                                       # Super Android
+        zones=[                                         # a DOF row calls them t1 and the name
+            ('hole', 1, 'TestHole', 0xF5, 0, 0, 319, 399),            # top left
+            ('hole', 2, 'LeftHole', 0xF8, 0, 0, 50, 320),
+            ('hole', 3, 'PowerUpHole', 0xF6, 0, 0, 219, 399),
+            ('hole', 4, 'PhysicalSystemsHole', 0xF8, 145, 0, 319, 399),
+            ('hole', 5, 'RightHole', 0xF6, 220, 0, 319, 399),         # the centre ramp's end
+            ('kickback', 1, 'Kickback', 0xF8, 0, 321, 50, 399),       # left outlane
+            ('rollover', 1, 'Star', 0xF8, 51, 0, 144, 399),
+            ('rollover', 2, 'LeftLane', 0xFB, 0, 0, 319, 399),
+            ('rollover', 3, 'TopLane1', 0xFA, 0, 0, 179, 399),        # the top four lanes
+            ('rollover', 4, 'TopLane2', 0xFA, 180, 0, 209, 399),
+            ('rollover', 5, 'TopLane3', 0xFA, 210, 0, 242, 399),
+            ('rollover', 6, 'TopLane4', 0xFA, 243, 0, 319, 399),
+            ('ramp', 1, 'LeftRamp', 0xF9, 0, 0, 74, 399),
+            ('ramp', 2, 'CentreRamp', 0xF6, 220, 0, 319, 399),        # counted in the right hole
+            ('ramp', 3, 'RightRamp', 0xF9, 281, 0, 319, 399),
+        ],
+        targets=['DropTarget1', 'DropTarget2', 'DropTarget3'],   # F2-F4, left to right
+        bank='DropTargets',                             # all down: t1DropTargetsDown
         lanes=True,                                     # the top lanes' lights
         ramps='RAMPS ',                                 # the bonus line that counts them
         messages=[
@@ -126,7 +475,8 @@ FEATURES = {
         ],
     ),
 }
-COUNTS = dict(hole=5, rollover=6, ramp=3, kickback=1, target=3)   # E121-E145
+COUNTS = dict(hole=5, rollover=6, ramp=3, kickback=1, target=3, switch=24)   # the events made for them (src/feedback.h)
+NAME = re.compile(r'[A-Za-z][A-Za-z0-9]{0,39}\Z')                 # a feature's, in a DOF row after t1
 
 
 class Missing(Exception):
@@ -377,39 +727,63 @@ def features(img, f, v, art, data):
     collision map, and what its switch handler keeps for them."""
     rules = FEATURES[img]
     sw = f[v['switch_fn']][0]
-    out = dict(zones=[], timers=[], targets=[], lanes=None, ramps=None, msg_fn=None, msgs=[])
+    out = dict(zones=[], named=[], timers=[], targets=[], bank=None, banksets=[], lanes=None, ramps=None, msg_fn=None,
+               msgs=[])
 
     # the handler's gate: on the ramp layer only some colours are handled, and
     # tilted only some others
-    m = re.search(rf'\Apush es\npusha\ncmp al, 0xAA\njb {A}\ncmp byte ds:\[{N}\], 0x1\njne {A}\n'
-                  rf'((?:cmp al, {A}\nje {A}\n)+)jmp {A}\n((?:cmp al, {A}\nje {A}\n)+)'
+    # (the lowest colour handled is AA, or B1 on table 13; on Enigma's wires none is)
+    m = re.search(rf'\Apush es\npusha\ncmp al, {A}\njb {A}\ncmp byte ds:\[{N}\], 0x1\njne {A}\n'
+                  rf'((?:cmp al, {A}\nje {A}\n)*)jmp {A}\n((?:cmp al, {A}\nje {A}\n)+)'
                   rf'cmp byte ds:\[0x{v["tilt"]:X}\], 0x1\nje {A}\n', sw)
     if not m:
         raise Missing('switch handler gate')
     colours = lambda t: [num(c) for c in re.findall(r'cmp al, 0x([0-9A-F]+)', t)]
     out['gate'] = (num(m.group(1)), colours(m.group(2)), colours(m.group(3)))
     seen = {}
-    for kind, n, colour, x0, y0, x1, y1 in rules['zones']:
+    # the bank's targets all down go out as its name and Down: that one too
+    # (a feature drawn in two places is one zone each, under one name)
+    names = ([name for _, _, name in dict.fromkeys((z[0], z[1], z[2]) for z in rules['zones'])]
+             + [z[2] for z in rules.get('named', [])]
+             + list(rules.get('targets') or []) + [rules.get('bank', 'x') + 'Down'])
+    if any(not NAME.match(x) for x in names) or len({x.lower() for x in names}) != len(names):
+        raise Missing(f'feature names: letters and digits, each once: {names}')
+    for kind, n, name, colour, x0, y0, x1, y1 in rules['zones']:
+        if colour in rules.get('stamped', ()):     # drawn into the map as it runs: its side from the zone
+            out['zones'].append((kind, n, colour, x0, y0, x1, y1, side((x0 + x1) // 2), name))
+            continue
         regions = seen.setdefault(colour, kick_regions(art, (colour, colour), 2))
         # the scan looks at the pixels under the ball from its top left
         inside = [r for r in regions if x0 <= r[1] - 4 <= x1 and y0 <= r[2] - 4 <= y1]
         if not inside:
             raise Missing(f'{kind} {n}: colour {colour:02X} is not drawn there')
         x = sum(r[0] * r[1] for r in inside) // sum(r[0] for r in inside)
-        out['zones'].append((kind, n, colour, x0, y0, x1, y1, side(x)))
+        out['zones'].append((kind, n, colour, x0, y0, x1, y1, side(x), name))
+    # every place a zone's colour is drawn is in a zone, or said to be no feature
+    quiet = [(c, x0, y0, x1, y1) for c, x0, y0, x1, y1 in rules.get('quiet', [])]
     for colour, regions in seen.items():
         for r in regions:
             if not any(z[2] == colour and z[3] <= r[1] - 4 <= z[5] and z[4] <= r[2] - 4 <= z[6]
-                       for z in out['zones']):
+                       for z in out['zones']) and \
+               not any(q[0] == colour and q[1] <= r[1] - 4 <= q[3] and q[2] <= r[2] - 4 <= q[4] for q in quiet):
                 raise Missing(f'colour {colour:02X} at {r[1]},{r[2]} is in no zone')
+    # a feature with no switch of its own: a scoreboard text fires it
+    for kind, n, name, where in rules.get('named', []):
+        if kind == 'hole' or where not in 'LCR' or len(where) != 1:
+            raise Missing(f'{kind} {n}: a named feature is no hole, and has a side')
+        out['named'].append((kind, n, where, name))
     for kind, count in COUNTS.items():
-        got = sorted(z[1] for z in out['zones'] if z[0] == kind)
-        if len(got) != len(set(got)) or any(x > count for x in got):
-            raise Missing(f'{kind}: numbered {got}, events are made for {count}')
+        got = sorted({(z[1], z[8]) for z in out['zones'] if z[0] == kind} | {(z[1], z[3]) for z in out['named'] if z[0] == kind})
+        numbers = [g[0] for g in got]
+        if len(numbers) != len(set(numbers)) or any(x > count for x in numbers) or numbers != list(range(1, len(numbers) + 1)):
+            raise Missing(f'{kind}: numbered {numbers}, one name each, from 1, and events are made for {count}')
 
-    # the holes' hold timers: set when a ball is caught, counted down to its kick
-    for t, _ in re.findall(rf'cmp byte ds:\[{N}\], 0x0\njne {A}\n(?:.*\n){{0,16}}?mov byte ds:\[0x\1\], (0x[0-9A-F]+)\n', sw):
-        if f'dec byte ds:[0x{t}]\n' in sw and num(t) not in out['timers']:
+    # the holes' hold timers: set when a ball is caught, counted down to its
+    # kick. A byte, or a word whose hold is under 256, so its low byte tells it.
+    for size, t, hold in re.findall(rf'cmp (byte|word) ds:\[{N}\], 0x0\njne {A}\n(?:.*\n){{0,16}}?'
+                                    rf'mov \1 ds:\[0x\2\], (0x[0-9A-F]+)\n', sw):
+        # (a longer one is no hole's: Enigma's 500 is another wait)
+        if f'dec {size} ds:[0x{t}]\n' in sw and num(t) not in out['timers'] and num(hold) <= 0xFF:
             out['timers'].append(num(t))
     holes = [z for z in out['zones'] if z[0] == 'hole']
     if holes and not out['timers']:
@@ -429,15 +803,31 @@ def features(img, f, v, art, data):
             found.append((r[1], r[2], flags + i))
         if count > COUNTS['target']:
             raise Missing(f'{count} drop targets: events are made for {COUNTS["target"]}')
+        if count != len(rules['targets']) or 'bank' not in rules:
+            raise Missing(f'{count} drop targets, {len(rules["targets"])} names and a bank\'s')
         for n, (x, y, a) in enumerate(sorted(found), 1):
-            out['targets'].append((a, n, side(x)))
+            out['targets'].append((a, n, side(x), rules['targets'][n - 1]))
+        out['bank'] = rules['bank']
+
+    # banks of drop targets by their flags: the first target's colour, and the
+    # feature all of them down fires (as it resets)
+    for colour, kind in rules.get('banks', []):
+        m, _ = find(f, f'bank at colour {colour:02X}',
+                    rf'sub al, 0x{colour:X}\nmov ah, 0x0\nmov di, ax\ncmp byte ds:\[di\+{N}\], 0x1\nje {A}\n'
+                    rf'(?:.*\n){{0,12}}?cmp di, {N}\n', v['switch_fn'])
+        have = {f'{z[0]}{z[1]}' for z in out['zones']} | {f'{z[0]}{z[1]}' for z in out['named']}
+        if kind not in have:
+            raise Missing(f'bank at colour {colour:02X} fires {kind}, which is no feature of the table')
+        out['banksets'].append((num(m.group(1)), num(m.group(2)), re.sub(r'^([a-z]+)(\d+)$', r'\1_\2', kind)))
 
     if rules.get('lanes'):
         m, _ = find(f, 'lane lights', rf'mov byte ds:\[bx\+{N}\], 0x1\n((?:cmp byte ds:\[{A}\], 0x2\nje {A}\n)+)',
                     v['switch_fn'])
-        out['lanes'] = (num(m.group(1)), m.group(2).count('cmp'))
-        if f'cmp byte ds:[0x{out["lanes"][0]:X}], 0x2' not in m.group(2):
-            raise Missing('lane lights: not the first one tested')
+        # the lights tested all lit (table 2 sets them through a copy of its own)
+        tested = [num(a) for a in re.findall(r'cmp byte ds:\[0x([0-9A-F]+)\]', m.group(2))]
+        if tested != list(range(tested[0], tested[0] + len(tested))):
+            raise Missing('lane lights: not tested in a row')
+        out['lanes'] = (tested[0], len(tested))
 
     if rules.get('ramps'):
         line = strings(data, rules['ramps'], whole=False)
@@ -449,16 +839,22 @@ def features(img, f, v, art, data):
 
     if rules.get('messages'):
         called = set()
+        have = {f'{z[0]}{z[1]}' for z in out['zones']} | {f'{z[0]}{z[1]}' for z in out['named']}
         for kind, text in rules['messages']:
+            if kind not in ('jackpot', 'super_jackpot', 'skill_shot', 'award') and kind not in have:
+                raise Missing(f'message {text!r} for {kind}, which is no feature of the table')
+            event = re.sub(r'^([a-z]+)(\d+)$', r'\1_\2', kind)
             for at in strings(data, text):
-                out['msgs'].append((at, kind))
+                out['msgs'].append((at, event))
                 for _, (body, _) in f.items():
                     called |= set(re.findall(rf'lea bx, word ds:\[0x{at:X}\]\n(?:mov (?:ax|di), {A}\n){{0,2}}call (ep\d+_[0-9A-F]+)\n', body))
-        if len(called) != 1:
+        # one way to show a text, or two (table 9 has a second)
+        if not 1 <= len(called) <= 2:
             raise Missing(f'message function: {sorted(called) or "none"}')
-        out['msg_fn'] = called.pop()
-        if not f[out['msg_fn']][1]:
-            raise Missing(f'{out["msg_fn"]} has no RECOMP_ENTER, so its calls cannot be seen')
+        out['msg_fn'] = sorted(called)
+        for fn in out['msg_fn']:
+            if not f[fn][1]:
+                raise Missing(f'{fn} has no RECOMP_ENTER, so its calls cannot be seen')
     return out
 
 
@@ -601,7 +997,7 @@ def text_of(img, r):
         if k in ('flipper_fn', 'main_fn', 'drain_fn'):
             continue
         out.append(f'{k} {x}' if k.endswith('_fn') else f'{k} {x:X}')
-    out += [f'bumper {x} {y} {slot}' for x, y, slot in r['bumpers']]       # left to right: E105 on
+    out += [f'bumper {x} {y} {slot}' for x, y, slot in r['bumpers']]       # left to right: bumper_1 on
     out.append('board ' + ' '.join(f'{e:X}' for e in BOARD_EFFECTS + BOARD_MORE.get(img, [])))
     own = r['own']
     if own:
@@ -609,13 +1005,16 @@ def text_of(img, r):
         out.append(f'layer {layer:X}')
         out.append('on_layer ' + ' '.join(f'{c:X}' for c in on_layer))
         out.append('tilt_pass ' + ' '.join(f'{c:X}' for c in tilted))
-        if own['msg_fn']:
-            out.append(f'msg_fn {own["msg_fn"]}')
-        out += [f'zone {k} {n} {c:X} {x0} {y0} {x1} {y1} {s}' for k, n, c, x0, y0, x1, y1, s in own['zones']]
+        out += [f'msg_fn {fn}' for fn in own['msg_fn'] or []]
+        out += [f'zone {k} {n} {c:X} {x0} {y0} {x1} {y1} {s} {name}' for k, n, c, x0, y0, x1, y1, s, name in own['zones']]
+        out += [f'feature {k} {n} {s} {name}' for k, n, s, name in own['named']]
         out += [f'timer {a:X}' for a in own['timers']]
-        out += [f'target {a:X} {n} {s}' for a, n, s in own['targets']]
+        out += [f'target {a:X} {n} {s} {name}' for a, n, s, name in own['targets']]
+        if own['bank']:
+            out.append(f'bank {own["bank"]}')
         if own['lanes']:
             out.append('lanes %X %d' % own['lanes'])
+        out += [f'bankset {a:X} {n} {e}' for a, n, e in own['banksets']]
         if own['ramps'] is not None:
             out.append(f'ramps {own["ramps"]:X}')
         out += [f'msg {a:X} {k}' for a, k in own['msgs']]
@@ -623,7 +1022,7 @@ def text_of(img, r):
     return '\n'.join(out) + '\n'
 
 
-MENUS_VERSION = 1
+MENUS_VERSION = 2
 
 
 def scan_menus():
@@ -665,6 +1064,17 @@ def scan_menus():
     m, _ = find(f, 'initials entry', rf'cmp word cs:\[{N}\], 0x0\n{GO}jmp {A}\ncmp al, 0x1\n{GO}cmp al, 0x1C\n',
                 v['menus_fn'])
     v['initials'] = num(m.group(1))     # not 0 while a high score's initials are typed
+    # a cabinet types them on the DMD (src/autostart.c): the new score's place
+    # in the high scores, the high scores, and the letter each key types
+    m, _ = find(f, 'new high score', rf'mov word cs:\[0x{v["initials"]:X}\], 0x1\nmov word cs:\[{N}\], di\n',
+                v['menus_fn'])
+    v['entry'] = num(m.group(1))
+    m, _ = find(f, 'high scores', rf'mov cx, 0x3\ncmp byte cs:\[di\+{N}\], 0x3F\n{GO}cmp byte cs:\[di\+{A}\], 0x3F\n',
+                v['menus_fn'])
+    v['scores'] = num(m.group(1))
+    m, _ = find(f, 'initials letters', rf'dec bx\nmov al, byte cs:\[bx\+{N}\]\nmov di, word cs:\[0x{v["entry"]:X}\]\n',
+                v['menus_fn'])
+    v['letters'] = num(m.group(1))
     m, _ = find(f, 'main menu frames', rf'inc word cs:\[0x([0-9A-F]+)\]\ncmp word cs:\[0x\1\], {A}\n{GO}'
                 rf'push cs\ncall pin_\w+\n', v['main_fn'])
     v['menu_frames'] = num(m.group(1))  # the main menu's frames toward its demo: only it counts them
@@ -713,7 +1123,136 @@ def write_menus(show):
     print('menus map: work/feedback/pin.map')
 
 
+# ---- reading a table: --switches ----------------------------------------------------
+
+def function_items(img, name):
+    """A lifted function as it runs: ('label', address) and ('ins', text, target)
+    in order, target the address a jump goes to (None for others)."""
+    for path in sorted(glob.glob(os.path.join(GEN, img, f'{img}_[0-9]*.c'))):
+        text = open(path).read()
+        at = text.find(f'void {name}(CPU *cpu)')
+        if at < 0:
+            continue
+        body = text[at:text.index('\n}\n', at)]
+        items = []
+        for line in body.split('\n')[2:]:
+            lab = re.match(rf'L_{name}_([0-9A-F]+):;', line)
+            if lab:
+                items.append(('label', int(lab.group(1), 16)))
+                continue
+            m = re.search(r'/\* ([^*]*?) \*/\s*$', line)
+            if not m or m.group(1).endswith('call return addr'):
+                continue
+            ins = m.group(1)
+            c = re.match(rf'\s+({img}_[0-9A-F]+)\(cpu\);', line)
+            if c and ins.startswith('call '):
+                ins = 'call ' + c.group(1)
+            j = re.match(r'(j\w+) 0x([0-9A-F]+)$', ins)
+            items.append(('ins', ins, int(j.group(2), 16) if j else None))
+        return items
+    raise Missing(f'{name} is not in the lifted code')
+
+
+def text_at(data, at):
+    """The scoreboard text at ds:at, or None if it is not one"""
+    out = bytearray()
+    for b in data[at:at + 48]:
+        if b in (0, 0x24):
+            break
+        if not 0x20 <= b < 0x7F:
+            return None
+        out.append(b)
+    return out.decode() if len(out) >= 3 else None
+
+
+def switch_report(img):
+    """Each colour the switch handler gives code of its own: where it is drawn,
+    and that code, from its entry to the handler's end"""
+    file, load, size, fnv = lifted_as(img)
+    f = read_functions(img)
+    v = {}
+    flippers(f, v)
+    tilt_and_nudge(f, v)
+    physics_and_kicker(f, v)
+    plunger(f, v)
+    balls_lost(f, v)
+    art_seg = collision_map(f, v)
+    switches(f, v)
+    module = exe_module(img, file, size)
+    m = re.match(rf'push ds\n(?:.*\n){{0,3}}?mov ax, {N}\nmov ds, ax\n', f[v['main_fn']][0])
+    ds = (num(m.group(1)) - load) & 0xFFFF
+    data = module[ds * 16:ds * 16 + 0x10000]
+    cs = int(v['main_fn'].split('_')[1], 16) >> 4
+    at = ((art_seg - load) & 0xFFFF) * 16
+    art = module[at:at + MAP_W * MAP_H]
+
+    items = function_items(img, v['switch_fn'])
+    label = {it[1]: i for i, it in enumerate(items) if it[0] == 'label'}
+    jt = next(num(m.group(1)) for it in items if it[0] == 'ins'
+              for m in [re.match(rf'mov bx, word cs:\[bx\+{N}\]', it[1])] if m)
+    entries = [struct.unpack_from('<H', module, cs * 16 + jt + 2 * k)[0] for k in range(0x56)]
+    ends = [it[2] for it in items if it[0] == 'ins' and it[1].startswith('jmp 0x')]
+    end = max(set(ends), key=ends.count)
+    groups = {}
+    for k, e in enumerate(entries):
+        groups.setdefault(e, []).append(0xAA + k)
+
+    def walk(start):
+        seen, todo = set(), [label[start]]
+        while todo:
+            i = todo.pop()
+            while i < len(items) and i not in seen:
+                seen.add(i)
+                it = items[i]
+                if it[0] == 'ins':
+                    if it[2] is not None:
+                        if it[2] == end:
+                            if it[1].startswith('jmp '):
+                                break
+                        elif it[2] in label:
+                            todo.append(label[it[2]])
+                            if it[1].startswith('jmp '):
+                                break
+                    elif it[1] in ('ret', 'retf', 'iret', 'jmp bx'):
+                        break
+                i += 1
+        return sorted(seen)
+
+    print(f'{img}: switch handler {v["switch_fn"]}, ds {ds:X}, jump table cs:{jt:X}, end {end:X}')
+    print('  gate: ' + '; '.join(it[1] for it in items[:40] if it[0] == 'ins' and not it[1].startswith('push')
+                                 and 'bx' not in it[1])[:600])
+    for e, colours in sorted(groups.items(), key=lambda g: g[1][0]):
+        where = []
+        for c in colours:
+            for n, x, y, top, bottom in kick_regions(art, (c, c), 2):
+                where.append(f'{c:X}@{x},{y}({top}-{bottom},{n}px,{side(x)})')
+        code = walk(e) if e in label else []
+        lines = [items[i][1] for i in code if items[i][0] == 'ins']
+        if len(lines) <= 1 and not where:
+            continue
+        head = '/'.join(f'{c:X}' for c in colours) if len(colours) < 8 else f'{colours[0]:X}-{colours[-1]:X} ({len(colours)})'
+        print(f'\n== {head} at {e:X}: {len(lines)} instructions')
+        if where:
+            print('  drawn: ' + ' '.join(where[:12]) + (' ...' if len(where) > 12 else ''))
+        if len(colours) >= 8 and len(lines) < 3:
+            continue
+        for i in code:
+            it = items[i]
+            if it[0] == 'label':
+                print(f'  {it[1]:X}:')
+                continue
+            s = it[1]
+            t = re.match(rf'lea bx, word ds:\[{N}\]', s)
+            if t and text_at(data, num(t.group(1))):
+                s += f'    ; "{text_at(data, num(t.group(1)))}"'
+            print('    ' + s)
+
+
 def main():
+    if '--switches' in sys.argv:
+        for img in sys.argv[sys.argv.index('--switches') + 1:]:
+            switch_report(img)
+        return 0
     show = '--show' in sys.argv
     write_menus(show)
     found, bad = {}, []
@@ -743,7 +1282,7 @@ def main():
             print('  bumpers: ' + ', '.join(f'{x},{y}={"LCR"[s]}' for x, y, s in r['bumpers']))
             if r['own']:
                 o = r['own']
-                print('  zones: ' + ', '.join(f'{k}_{n}={c:X}{s}' for k, n, c, *_, s in o['zones']))
+                print('  zones: ' + ', '.join(f'{k}_{n}={c:X}{s}' for k, n, c, *_, s, _ in o['zones']))
                 print(f'  timers {[hex(t) for t in o["timers"]]} targets {o["targets"]} lanes {o["lanes"]} '
                       f'ramps {o["ramps"]} messages {len(o["msgs"])} through {o["msg_fn"]}')
     print(f'feedback map: {len(found)} tables in work/feedback/')

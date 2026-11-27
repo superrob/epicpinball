@@ -62,6 +62,7 @@ static const int k_nudge_key[3] = { 0x2C, 0x35, 0x39 };   /* Z, /, Space: the ga
 
 int host_key_by_name(const char *s);  /* host.c */
 #include "ini.h"
+#include "autostart.h"
 
 const char *pad_ini(void) { return ini; }
 
@@ -71,6 +72,11 @@ static void key_hold(int sc, int down)
     int k = sc & 0x1FF;
     if (!down && !held[k]) return;                 /* let go of what was never pressed */
     if (down ? held[k]++ : --held[k]) return;
+    /* --table: while PINBALL is driven, counted and not sent, so a button held
+     * across is not pressed again when the player has the game back; between
+     * games in a cabinet, the initials and Start */
+    if (g_auto_on && autostart_busy()) return;
+    if (down && g_auto_on && autostart_key(k)) return;
     if (sc & 0x100) kbd_scancode(0xE0);
     kbd_scancode((uint8_t)((k & 0xFF) | (down ? 0 : 0x80)));
 }

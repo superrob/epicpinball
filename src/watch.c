@@ -22,6 +22,8 @@
 #include "nudge.h"
 #include "feedback.h"
 #include "plunger.h"
+#include <ctype.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdlib.h>
 
@@ -45,7 +47,7 @@ uint8_t g_watched[0x10000];
 #define HOLD_GAP_MS 150.0
 
 enum { W_NONE, W_KICK, W_PULL, W_PULL_HI, W_VY, W_ACTIVE, W_COUNT, W_EXTRA, W_METER, W_TILT, W_OVER,
-       W_TIMER, W_TARGET, W_LANES, W_RAMPS };
+       W_TIMER, W_TARGET, W_LANES, W_RAMPS, W_BANK };
 
 static int wanted;
 static WatchMap M;
@@ -111,6 +113,60 @@ static const struct { const char *key; size_t at; } fields[] = {
 #undef FIELD
 #define NFIELDS (int)(sizeof fields / sizeof fields[0])
 
+/* The zone kind and number of a table's own feature event; 0 if it is not one */
+static int feature_of(int e, int *kind, int *n)
+{
+    static const struct { int first, count, kind; } runs[] = {
+        { FB_HOLE_1, FB_HOLES, WZ_HOLE }, { FB_KICKBACK, 1, WZ_KICKBACK }, { FB_ROLLOVER_1, FB_ROLLOVERS, WZ_ROLLOVER },
+        { FB_RAMP_1, FB_RAMPS, WZ_RAMP }, { FB_SWITCH_1, FB_SWITCHES, WZ_SWITCH },
+    };
+    for (size_t i = 0; i < sizeof runs / sizeof runs[0]; i++)
+        if (e >= runs[i].first && e < runs[i].first + runs[i].count) {
+            *kind = runs[i].kind;
+            *n = e - runs[i].first + 1;
+            return 1;
+        }
+    return 0;
+}
+
+/* A feature's name: a letter, then letters and digits */
+static int good_name(const char *s)
+{
+    if (!isalpha((unsigned char)*s) || strlen(s) > WATCH_NAME) return 0;
+    for (; *s; s++) if (!isalnum((unsigned char)*s)) return 0;
+    return 1;
+}
+
+static int same_name(const char *a, const char *b)
+{
+    for (; *a && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++) {}
+    return tolower((unsigned char)*a) == tolower((unsigned char)*b);
+}
+
+/* Appended to m->features, a space between; 0 once it is full */
+static int add(WatchMap *m, const char *fmt, ...)
+{
+    const size_t at = strlen(m->features);
+    if (at && at + 1 < sizeof m->features) m->features[at] = ' ', m->features[at + 1] = 0;
+    const size_t from = strlen(m->features);
+    va_list ap;
+    va_start(ap, fmt);
+    const int n = vsnprintf(m->features + from, sizeof m->features - from, fmt, ap);
+    va_end(ap);
+    return n >= 0 && from + (size_t)n < sizeof m->features;
+}
+
+/* The next zone, field by field: the map was cleared, and its padding stays
+ * so (a struct copied in would bring its own, which a test compares) */
+static void zone_at(WatchMap *m, int kind, int n, int colour, int x0, int y0, int x1, int y1, char side, const char *name)
+{
+    WatchZone *z = &m->zone[m->nzones++];
+    z->kind = kind; z->n = n; z->colour = colour;
+    z->x0 = x0; z->y0 = y0; z->x1 = x1; z->y1 = y1;
+    z->side = side;
+    strcpy(z->name, name);
+}
+
 int watch_map_parse(const char *text, WatchMap *m, const char **why)
 {
     uint64_t got = 0;
@@ -125,7 +181,7 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         if (*p) p++;
         if (n && line[n - 1] == '\r') line[--n] = 0;      /* written on Windows: CRLF */
         unsigned a, b, x, y, slot, c, x1, y1;
-        char kind[16], s;
+        char kind[16], s, name[WATCH_NAME + 1];
         if (!strcmp(line, "end")) ended = 1;
         else if (sscanf(line, "epicpinball-feedback %u", &a) == 1) version = (int)a;
         else if (sscanf(line, "image %7s %u %x", m->name, &a, &b) == 3) { m->size = a; m->fnv = b; image = 1; }
@@ -134,22 +190,45 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
             m->bumper[m->nbumpers].x = (int)x;
             m->bumper[m->nbumpers].y = (int)y;
             m->bumper[m->nbumpers++].slot = (int)slot;
-        } else if (sscanf(line, "zone %15s %u %x %u %u %u %u %c", kind, &a, &c, &x, &y, &x1, &y1, &s) == 8) {
-            static const char *const kinds[WZ_KINDS] = { "hole", "kickback", "rollover", "ramp" };
-            static const int most[WZ_KINDS] = { FB_HOLES, 1, FB_ROLLOVERS, FB_RAMPS };
+        } else if (sscanf(line, "zone %15s %u %x %u %u %u %u %c %40s", kind, &a, &c, &x, &y, &x1, &y1, &s, name) == 9) {
+            static const char *const kinds[WZ_KINDS] = { "hole", "kickback", "rollover", "ramp", "switch" };
+            static const int most[WZ_KINDS] = { FB_HOLES, 1, FB_ROLLOVERS, FB_RAMPS, FB_SWITCHES };
             int k = 0;
             while (k < WZ_KINDS && strcmp(kinds[k], kind)) k++;
             if (m->nzones == WATCH_ZONES || k == WZ_KINDS || a < 1 || (int)a > most[k] || c < 0xAA || c > 0xFF
-                || x > x1 || y > y1 || x1 >= 320 || y1 >= 400 || !strchr("LCR", s)) { *why = "a bad zone"; return 0; }
-            m->zone[m->nzones++] = (WatchZone){ k, (int)a, (int)c, (int)x, (int)y, (int)x1, (int)y1, s };
+                || x > x1 || y > y1 || x1 >= 320 || y1 >= 400 || !strchr("LCR", s) || !good_name(name)) { *why = "a bad zone"; return 0; }
+            zone_at(m, k, (int)a, (int)c, (int)x, (int)y, (int)x1, (int)y1, s, name);
+        } else if (sscanf(line, "feature %15s %u %c %40s", kind, &a, &s, name) == 4) {
+            static const char *const kinds[WZ_KINDS] = { "hole", "kickback", "rollover", "ramp", "switch" };
+            static const int most[WZ_KINDS] = { FB_HOLES, 1, FB_ROLLOVERS, FB_RAMPS, FB_SWITCHES };
+            int k = 0;
+            while (k < WZ_KINDS && strcmp(kinds[k], kind)) k++;
+            if (m->nzones == WATCH_ZONES || k == WZ_KINDS || k == WZ_HOLE || a < 1 || (int)a > most[k]
+                || !strchr("LCR", s) || !good_name(name)) { *why = "a bad feature"; return 0; }
+            zone_at(m, k, (int)a, 0, 0, 0, 0, 0, s, name);                    /* colour 0: no switch */
         } else if (sscanf(line, "timer %x", &a) == 1 && !strncmp(line, "timer ", 6)) {
             if (m->ntimers == WATCH_TIMERS || a > 0xFFFF) { *why = "a bad timer"; return 0; }
             m->timer[m->ntimers++] = (uint16_t)a;
-        } else if (sscanf(line, "target %x %u %c", &a, &b, &s) == 3) {
-            if (m->ntargets == WATCH_TARGETS || a > 0xFFFF || b < 1 || b > WATCH_TARGETS || !strchr("LCR", s)) {
+        } else if (sscanf(line, "target %x %u %c %40s", &a, &b, &s, name) == 4) {
+            if (m->ntargets == WATCH_TARGETS || a > 0xFFFF || b < 1 || b > WATCH_TARGETS || !strchr("LCR", s) || !good_name(name)) {
                 *why = "a bad target"; return 0;
             }
-            m->target[m->ntargets++] = (WatchTarget){ (uint16_t)a, (int)b, s };
+            WatchTarget *tg = &m->target[m->ntargets++];     /* field by field: the padding stays 0 */
+            tg->at = (uint16_t)a;
+            tg->n = (int)b;
+            tg->side = s;
+            strcpy(tg->name, name);
+        } else if (sscanf(line, "bank %40s", name) == 1 && !strncmp(line, "bank ", 5)) {
+            if (*m->bank || !good_name(name)) { *why = "a bad bank"; return 0; }
+            strcpy(m->bank, name);
+        } else if (sscanf(line, "bankset %x %u %15s", &a, &b, kind) == 3) {
+            int e = feedback_by_name(kind), k, n;
+            if (m->nbanksets == WATCH_BANKS || !a || a + b > 0xFFFF || b < 2 || b > 8 || !feature_of(e, &k, &n)) {
+                *why = "a bad bank of targets"; return 0;
+            }
+            m->bankset[m->nbanksets].at = (uint16_t)a;
+            m->bankset[m->nbanksets].n = (int)b;
+            m->bankset[m->nbanksets++].event = e;
         } else if (sscanf(line, "lanes %x %u", &a, &b) == 2) {
             if (!a || a > 0xFFF0 || b < 2 || b > 8) { *why = "bad lanes"; return 0; }
             m->lanes = (uint16_t)a; m->nlanes = (int)b;
@@ -171,12 +250,14 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
                 p = *e ? e + 1 : e;
             }
         } else if (sscanf(line, "msg %x %15s", &a, kind) == 2) {
-            int e = feedback_by_name(kind);
+            int e = feedback_by_name(kind), k, n;
             if (m->nmsgs == WATCH_MSGS || a > 0xFFFF
-                || (e != FB_JACKPOT && e != FB_SUPER_JACKPOT && e != FB_SKILL_SHOT && e != FB_AWARD)) {
+                || (e != FB_JACKPOT && e != FB_SUPER_JACKPOT && e != FB_SKILL_SHOT && e != FB_AWARD
+                    && !feature_of(e, &k, &n))) {
                 *why = "a bad message"; return 0;
             }
-            m->msg[m->nmsgs++] = (WatchMsg){ (uint16_t)a, e };
+            m->msg[m->nmsgs].at = (uint16_t)a;              /* field by field: the padding stays 0 */
+            m->msg[m->nmsgs++].event = e;
         } else if (!strncmp(line, "board ", 6)) {          /* SSF: the board's effect slots, hex */
             for (const char *p = line + 6; *p; ) {
                 char *e;
@@ -189,7 +270,8 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         else if (!strcmp(key, "step_fn")) snprintf(m->step_fn, sizeof m->step_fn, "%s", val);
         else if (!strcmp(key, "kicker_fn")) snprintf(m->kicker_fn, sizeof m->kicker_fn, "%s", val);
         else if (!strcmp(key, "switch_fn")) snprintf(m->switch_fn, sizeof m->switch_fn, "%s", val);
-        else if (!strcmp(key, "msg_fn")) snprintf(m->msg_fn, sizeof m->msg_fn, "%s", val);
+        else if (!strcmp(key, "msg_fn") && !*m->msg_fn) snprintf(m->msg_fn, sizeof m->msg_fn, "%s", val);
+        else if (!strcmp(key, "msg_fn")) snprintf(m->msg_fn2, sizeof m->msg_fn2, "%s", val);
         else if (!strcmp(key, "effect_fn")) snprintf(m->effect_fn, sizeof m->effect_fn, "%s", val);
         else if (!strcmp(key, "sfx_on")) {
             char *e;
@@ -217,33 +299,59 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
     if (!m->nbumpers) strcpy(m->layout, "LCR");    /* Enigma's three, stamped as it runs */
     for (int i = 1; i < m->nbumpers; i++)
         if (m->bumper[i].x < m->bumper[i - 1].x) { *why = "bumpers not left to right"; return 0; }
-    /* for made rows: each numbered feature's side, by its number */
-    static const char *const kinds[] = { "hole", "ramp", "kickback" };
-    static const int kind_of[] = { WZ_HOLE, WZ_RAMP, WZ_KICKBACK };
-    size_t at = 0;
-    for (int k = 0; k < 3; k++) {
-        char side[8] = { 0 };
+    /* for the DOF helper: each feature's name and side, by kind and number */
+    static const char *const kinds[WZ_KINDS] = { "hole", "kickback", "rollover", "ramp", "switch" };
+    int fits = 1;
+    const char *names[WATCH_ZONES + WATCH_TARGETS + 2];
+    int nnames = 0;
+    for (int k = 0; k < WZ_KINDS; k++) {
         int top = 0;
         for (int i = 0; i < m->nzones; i++)
-            if (m->zone[i].kind == kind_of[k]) {
-                if (side[m->zone[i].n - 1] && side[m->zone[i].n - 1] != m->zone[i].side) { *why = "a feature on two sides"; return 0; }
-                side[m->zone[i].n - 1] = m->zone[i].side;
-                if (m->zone[i].n > top) top = m->zone[i].n;
+            if (m->zone[i].kind == k && m->zone[i].n > top) top = m->zone[i].n;
+        for (int n = 1; n <= top; n++) {
+            const WatchZone *first = NULL;
+            for (int i = 0; i < m->nzones; i++) {
+                const WatchZone *z = &m->zone[i];
+                if (z->kind != k || z->n != n) continue;
+                if (!first) first = z;
+                else if (z->side != first->side) { *why = "a feature on two sides"; return 0; }
+                else if (strcmp(z->name, first->name)) { *why = "a feature with two names"; return 0; }
             }
-        for (int i = 0; i < top; i++) if (!side[i]) { *why = "a feature's number missing"; return 0; }
-        if (top) at += (size_t)snprintf(m->sides + at, sizeof m->sides - at, "%s%s:%s", at ? " " : "", kinds[k], side);
+            if (!first) { *why = "a feature's number missing"; return 0; }
+            names[nnames++] = first->name;
+            fits &= add(m, "%s%d=%s:%c", kinds[k], n, first->name, first->side);
+        }
     }
-    if (m->ntargets) {
-        char side[WATCH_TARGETS + 1] = { 0 };
-        for (int i = 0; i < m->ntargets; i++) side[m->target[i].n - 1] = m->target[i].side;
-        if ((int)strlen(side) != m->ntargets) { *why = "a target's number missing"; return 0; }
-        snprintf(m->sides + at, sizeof m->sides - at, "%starget:%s", at ? " " : "", side);
+    for (int n = 1; n <= m->ntargets; n++) {
+        const WatchTarget *t = NULL;
+        for (int i = 0; i < m->ntargets; i++)
+            if (m->target[i].n == n) t = &m->target[i];
+        if (!t) { *why = "a target's number missing"; return 0; }
+        names[nnames++] = t->name;
+        fits &= add(m, "target%d=%s:%c", n, t->name, t->side);
     }
-    if (version != 5) *why = "another version's map";
+    if (!*m->bank != !m->ntargets) { *why = "drop targets and their bank: both or neither"; return 0; }
+    char bank_down[WATCH_NAME + 8];                  /* what the helper sends for it */
+    if (*m->bank) {
+        snprintf(bank_down, sizeof bank_down, "%sDown", m->bank);
+        names[nnames++] = bank_down;
+        fits &= add(m, "bank=%s", m->bank);
+    }
+    if (!fits) { *why = "features too long"; return 0; }
+    for (int i = 0; i < m->nmsgs + m->nbanksets; i++) {   /* a text, a bank, fires a feature the map has */
+        int k, n, found = 0;
+        if (!feature_of(i < m->nmsgs ? m->msg[i].event : m->bankset[i - m->nmsgs].event, &k, &n)) continue;
+        for (int j = 0; j < m->nzones && !found; j++) found = m->zone[j].kind == k && m->zone[j].n == n;
+        if (!found) { *why = "a message or bank for a feature the map has not"; return 0; }
+    }
+    for (int i = 0; i < nnames; i++)
+        for (int j = i + 1; j < nnames; j++)
+            if (same_name(names[i], names[j])) { *why = "a feature's name used twice"; return 0; }
+    if (version != 6) *why = "another version's map";
     else if (!ended || !image || !*m->step_fn || !*m->kicker_fn || !*m->switch_fn || got != (1ull << NFIELDS) - 1)
         *why = "incomplete";
     else if (m->nmsgs && !*m->msg_fn) *why = "messages, but no message function";
-    else if (m->nzones && (!m->layer || !m->non_layer || !m->ntilt_pass)) *why = "zones, but no gate";
+    else if (m->nzones && (!m->layer || !m->ntilt_pass)) *why = "zones, but no gate";   /* none may pass on the layer */
     else if (m->slots < 1 || m->slots > 8) *why = "a bad ball count";
     else return 1;
     return 0;
@@ -252,7 +360,7 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
 int watch_zone(const WatchMap *m, int kind, int colour, int x, int y)
 {
     for (int i = 0; i < m->nzones; i++)
-        if (m->zone[i].kind == kind && m->zone[i].colour == colour && x >= m->zone[i].x0 && x <= m->zone[i].x1
+        if (m->zone[i].kind == kind && m->zone[i].colour && m->zone[i].colour == colour && x >= m->zone[i].x0 && x <= m->zone[i].x1
             && y >= m->zone[i].y0 && y <= m->zone[i].y1) return i;
     return -1;
 }
@@ -325,6 +433,8 @@ int watch_map_use(const WatchMap *m, uint16_t load_seg)
     for (int i = 0; i < M.ntimers; i++) watch(M.timer[i], W_TIMER);
     for (int i = 0; i < M.ntargets; i++) watch(M.target[i].at, W_TARGET);
     if (M.lanes) watch(M.lanes, W_LANES);
+    for (int i = 0; i < M.nbanksets; i++)
+        for (int j = 0; j < M.bankset[i].n; j++) watch((uint16_t)(M.bankset[i].at + j), W_BANK);
     if (M.ramps) watch(M.ramps, W_RAMPS);
     kicking = launched = release = started = known = idle = ready = multi = held = sw_on = 0;
     kick_t = sw_t = -1e18;
@@ -336,7 +446,7 @@ int watch_map_use(const WatchMap *m, uint16_t load_seg)
     flipper[0] = flipper[1] = 0;
     last_step = now_ms();
     ss0 = g_cpu.ss; sp0 = g_cpu.sp;                /* as load_exe left them */
-    feedback_table(now_ms(), M.name, M.layout, M.sides);
+    feedback_table(now_ms(), M.name, M.layout, M.features);
     g_watch_ds = DS;
     g_watch_on = 1;
     return 1;
@@ -501,8 +611,24 @@ static int handled(int colour)
     return !on_layer && g_cpu.mem[DS + M.tilt] != 1;
 }
 
+/* --switch-log, testing */
+static void switch_log(const char *fmt, ...)
+{
+    static FILE *f;
+    if (!f && !(f = fopen(g_opt.switch_log, "w"))) { g_opt.switch_log = NULL; return; }
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fflush(f);
+}
+
 void watch_enter(CPU *cpu, const char *fn)
 {
+    if (g_opt.switch_log && *M.effect_fn && !strcmp(fn, M.effect_fn) && sound())
+        /* an effect the table plays: its slot and pan, the first ball's place */
+        switch_log("%.0f %s fx%02X %d %d %d\n", now_ms(), M.name, cpu->al, cpu->ah >> 4,
+                   rd16(DS + M.x), rd16(DS + M.y));
     if (!strcmp(fn, M.step_fn)) {
         if (!sound()) return;
         nudge_step(&M, g_cpu.mem + DS);          /* a shove of the cabinet, as this step begins */
@@ -525,6 +651,12 @@ void watch_enter(CPU *cpu, const char *fn)
         sw_y = rd16(DS + M.scan_y);
         sw_t = now_ms();
         const double t = now_ms();
+        if (g_opt.switch_log) {                    /* testing: each colour once a gap, with the ball's place */
+            static double last[256];
+            if (t - last[sw_colour] > SWITCH_GAP_MS)
+                switch_log("%.0f %s %02X %d %d %d\n", t, M.name, sw_colour, sw_x, sw_y, g_cpu.mem[DS + M.tilt] == 1);
+            last[sw_colour] = t;
+        }
         for (int i = 0; i < M.nzones; i++) {
             const WatchZone *z = &M.zone[i];
             if (z->colour != sw_colour || sw_x < z->x0 || sw_x > z->x1 || sw_y < z->y0 || sw_y > z->y1) continue;
@@ -532,9 +664,11 @@ void watch_enter(CPU *cpu, const char *fn)
             sw_last[i] = t;
             if (!fresh_hit) continue;
             if (z->kind == WZ_ROLLOVER) emit((FbEvent)(FB_ROLLOVER_1 + z->n - 1), 1, sw_x, sw_y, sw_colour, 0);
+            else if (z->kind == WZ_SWITCH) emit((FbEvent)(FB_SWITCH_1 + z->n - 1), 1, sw_x, sw_y, sw_colour, 0);
             else if (z->kind == WZ_KICKBACK) emit(FB_KICKBACK, 1, sw_x, sw_y, sw_colour, 0);
+            else if (z->kind == WZ_RAMP && !M.ramps) emit((FbEvent)(FB_RAMP_1 + z->n - 1), 1, sw_x, sw_y, sw_colour, 0);
         }
-    } else if (*M.msg_fn && !strcmp(fn, M.msg_fn)) {
+    } else if ((*M.msg_fn && !strcmp(fn, M.msg_fn)) || (*M.msg_fn2 && !strcmp(fn, M.msg_fn2))) {
         if (!sound()) return;
         for (int i = 0; i < M.nmsgs; i++)
             if (M.msg[i].at == cpu->bx) { emit((FbEvent)M.msg[i].event, 1, 0, 0, cpu->bx, 0); break; }
@@ -623,6 +757,15 @@ void watch_write_byte(uint32_t a, uint8_t v)
         for (int j = 0; j < M.ntargets; j++) all &= g_cpu.mem[DS + M.target[j].at] == 1;
         if (v == 1 && old != 1) emit((FbEvent)(FB_TARGET_1 + M.target[i].n - 1), 1, sw_x, sw_y, M.target[i].n, 0);
         else if (!v && all) emit(FB_TARGETS_DOWN, 1, sw_x, sw_y, 0, 0);       /* the bank resets */
+        break;
+    }
+    case W_BANK: {                   /* a bank all down, the first flag cleared: it resets */
+        for (int i = 0; i < M.nbanksets; i++) {
+            if (off < M.bankset[i].at || off >= M.bankset[i].at + M.bankset[i].n) continue;
+            int all = 1;
+            for (int j = 0; j < M.bankset[i].n; j++) all &= g_cpu.mem[DS + M.bankset[i].at + j] == 1;
+            if (!v && old == 1 && all) emit((FbEvent)M.bankset[i].event, 1, sw_x, sw_y, i, 0);
+        }
         break;
     }
     case W_LANES: {                  /* the first light put out with all of them lit */

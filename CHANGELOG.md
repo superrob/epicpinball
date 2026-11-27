@@ -19,7 +19,8 @@ All notable changes to this project are documented here. The format follows
   run. The menus and the scoreboard keep their shape. Conformance 154.
 - **`--dof`**, cabinet feedback (Linux): flippers, slingshots, bumpers,
   launch, ball release, drain, nudge, tilt and the extra ball's knocker go to
-  libdof as events E101 to E120 of tables `epicpinball_ep01` to `ep13`:
+  libdof as named events (`$FlipperLeft`, `$Bumper2`, `$ExtraBall`) of
+  tables `epicpinball_ep01` to `ep13`:
   each bumper its own (table 5 has six), a ball waiting in the lane,
   multiball, game start and game over among them,
   through a helper in `dof/` (GPLv3, built only by `dof/build.sh`; the game
@@ -33,7 +34,8 @@ All notable changes to this project are documented here. The format follows
   **no output limits**: they are the controller's. Tested on a real cabinet
   with a Pinscape Pico, an LED strip and a Config Tool export, on table 1
   only: `docs/cabinet-feedback.md`.
-- **Table 1's own feedback**, E121 to E145: its five holes kicking out and
+- **Table 1's own feedback**, named by the table (`$t1PowerUpHole`,
+  `$t1LeftRamp`, `$t1DropTargetsDown`), and `$Jackpot` and the like: its five holes kicking out and
   holding a ball, the kickback, drop targets and their bank, rollovers, the
   top lanes complete, the skill shot, three ramps, jackpots and awards. Read
   from the switch handler every table has, what it keeps and the scoreboard's
@@ -41,6 +43,74 @@ All notable changes to this project are documented here. The format follows
   kickback and the bank on the middle-row solenoids by side, jackpots on the
   beacon, and colours on flashers. The other twelve tables can follow table by
   table. Tested on a real cabinet.
+- **Table 6's target banks:** each bank all down, as it resets, is an event
+  of its own (`$t6SwordTargetsDown`, `$t6BlueTargetsDown`,
+  `$t6LeftTargetsDown`), watched by the game's flags for it (`bankset` in the
+  map). A table may have 24 switch features now.
+- **SSF on every table's own board:** each table's holes (and table 1's,
+  8's, 10's and 12's rubber posts, table 11's targets) now go to the exciters
+  too, not only the sounds every table shares. Found by their samples: table
+  1's hole and post sounds are in the others byte for byte. `--switch-log`
+  lists each effect a table plays.
+- **Table 13's own feedback** (African Safari): the water hole, base camp,
+  lock and lion's den, the BIRD lanes, the mountain path, the CAT targets,
+  the snake pit, the lost caves, the base camp lane, the outlanes, the
+  jackpots and its awards (`$t13LionsDen` ...). Every table now has events
+  of its own. Tested by four hours of `--autoplay`.
+- **Table 12's own feedback** (Toy Factory): the junk heap, the lock, the
+  superball and joystick holes, the skateboard ramp, the top lanes, the toy
+  express, the toy chest, the display case, the paint shop, the orbit, the
+  outlanes, the jackpots and its awards (`$t12Joystick` ...). Tested by four
+  hours of `--autoplay`.
+- **Table 11's own feedback** (Space Journey): the lock, the extra ball hole
+  and the abyss, the asteroid and hyperspace ramps, the STAR lanes, the
+  space station, the orbit, the outlanes, its targets, the jackpots and its
+  awards (`$t11Hyperspace` ...). Tested by four hours of `--autoplay`.
+- **Table 10's own feedback** (Pangaea): the cavern and its lock, its four
+  other holes, the side targets, the orbits, the bullseye, the outlanes, the
+  volcano loop, the eggs, the skill shot, the jackpot and its awards
+  (`$t10Cavern` ...). Tested by four hours of `--autoplay`.
+- **Table 9's own feedback** (Cyborgirl): the Tense Deck and CPU Hog holes,
+  the ICE lanes, its lanes, targets and inlanes, the ice breaker, the
+  implants, kernel panic and its awards (`$t9CpuHog` ...). Tested by four
+  hours of `--autoplay`.
+- **Table 8's own feedback** (Enigma): the lock hole, the spiked pit and the
+  spring, its four wire loops as its scoreboard names them, the ball lock,
+  the mines, the super jackpot and its awards (`$t8GammaRamp` ...). Tested
+  by eight hours of `--autoplay`.
+- **Table 7's own feedback** (Deep Sea): the eel nest, the wreck, the reef
+  and the air tanks, the ramps, the seahorse lanes, the stingray, the lanes
+  by the flippers, the loops, the treasure targets, a diver entering, the
+  skill shot, the jackpot and its awards (`$t7SunkenShip` ...). Tested by
+  four hours of `--autoplay`.
+- **Table 6's own feedback** (Jungle Pinball): the star, sword and nest
+  holes, the vine ramps, the top lanes, the serpent path, its targets, the
+  lanes by the flippers, a falling apple, the jackpot and its awards
+  (`$t6NestHole` ...). Tested by four hours of `--autoplay`.
+- **Table 5's own feedback** (Magic): the top hole, the MAGIC lanes, the
+  left lane, its targets, the outlanes and the right orbit (`$t5TopHole`
+  ...); it has no texts, so no jackpot or awards. Tested by four hours of
+  `--autoplay`.
+- **Table 4's own feedback** (Crash and Burn): its five holes (the scoops,
+  the pit, Dead Man Curve, the tyre), the race track ramp, the DRIVER
+  targets, orbits, outlanes and green-light lanes, the ball lock, the
+  jackpots and its awards (`$t4PitStop` ...). Tested by four hours of
+  `--autoplay`.
+- **Table 3's own feedback** (Excalibur): the black hole, the SWORD lanes,
+  the loops, the kickback lanes and outlanes, the orbits, the capsules, the
+  right lane's switches and the spinner (`$t3BlackHole` ...); it has no texts,
+  so no jackpot or awards. Tested by four hours of `--autoplay`.
+- **Table 2's own feedback** (Pot of Gold): its treasure hole and cave, the
+  Sky Ramp, the clover lanes, the cave lane, the leprechauns and the rainbow
+  lane, its locks, the top lanes, the skill shot, the jackpot and its awards
+  (`$t2Cave`, `$t2SkyRamp` ...). Tested by four hours of `--autoplay`.
+- **For each table's own feedback:** a feature can be any switch the table
+  has (`switch1` to `switch24`: lanes, loops, locks), or have no switch at
+  all and be fired by the table's own scoreboard text ("BALL 1 LOCKED"); a
+  ramp a table does not count fires on its switch. `--switches epN` in
+  `tools/feedback_map.py` prints what each switch colour's code does, and for
+  testing `--autoplay` plays game after game of a table by itself and
+  `--switch-log` lists where the ball meets each switch colour.
 - **Made rows use the side MXs and DOF's shapes.** `Left MX` and `Right MX`
   get slingshots, ramps, hole kick-outs and the kickback on their side, as
   wipes up or down it, and the bottom of the right one breathes while a ball
@@ -115,6 +185,16 @@ All notable changes to this project are documented here. The format follows
   (PLAY GAME again, or EXIT). `tools/feedback_map.py` finds PINBALL's menus in
   your copy (`work/feedback/pin.map`). Tested on a real cabinet, and headless
   on all 13 tables.
+- **Replays in a cabinet** (`--cabinet --table N`): a game over no longer
+  needs the program started again, nor a keyboard. The playfield stays,
+  dimmed; a high score's initials are chosen on the DMD with the flipper
+  buttons and Start, and typed to PINBALL unseen; then GAME OVER and the
+  table's high scores until Start plays it again, served at once, or Exit
+  leaves. A button held while the game drives PINBALL is not pressed again
+  afterwards. With no DMD, the scoreboard's window shows it. The
+  high scores are written to `hiscore.pin` after each entry, not only when
+  PINBALL quits. `pin.map` is version 2 (run `tools/feedback_map.py`, which
+  `build-linux.sh` does). Not yet tried on a real cabinet.
 - **SSF** (`--ssf`, Linux): 7.1 for a cabinet with
   exciters, wired as vpinball wires one. The front pair keeps the game's mix;
   the board's sounds (bumpers, slingshots, flippers, drop targets, plunger,
@@ -133,6 +213,27 @@ All notable changes to this project are documented here. The format follows
 - `--feedback-log` and `--plunger-trace`, for testing both. Conformance 152.
 
 ### Changed
+- **Made DOF rows take each table's colours.** The flashers, the Back MX and
+  the side MXs used the same white, yellow, orange, cyan, magenta, green and
+  blue on every table; each table now has its own, from its playfield art
+  (Deep Sea's aqua and coral, Pot of Gold's gold and clover green, ...),
+  named by role in the made file (`EpMain`, `EpFeature`, `EpRamp`, ...).
+  Drain and tilt stay red.
+- **DOF events are names, not E numbers.** `E101` to `E145` could not be
+  read without a list, nor a table's own feature told from an event of every
+  table: rows now say `$FlipperLeft`, `$SlingshotLeft 50`, `$Bumper1`,
+  `$ExtraBall`, and a table's own holes, ramps, lanes and targets carry its
+  number, `$t1PowerUpHole`. Their names are in `FEATURES` in
+  `tools/feedback_map.py`, so the feedback maps are version 6 (run
+  `tools/feedback_map.py`, which `build-linux.sh` does), and the helper takes
+  `--features` for `--sides`. `--test` takes the new names. Rows with E
+  numbers no longer fire: write the names, or delete the row to have one
+  made again.
+- libdof is pinned at its master of 26 November 2026 (0.5.4), for its fix of
+  named elements, which never fired before it, and with a patch of ours that
+  sends one: `DOF::DataReceive(name, value)`. Its own Pinscape Pico bound
+  replaces ours. `dof/build.sh` fetches a new pin by itself, and the libraries
+  it builds once are not built again for it.
 - `epicpinball.ini` is updated in place, a setting at a time, so its comments
   and the settings tool's keys stay (it was written anew each time).
 

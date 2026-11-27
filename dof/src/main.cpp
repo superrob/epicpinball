@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // epicpinball-dof - tells libdof which table is up and what happened on it.
 //
-//   epicpinball-dof --table epN [--bumpers LCR] [--sides "hole:LLCRR ..."] [--save saves]
+//   epicpinball-dof --table epN [--bumpers LCR] [--features "hole1=TestHole:L ..."] [--save saves]
 //   epicpinball-dof --table epN --test EVENT      that one event, for trying a row
 //
+// Events go to libdof by name, as a table without a ROM names them: a row
+// says $FlipperLeft, $Bumper2, and for a table's own features the table's
+// number and the feature's name, $t1PowerUpHole (events.h, autorow.h).
+//
 // --bumpers is the table's bumpers from the left, the side of each: L, C or R.
-// --sides is the same for the table's own holes, ramps, kickback and drop
-// targets. The game passes both; they say what a made row puts where.
+// --features names the table's own holes, kickback, rollovers, ramps and drop
+// targets, each with its side. The game passes both; they say what a made row
+// puts where, and what a feature is called.
 //   epicpinball-dof --all-off                     connect, switch everything off, leave
 //
 // The DOF files say what an event does (locate.h finds them), and the
@@ -83,7 +88,7 @@ bool g_all_off;
 volatile sig_atomic_t g_quit;
 std::atomic<bool> g_pico_found{false};
 std::string g_bumpers = "LCR";        // the table's bumpers' sides, from the left
-autorow::Sides g_sides;               // its own features', by their numbers
+autorow::Table g_table;               // its number, its own features' names and sides
 std::atomic<int> g_unread{0};          // settings libdof could not read, and skips
 int g_unread_once;                      // in one reading of the files
 std::atomic<bool> g_show_unread{true};  // the game's own files: shown, not counted
@@ -271,7 +276,11 @@ std::string rom_of(const std::string &table)
 
 class Sender {
 public:
-    explicit Sender(DOF::DOF *dof) : dof_(dof) {}
+    Sender(DOF::DOF *dof, const autorow::Table &table) : dof_(dof)
+    {
+        for (int e = 0; e < kEvents; e++)
+            if (!table.dof(e).empty()) name_[e] = "$" + table.dof(e);   // the $ keeps $S1 a name
+    }
 
     void event(int e, bool on)
     {
@@ -291,19 +300,26 @@ public:
     }
 
 private:
-    void send(int e, bool on) { dof_->DataReceive('E', kFirstE + e, on ? 1 : 0); }
+    // an event this table has no name for (a feature it does not have) is not sent
+    void send(int e, bool on)
+    {
+        if (!name_[e].empty()) dof_->DataReceive(name_[e].c_str(), on ? 1 : 0);
+    }
 
     DOF::DOF *dof_;
+    std::string name_[kEvents];
     bool held_[kEvents] = {};
 };
 
 int usage()
 {
-    say("usage: epicpinball-dof (--table epN [--bumpers LCR] [--sides \"hole:LLCRR ramp:LR kickback:L target:LLL\"]"
-        " [--test EVENT] | --all-off) [--save DIR]");
+    say("usage: epicpinball-dof (--table epN [--bumpers LCR] [--features \"hole1=TestHole:L ramp1=LeftRamp:L"
+        " target1=DropTarget1:L bank=DropTargets ...\"] [--test EVENT] | --all-off) [--save DIR]");
     std::string names;
-    for (auto *e : kEvent) names += std::string(" ") + e;
+    for (auto *e : kDofName)
+        if (*e) names += std::string(" ") + e;
     say("events:" + names);
+    say("and a table's own features with its --features: t1PowerUpHole, t1LeftRamp ...");
     return CANNOT_START;
 }
 
@@ -344,7 +360,7 @@ fs::path construct(const locate::Files &at, const fs::path &work, const std::str
             const auto names = autorow::header_of(path.string());
             if (!names) continue;
             headers = true;
-            const autorow::Row row = autorow::build(*names, g_bumpers, g_sides, shapes);
+            const autorow::Row row = autorow::build(*names, g_bumpers, g_table, shapes);
             if (!shapes && autorow::detail::named(*names, "back mx"))
                 say("no DirectOutputShapes.xml and .png in " + at.rows.string() + ": plain bands on the Back MX");
             for (auto &s : row.said) say(path.filename().string() + ": " + s);
@@ -364,8 +380,8 @@ fs::path construct(const locate::Files &at, const fs::path &work, const std::str
         if (made) {
             std::vector<int> none;                       // over all the files: a strip's alone has no solenoids
             for (int i = 0; i < kEvents; i++)
-                if (!fires[i] && autorow::row_has(i, g_bumpers, g_sides)) none.push_back(i);
-            if (!none.empty()) say("no device for " + autorow::listed(none));
+                if (!fires[i] && autorow::row_has(i, g_bumpers, g_table)) none.push_back(i);
+            if (!none.empty()) say("no device for " + autorow::listed(none, g_table));
             return out / rom;
         }
         if (headers) {
@@ -498,7 +514,7 @@ int serve(Sender &send, int out, pid_t parent)
 
 int run(int argc, char **argv)
 {
-    std::string table, test, rom;
+    std::string table, test, rom, features;
     bool layout = false;
     g_save = "saves";
     for (int i = 1; i < argc; i++) {
@@ -509,23 +525,33 @@ int run(int argc, char **argv)
         else if (a == "--table" && v) table = argv[++i];
         else if (a == "--test" && v) test = argv[++i];
         else if (a == "--bumpers" && v) { g_bumpers = argv[++i]; layout = true; }
-        else if (a == "--sides" && v) {
-            const auto s = autorow::sides(argv[++i]);
-            if (!s) return usage();
-            g_sides = *s;
-        } else return usage();
+        else if (a == "--features" && v) features = argv[++i];
+        else return usage();
     }
     if (g_bumpers.empty() || g_bumpers.size() > (size_t)kBumpers
         || g_bumpers.find_first_not_of("LCR") != std::string::npos) return usage();
+    int test_event = -1;
     if (g_all_off) {
-        if (!table.empty() || !test.empty()) return usage();
+        if (!table.empty() || !test.empty() || !features.empty()) return usage();
     } else {
         rom = rom_of(table);
-        if (rom.empty() || (!test.empty() && event_by_name(test) < 0)) return usage();
+        if (rom.empty()) return usage();
+        const auto t = autorow::features(autorow::table_of(rom), features);
+        if (!t) {
+            say("--features: not a table's features");
+            return usage();
+        }
+        g_table = *t;
+        if (!test.empty()) {
+            for (int ev = 0; ev < kEvents; ev++)
+                if (!g_table.dof(ev).empty() && autorow::lower(g_table.dof(ev)) == autorow::lower(test)) test_event = ev;
+            if (test_event < 0) {
+                say("no event " + test + (g_table.empty() ? " (a table's own feature needs its --features)" : ""));
+                return usage();
+            }
+        }
         if (!layout && !test.empty())
             say("bumpers LCR assumed: give the table's with --bumpers (docs/cabinet-feedback.md)");
-        if (g_sides.empty() && !test.empty() && event_by_name(test) >= kHole1)
-            say("no --sides: a made row has none of the table's own features (docs/cabinet-feedback.md)");
     }
 
 #ifndef _WIN32
@@ -604,7 +630,7 @@ int run(int argc, char **argv)
     for (int s : { SIGTERM, SIGINT, SIGHUP }) sigaction(s, &sa, nullptr);
 #endif
 
-    Sender send(dof);
+    Sender send(dof, g_table);
     int code = DONE;
     if (test.empty()) {
 #ifdef _WIN32
@@ -614,8 +640,8 @@ int run(int argc, char **argv)
 #endif
     } else {
         std::this_thread::sleep_for(300ms);     // libdof's controllers connect on threads of their own
-        const int ev = event_by_name(test);
-        say(rom + ": " + test + " (E" + std::to_string(kFirstE + ev) + "), bumpers " + g_bumpers);
+        const int ev = test_event;
+        say(rom + ": $" + g_table.dof(ev) + ", bumpers " + g_bumpers);
         send.event(ev, true);
         std::this_thread::sleep_for(500ms);     // long enough to see a flipper held
         send.release();

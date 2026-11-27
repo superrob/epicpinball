@@ -19,6 +19,54 @@ unheard first. Then:
 | play to the end of a game | your initials if it was a high score, then the table's own screen (PLAY GAME, RULES, OPTIONS, EXIT) is yours: PLAY GAME plays it again, and EXIT or Esc there exits the program |
 | press keys while it starts | nothing: they are not the game's then, except Esc, which cancels the run |
 
+In a cabinet (`--cabinet`) it is a pinball machine's way instead, below.
+
+## Between games in a cabinet
+
+With `--cabinet`, PINBALL's screens are never shown after the table either,
+and nothing needs a keyboard:
+
+1. **Game over.** The playfield keeps its last picture, dimmed, until the
+   next game; the DMD shows the table's own end of game (bonus, scores) until
+   the table ends.
+2. **A high score.** The DMD shows HIGH SCORE #1 to #3, the score, and three
+   places for initials:
+
+   | Button | Does |
+   |---|---|
+   | left flipper, right flipper | the letter before, after: A-Z, 0-9, space, and a back arrow |
+   | Start, or the launch button | takes the letter (the back arrow takes back the last one) |
+   | a letter on a keyboard | takes that letter |
+   | Exit (Esc) | ends the initials with those taken so far, and exits |
+
+   After three letters they are typed to PINBALL's own initials entry,
+   unseen, and the high scores are written to `hiscore.pin` at once.
+3. **GAME OVER, PRESS START**, then the table's three high scores, a page each
+   three seconds. **Start** plays the table again: PLAY GAME is driven as
+   the first time, unseen, and the new game is shown as its ball is served,
+   at once (0.05 s in a test). **Exit** (Esc) leaves by PINBALL's own way out.
+
+Quitting a game in the middle (Esc, QUIT? Y) with a high score asks for
+initials the same way, then exits. Closing the window during the initials or
+at GAME OVER keeps the initials and leaves the same way.
+
+The DMD's pictures go wherever the DMD goes: the DMD window, the ZeDMD
+(`--dmd-device`), and with no DMD at all the scoreboard's window, as dots.
+PINBALL's own sound is not heard between games. A button held while PINBALL
+is driven (the initials being typed, the next game loading) is not pressed
+again when it is the player's: Start held after the third letter does not
+start a game, nor turn up in it.
+
+PINBALL writes `hiscore.pin` only when it quits, so a cabinet switched off
+after many games would lose them. Between games the high scores are written
+as PINBALL would write them, the 1000 bytes it keeps in memory, but only
+after the first game has shown that the file in `saves/` is that memory byte
+for byte (a missing file, as on the first run, waits for PINBALL's own write
+when it quits).
+
+Without `--cabinet`, `--table` stays as above: initials are typed on
+PINBALL's screen, which is the player's.
+
 Every exit goes through PINBALL's own: it is PINBALL that writes the high
 scores (`hiscore.pin`) and `config.pin`, when it quits, so `--table` quits it
 by its menus, unseen, rather than stopping the program.
@@ -55,6 +103,10 @@ does headless: the 21 seconds to a served ball take about 0.4 s. Nothing is
 shown, no sound is queued, and the window's events are still read. When the
 game is shown, the clock carries on from there.
 
+Between games in a cabinet, it also reads where the new high score is
+(PINBALL's initials entry sets it), the high scores, and PINBALL's letter
+for each key, and types the initials with the keys for those letters.
+
 Where these functions and variables are in your own PINBALL.EXE is in
 `work/feedback/pin.map`. `tools/feedback_map.py` writes it from the lifted
 code, by the shape of a few instruction runs, beside the tables' feedback
@@ -83,4 +135,40 @@ Headless, with the trace on (`--trace` shows each key and phase):
 - the self-test (the map, the list place, the keys of a whole drive);
   conformance 154/154.
 
-On a real cabinet, with `--cabinet --dof --dmd-device --ssf`. Not on Windows.
+Between games in a cabinet, headless with `--cabinet --dmd` and every saved
+score set to 1 (table 1 unless said):
+
+- **game over, a high score**: the playfield held and dimmed, initials chosen
+  with the flipper keys, Start and a typed letter (CAX), typed to PINBALL;
+  `hiscore.pin` had CAX and 4,470,000 before the run ended, so written
+  between games, and byte for byte the file PINBALL writes itself when it
+  quits (the next run reads it as the same); GAME OVER and the high scores;
+  Start served the second game, 4 s of emulated time later (unseen, fast);
+- **two high scores in one run**: both entered and both written (first and
+  second place);
+- **no high score** (every saved score above the game's): straight to
+  GAME OVER; two games, and Start still taken after 11 minutes at GAME OVER;
+- **Exit at GAME OVER**: out by PINBALL's way, exit code 0;
+- **quitting a game with a high score**, Exit in the middle of the
+  initials: the letter taken so far saved, then out;
+- **no DMD**: the pictures on the scoreboard's window;
+- **tables 8 and 11**: held and dimmed once (as dark as the table's own game
+  over dim), the table's own end of game on the DMD until it ends;
+- **without `--cabinet`**: initials typed on PINBALL's screen, as before;
+- **in a window with a cabinet board** (SDL's offscreen driver, a virtual
+  joystick in `[buttons]`): launched by its button to game over, initials
+  CBB by the flipper buttons and Start, the third Start held 4 s into
+  GAME OVER without starting a game, then a new press: the second game shown
+  0.05 s later; and a game over, the initials and out by Exit;
+- the self-test (a whole game over to the second game in fake PINBALL
+  memory, `hiscore.pin` written, the initials' rules); conformance 154/154.
+
+- **every table's high scores**, 1-13: twenty minutes of `--autoplay` from a
+  fresh save folder, then quit (Esc, Y): `hiscore.pin` had the table's own
+  five, new initials among them, and nothing changed in any other table's;
+  started again on it and quit, it was written back byte for byte.
+
+Not yet on a real cabinet's DMD, nor on Windows.
+
+On a real cabinet, with `--cabinet --dof --dmd-device --ssf` (before the
+between-games part). Not on Windows.

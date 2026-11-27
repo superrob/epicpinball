@@ -35,25 +35,28 @@
   on table 1, with the scoreboard placed on the second display, and is tested
   on virtual displays. wlroots compositors and SDL2 proper (not sdl2-compat)
   are untried.
-- **More cabinet feedback**: each table's own holes, kickbacks, targets,
-  lanes, ramps and awards, as table 1 has them (`FEATURES` in
-  `tools/feedback_map.py`; every table has the same switch handler), gates,
-  spinners, lamps, general joystick buttons, Windows, and
-  an entry in the DOF Config Tool's database.
+- **More cabinet feedback**: every table has its own events now, tried
+  only by `--autoplay`: each on a real cabinet, and the jackpots, multiball
+  and later levels the autoplayer never reaches. Table 6's three banks of
+  targets as banks (they are switches each), gates, lamps, general joystick
+  buttons, Windows, and an entry in the DOF Config Tool's database.
 - **The DMD** (works on a real cabinet on table 1): tables 2-13
   on a cabinet and looked at message by message (several players' scores on 9-13, tables 5 and 6,
   whose line appenders are another shape); screens no scripted game reached
   (jackpots, modes, high score entry); Windows.
 - **SSF** (works on a real cabinet's exciters): each table's own board
-  effects beyond slots 0-6 (table 1's are listed); Windows.
+  effects beyond slots 0-6 by ear on a cabinet (they were chosen by sample
+  and by when they play: docs/ssf.md); Windows.
 - **`--table`**: Windows; a frontend's own start and exit keys.
 - **Nudging**: nudge buttons on a board that has them; tables 2-13 by
   hand on a cabinet; Windows.
-- **African Safari's overrun**: a ball reaching x = -1 overruns a sprite
-  buffer into the timer chain. Feedback stops for that table when it happens;
-  whether the DOS original does the same is not known.
-- **Saves**: high scores and `CONFIG.PIN` go to `saves\`; check that every
-  table's high-score entry round-trips.
+- **African Safari's overrun**: a left-edge collision can leave a ball at
+  x = -1 (the game clamps only below 1, unsigned), and its sprite is then drawn
+  over the table's saved timer vector: the next tick jumps to FFFF:0202, where
+  DOS has the interrupt table or the HMA, not code, so the original would run
+  garbage and crash or hang. The recomp has no code there, refuses the jump and
+  limps on; feedback stops for that table. Rare: 64 hours of `--autoplay` on
+  table 13 never met it. Fixing it would change the game (keep the ball at 0).
 
 ## Out of scope
 

@@ -53,8 +53,20 @@ if (-not $msbuild) { Fail "Visual Studio 2022 with C++ is missing (scripts\setup
 New-Item -ItemType Directory -Force (Join-Path $S "dl"), $L | Out-Null
 
 # name owner/repo commit sha256 [a path in the archive to leave out]
+# A new commit for a name replaces its archive, its tree, and what was built from them.
 function Fetch-Pinned($name, $repo, $commit, $sum, $skip) {
     $tgz = Join-Path $S "dl\$name.tar.gz"
+    $pin = Join-Path $S "dl\$name.commit"
+    $had = if (Test-Path $pin) { (Get-Content $pin -Raw).Trim() } else { "" }
+    if ($had -ne $commit) {
+        # an archive from before this was kept is kept if it is the pinned one
+        $same = (Test-Path $tgz) -and ((Get-FileHash -Algorithm SHA256 $tgz).Hash.ToLower() -eq $sum)
+        if ($had -or -not $same) {
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tgz, (Join-Path $S $name)
+            Get-ChildItem -Force $S -Filter ".$name-*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+        }
+        Set-Content -NoNewline $pin $commit
+    }
     if (-not (Test-Path $tgz)) {
         Write-Host "fetching $repo $commit"
         Native { curl.exe -fsSL --max-time 180 -o "$tgz.part" "https://codeload.github.com/$repo/tar.gz/$commit" }
@@ -73,8 +85,8 @@ function Fetch-Pinned($name, $repo, $commit, $sum, $skip) {
         Move-Item $t $dir
     }
 }
-Fetch-Pinned libdof vpinball/libdof 3d0ad20a4be185aaa3d426e1abff01f9639a2f62 `
-    5fb82f9b46a6e55768dc1254fb9d9e9c2d30374486ce1686317eaa4408b1fb40
+Fetch-Pinned libdof vpinball/libdof 49b69470f0f940743cf9294cc982440e3bfb3fb5 `
+    267a2cb08c377234580a482871b4b7a15c5e7f332fd5827185b6cec8598988ee
 # its README.md is a symbolic link, which tar cannot make without the right to
 Fetch-Pinned libusb libusb/libusb 15a7ebb4d426c5ce196684347d2b7cafad862626 `
     4ae78a9c6c540a3ccd7153c77e24947fa2ba50d845714bbbfccf8783832ed704 README.md
@@ -159,23 +171,31 @@ Copy-Item (Join-Path $ftdi "src\ftdi.h") (Join-Path $I "libftdi1")
 Copy-Item ([IO.Path]::ChangeExtension($ftdidll, ".lib")) (Join-Path $BL "libftdi164.lib")
 Copy-Item $ftdidll $R
 
-# Named by what is in the patch, so a tree built without it is built again.
+# Named by what is in the patches, so a tree built without them is built again.
 # Applied with LF line ends, as libdof's files have: git for Windows checks
 # this repository out with CRLF when core.autocrlf is on (GitHub Desktop's).
-$Patch = Join-Path $S "pico-output-bound.patch"
-[IO.File]::WriteAllText($Patch, ([IO.File]::ReadAllText((Join-Path $Here "patches\pico-output-bound.patch")) -replace "`r`n", "`n"))
-$Sum = (Get-FileHash -Algorithm SHA256 $Patch).Hash.ToLower().Substring(0, 16)
+$Patches = @()
+foreach ($p in (Get-ChildItem (Join-Path $Here "patches") -Filter "*.patch" | Sort-Object Name)) {
+    $lf = Join-Path $S $p.Name
+    [IO.File]::WriteAllText($lf, ([IO.File]::ReadAllText($p.FullName) -replace "`r`n", "`n"))
+    $Patches += $lf
+}
+$all = Join-Path $S "patches.all"
+[IO.File]::WriteAllText($all, (($Patches | ForEach-Object { [IO.File]::ReadAllText($_) }) -join ""))
+$Sum = (Get-FileHash -Algorithm SHA256 $all).Hash.ToLower().Substring(0, 16)
 if (-not (Test-Path (Join-Path $S ".libdof-patched-$Sum"))) {
     # outside any repository (this one holds dof\build): git apply works as patch does
     $env:GIT_CEILING_DIRECTORIES = $S
-    Push-Location (Join-Path $S "libdof")
-    $ErrorActionPreference = "Continue"
-    & git apply -p1 $Patch
-    $rc = $LASTEXITCODE
-    $ErrorActionPreference = "Stop"
-    Pop-Location
-    if ($rc -ne 0) {
-        Fail "dof\patches\pico-output-bound.patch does not apply to $S\libdof: delete that folder and $S\.libdof-*, and run again"
+    foreach ($Patch in $Patches) {
+        Push-Location (Join-Path $S "libdof")
+        $ErrorActionPreference = "Continue"
+        & git apply -p1 $Patch
+        $rc = $LASTEXITCODE
+        $ErrorActionPreference = "Stop"
+        Pop-Location
+        if ($rc -ne 0) {
+            Fail "$Patch does not apply to $S\libdof: delete that folder and $S\.libdof-*, and run again"
+        }
     }
     New-Item -ItemType File (Join-Path $S ".libdof-patched-$Sum") | Out-Null
 }

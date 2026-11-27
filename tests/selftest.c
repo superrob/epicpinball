@@ -17,6 +17,7 @@
 #include "dmd.h"
 #include "ssf.h"
 #include "autostart.h"
+#include "arcade.h"
 #include "nudge.h"
 #include "ini.h"
 #include "keys.h"
@@ -328,7 +329,7 @@ static void test_images(void)
 /* ---- cabinet feedback and the plunger ---- */
 
 static const char k_map[] =
-    "epicpinball-feedback 5\nimage ep1 16 69691905\n"
+    "epicpinball-feedback 6\nimage ep1 16 69691905\n"
     "ds 10\ncs 2000\nactive 100\nx 110\ny 120\nvx 130\nvy 140\nslots 5\n"
     "flip_l 150\nflip_r 152\nup_l 154\nup_r 155\ntilt 160\nmeter 161\ncooldown 162\ndemo 163\n"
     "extra 164\nover 165\ncount 166\ndrain_y 18F\nkick 167\nweak_y 180\nsling_line C7\nmap 170\n"
@@ -336,12 +337,14 @@ static const char k_map[] =
     "lane_off 0\nlane_x 118\nlane_y DC\nover_pull 0\nscan_x 190\nscan_y 192\nnudge_gate 16A\ngate_lo 4\ngate_hi 2A\n"
     "step_fn ep1_step\nkicker_fn ep1_kick\nswitch_fn ep1_sw\nbumper 100 60 0\nbumper 200 60 2\n"
     "msg_fn ep1_msg\nlayer 240\non_layer F9 F8 F1\ntilt_pass F0 F6\n"
-    "zone hole 1 F5 0 0 319 399 L\nzone hole 2 F6 0 0 219 399 C\nzone hole 3 F6 220 0 319 399 R\n"
-    "zone kickback 1 F8 0 321 50 399 L\n"
-    "zone rollover 1 FA 0 0 179 399 C\nzone rollover 2 FA 180 0 319 399 R\n"
-    "zone ramp 1 F9 0 0 74 399 L\nzone ramp 2 F6 220 0 319 399 R\n"
-    "timer 200\ntimer 201\ntarget 210 1 L\ntarget 211 2 L\ntarget 212 3 L\nlanes 220 4\nramps 230\n"
-    "msg 300 jackpot\nmsg 310 award\nend\n";
+    "zone hole 1 F5 0 0 319 399 L TestHole\nzone hole 2 F6 0 0 219 399 C PowerUpHole\n"
+    "zone hole 3 F6 220 0 319 399 R RightHole\nzone kickback 1 F8 0 321 50 399 L Kickback\n"
+    "zone rollover 1 FA 0 0 179 399 C TopLane1\nzone rollover 2 FA 180 0 319 399 R TopLane2\n"
+    "zone ramp 1 F9 0 0 74 399 L LeftRamp\nzone ramp 2 F6 220 0 319 399 R CentreRamp\n"
+    "feature switch 1 C BallLock\nzone switch 2 FB 0 0 319 399 R LeftLoop\n"
+    "timer 200\ntimer 201\ntarget 210 1 L DropTarget1\ntarget 211 2 L DropTarget2\ntarget 212 3 L DropTarget3\n"
+    "bank DropTargets\nlanes 220 4\nramps 230\n"
+    "msg 300 jackpot\nmsg 310 award\nmsg 320 switch_1\nend\n";
 
 static void test_feedback_map(void)
 {
@@ -352,8 +355,13 @@ static void test_feedback_map(void)
     assert(watch_map_parse(k_map, &m, &why));
     assert(!strcmp(m.name, "ep1") && m.size == 16 && m.fnv == 0x69691905u && m.pull_max == 708 && m.nbumpers == 2);
     assert(!strcmp(m.layout, "LR"));
-    /* a table's own features: the zone a switch is, and every side for made rows */
-    assert(!strcmp(m.sides, "hole:LCR ramp:LR kickback:L target:LLL"));
+    /* a table's own features: the zone a switch is, and each one's name and side for DOF */
+    assert(!strcmp(m.features, "hole1=TestHole:L hole2=PowerUpHole:C hole3=RightHole:R kickback1=Kickback:L "
+                               "rollover1=TopLane1:C rollover2=TopLane2:R ramp1=LeftRamp:L ramp2=CentreRamp:R "
+                               "switch1=BallLock:C switch2=LeftLoop:R "
+                               "target1=DropTarget1:L target2=DropTarget2:L target3=DropTarget3:L bank=DropTargets"));
+    /* a switch zone is a feature of its own; a named one is never a switch's */
+    assert(watch_zone(&m, WZ_SWITCH, 0xFB, 10, 10) >= 0 && watch_zone(&m, WZ_SWITCH, 0, 0, 0) < 0);
     {                                                     /* written on Windows: CRLF reads the same */
         static char crlf[2 * sizeof k_map];
         char *o = crlf;
@@ -369,7 +377,7 @@ static void test_feedback_map(void)
     assert(watch_kick_event(&m, 90, 70) == FB_BUMPER_1 && watch_kick_event(&m, 210, 70) == FB_BUMPER_2);
     assert(watch_kick_event(&m, 40, 300) == FB_SLING_LEFT && watch_kick_event(&m, 280, 300) == FB_SLING_RIGHT);
     {
-        WatchMap six = m;                                 /* table 5's six: E105-E107, then E118-E120 */
+        WatchMap six = m;                                 /* table 5's six: bumper_1-6 */
         const int xs[6] = { 28, 47, 100, 188, 240, 266 }, sides[6] = { 0, 0, 1, 1, 2, 2 };
         six.nbumpers = 6;
         for (int i = 0; i < 6; i++) { six.bumper[i].x = xs[i]; six.bumper[i].y = 150; six.bumper[i].slot = sides[i]; }
@@ -386,8 +394,54 @@ static void test_feedback_map(void)
         assert(!watch_map_parse(cut, &m, &why));
     }
     memcpy(cut, k_map, sizeof k_map);
-    strstr(cut, "feedback 5")[9] = '4';                   /* another version */
+    strstr(cut, "feedback 6")[9] = '5';                   /* another version */
     assert(!watch_map_parse(cut, &m, &why));
+    {
+        /* names: letters and digits, each once on a table, one for a feature,
+         * and drop targets with their bank */
+        static const char *const bad[][2] = {
+            { "C PowerUpHole", "C Power-Up" }, { "L LeftRamp", "L 1Ramp" }, { "R RightHole", "R TestHole" },
+            { "R CentreRamp", "R righthole" }, { "L DropTarget2", "L DropTargetsDown" }, { "bank DropTargets\n", "" },
+            { "L TestHole", "L" }, { "msg 320 switch_1", "msg 320 switch_3" }, { "switch 1 C", "switch 1 X" },
+            { "feature switch", "feature hole" }, { "LeftLoop", "BallLock" },
+        };
+        for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+            static char edited[sizeof k_map + 32];
+            const char *at = strstr(k_map, bad[i][0]);
+            assert(at);
+            snprintf(edited, sizeof edited, "%.*s%s%s", (int)(at - k_map), k_map, bad[i][1], at + strlen(bad[i][0]));
+            assert(!watch_map_parse(edited, &m, &why));
+        }
+        /* table 6: a bank of targets by its flags fires a feature the map has */
+        static char banks[sizeof k_map + 64];
+        const char *ln = strstr(k_map, "lanes 220 4\n");
+        snprintf(banks, sizeof banks, "%.*sbankset 240 3 switch_2\n%s", (int)(ln - k_map), k_map, ln);
+        assert(watch_map_parse(banks, &m, &why) && m.nbanksets == 1 && m.bankset[0].at == 0x240
+               && m.bankset[0].n == 3 && m.bankset[0].event == FB_SWITCH_1 + 1);
+        for (int bad = 0; bad < 3; bad++) {
+            static const char *const wrong[3] = { "bankset 240 3 switch_9\n", "bankset 240 1 switch_2\n",
+                                                  "bankset 240 3 jackpot\n" };
+            snprintf(banks, sizeof banks, "%.*s%s%s", (int)(ln - k_map), k_map, wrong[bad], ln);
+            assert(!watch_map_parse(banks, &m, &why));
+        }
+        /* table 9: a second way to show a text */
+        static char two[sizeof k_map + 32];
+        const char *mf = strstr(k_map, "msg_fn ep1_msg\n");
+        snprintf(two, sizeof two, "%.*smsg_fn ep1_msg2\n%s", (int)(mf - k_map), k_map, mf);
+        assert(watch_map_parse(two, &m, &why) && !strcmp(m.msg_fn, "ep1_msg2") && !strcmp(m.msg_fn2, "ep1_msg"));
+        /* Enigma: nothing passes on its wires */
+        static char wires[sizeof k_map];
+        const char *on = strstr(k_map, "on_layer F9 F8 F1");
+        snprintf(wires, sizeof wires, "%.*son_layer %s", (int)(on - k_map), k_map, on + strlen("on_layer F9 F8 F1"));
+        assert(watch_map_parse(wires, &m, &why) && m.non_layer == 0);
+        /* a feature drawn twice: one name */
+        static char twice[sizeof k_map + 64];
+        const char *at = strstr(k_map, "zone kickback");
+        snprintf(twice, sizeof twice, "%.*szone hole 1 F5 0 0 10 10 L TestHole\n%s", (int)(at - k_map), k_map, at);
+        assert(watch_map_parse(twice, &m, &why));
+        snprintf(twice, sizeof twice, "%.*szone hole 1 F5 0 0 10 10 L OtherHole\n%s", (int)(at - k_map), k_map, at);
+        assert(!watch_map_parse(twice, &m, &why));
+    }
     memcpy(cut, k_map, sizeof k_map);
     strstr(cut, "bumper 200")[7] = '0';                   /* not left to right */
     assert(!watch_map_parse(cut, &m, &why));
@@ -412,7 +466,7 @@ static void test_feedback_map(void)
 }
 
 static int seen[FB_OUTPUTS];
-static void seen_table(const char *name, const char *bumpers, const char *sides) { (void)name; (void)bumpers; (void)sides; }
+static void seen_table(const char *name, const char *bumpers, const char *features) { (void)name; (void)bumpers; (void)features; }
 static int level[FB_OUTPUTS];
 static void seen_event(FbEvent e, int on) { seen[e] += on; level[e] = on; }
 static void seen_off(void) { }
@@ -1056,7 +1110,7 @@ static void test_dof_pipe(void)
 
     real_clock = 1;
     assert(dof_open(path, dir));
-    feedback_table(0, "ep1", "LR", "hole:LLCRR kickback:L");
+    feedback_table(0, "ep1", "LR", "hole1=TestHole:L kickback1=Kickback:L");
     pump(300);
     feedback_event(1, FB_FLIPPER_LEFT, 1, (FbDetail){ 0 });
     pump(1200);                                           /* held, and nothing said: no fault, and no off */
@@ -1088,8 +1142,9 @@ static void test_dof_pipe(void)
     size_t n = fread(got, 1, sizeof got - 1, f);
     fclose(f);
     got[n] = 0;
-    assert(strstr(got, "--table ep1 --bumpers LR --sides hole:LLCRR kickback:L") && strstr(got, "--save") && !strstr(got, "knocker"));
-    assert(strstr(got, "--table ep2 --bumpers LCR\n"));           /* no features: no --sides */
+    assert(strstr(got, "--table ep1 --bumpers LR --features hole1=TestHole:L kickback1=Kickback:L") && strstr(got, "--save")
+           && !strstr(got, "knocker"));
+    assert(strstr(got, "--table ep2 --bumpers LCR\n"));           /* no features: no --features */
     const char *up = strstr(got, "e flipper_left 1"), *drain = strstr(got, "e drain 1");
     assert(up && drain && up < drain);
     const char *off = strstr(drain, "o  \n");             /* the mute's, after the drain */
@@ -1116,9 +1171,9 @@ static int sent(int sc) { for (int i = 0; i < nkeys_sent; i++) if (keys_sent[i] 
 static void test_autostart(void)
 {
     static const char map[] =
-        "epicpinball-menus 1\nimage pin 37461 E8DF0C9E\ncursor 6C5E\nend_fn pin_E\nexec_fn pin_X\n"
-        "frame_fn pin_F\ninitials 1D65\nintro_fn pin_I\nkey 3B4B\nmenu_frames 2E\nmenus_fn pin_M\n"
-        "present 6969\nscreen_cursor 6C61\nscreen_fn pin_S\nscroll 1B8A\nselected 6C5C\n"
+        "epicpinball-menus 2\nimage pin 37461 E8DF0C9E\ncursor 6C5E\nend_fn pin_E\nentry 1D67\nexec_fn pin_X\n"
+        "frame_fn pin_F\ninitials 1D65\nintro_fn pin_I\nkey 3B4B\nletters 1D6B\nmenu_frames 2E\nmenus_fn pin_M\n"
+        "present 6969\nscores 6581\nscreen_cursor 6C61\nscreen_fn pin_S\nscroll 1B8A\nselected 6C5C\n"
         "sub_fn pin_O\nsub_fn pin_R\nend\n";
     MenusMap m;
     const char *why = "";
@@ -1130,7 +1185,7 @@ static void test_autostart(void)
     *strstr(bad, "initials") = 'X';                                   /* a field missing */
     assert(!autostart_map_parse(bad, &m, &why));
     strcpy(bad, map);
-    bad[18] = '2';                                                    /* another version */
+    bad[18] = '1';                                                    /* another version */
     assert(!autostart_map_parse(bad, &m, &why));
     {                                                                 /* written on Windows: CRLF */
         char crlf[2 * sizeof map], *o = crlf;
@@ -1207,10 +1262,134 @@ static void test_autostart(void)
     M[0x1D65] = 0;
     FRAMES("pin_F", 10);
     assert(fast_now && autostart_busy() == 2 && sent(0x01));          /* then out again */
+
+    /* Between games in a cabinet: the game over holds the playfield; PINBALL
+     * fades in unseen and asks initials, chosen with the flipper keys and a
+     * typed letter, typed to it; hiscore.pin written; GAME OVER; Start plays
+     * table 3 again */
+    autostart_arcade(1);
+    const uint16_t seg = 0x6000;
+    uint8_t *A = g_cpu.mem + seg * 16;
+    memset(A, 0, 0x10000);
+    memcpy(A + 0x6969, present, sizeof present);
+    memcpy(A + 0x1D6B, " 1234567890-=  QWERTYUIOP[]  ASDFGHJKL;\"~ \\ZXCVBNM,./    ", 57);   /* a letter per scan code - 1 */
+    for (int i = 0; i < 125; i++) memcpy(A + 0x6581 + 8 * i, "JDS \x10\x27\0\0", 8);       /* 25 tables of 5 */
+    char saves[256] = "", hs[300] = "";
+#ifndef _WIN32
+    const char *tmp = getenv("TMPDIR");
+    snprintf(saves, sizeof saves, "%s/epicpinball-selftest.XXXXXX", tmp && *tmp ? tmp : "/tmp");
+    assert(mkdtemp(saves));
+    snprintf(hs, sizeof hs, "%s/hiscore.pin", saves);
+    FILE *hf = fopen(hs, "wb");
+    assert(hf && fwrite(A + 0x6581, 1, 1000, hf) == 1000 && fclose(hf) == 0);   /* as PINBALL read it */
+    g_opt.savedir = saves;
+#endif
+    autostart_begin_map(&m, seg);
+    FRAMES("pin_I", 8);
+    FRAMES("pin_F", 10);                                              /* BEGIN */
+    autostart_enter(&c, "pin_M");
+    for (int i = 0; i < 40 && A[0x6C5E] < 2; i++) {
+        int n = nkeys_sent;
+        FRAMES("pin_F", 1);
+        if (nkeys_sent > n && keys_sent[nkeys_sent - 1] == 0x50) A[0x6C5E]++;
+    }
+    FRAMES("pin_F", 10);
+    A[0x6C5C] = 2;
+    autostart_enter(&c, "pin_S");
+    FRAMES("pin_F", 10);
+    autostart_enter(&c, "pin_X");
+    tail[2] = '1';
+    autostart_exec("C:\\EP3.EXE", tail);
+    autostart_enter(&c, "ep3_step");
+    assert(!fast_now && autostart_busy() == 0 && !autostart_hold());
+    WatchMap w;
+    assert(watch_map_parse(k_map, &w, &why) && watch_map_use(&w, 0x1000));
+    g_cpu.mem[g_watch_ds + w.over] = 1;                               /* game over */
+    assert(autostart_hold() && !autostart_between());                 /* the playfield held, the DMD the table's */
+    autostart_exec_done();
+    watch_table_end();
+    g_watch_on = 0;
+    uint32_t dmd[DMD_W * DMD_H];
+    assert(autostart_between() && autostart_hold() && fast_now && autostart_busy() == 2 && autostart_dmd(dmd) >= 0);
+    FRAMES("pin_I", 20);                                              /* PINBALL fades in */
+    assert(autostart_key(0x36) == 0);                                 /* nothing asked yet */
+    A[0x1D65] = 1;                                                    /* a high score: second of table 3 */
+    A[0x1D67] = 2 * 40 + 8;
+    memcpy(A + 0x6581 + 2 * 40 + 8, "???\x20\x48\xDC\x0B\0", 8);    /* 777,000 */
+    autostart_enter(&c, "pin_S");
+    FRAMES("pin_F", 1);
+    assert(!fast_now && autostart_busy() == 0);                       /* the player's, on the DMD */
+    assert(autostart_key(0x36) && autostart_key(0x36) && autostart_key(0x1C));   /* right flipper twice: C, Start */
+    assert(autostart_key(0x10));                                      /* Q typed */
+    assert(autostart_key(0x2A) && autostart_key(0x39));               /* left flipper: P, the launch button */
+    assert(fast_now && autostart_busy() == 2);
+    nkeys_sent = 0;
+    FRAMES("pin_F", 40);
+    assert(sent(0x2E) && sent(0x10) && sent(0x19) && sent(0x1C) && !sent(0x36));   /* C Q P Enter */
+    memcpy(A + 0x6581 + 2 * 40 + 8, "CQP", 3);                       /* PINBALL took them */
+    A[0x1D65] = 0;
+    FRAMES("pin_F", 80);
+    assert(!fast_now && autostart_busy() == 0 && autostart_between());   /* GAME OVER, PRESS START */
+#ifndef _WIN32
+    char back[1000];
+    hf = fopen(hs, "rb");
+    assert(hf && fread(back, 1, 1000, hf) == 1000);
+    fclose(hf);
+    assert(!memcmp(back, A + 0x6581, 1000) && !memcmp(back + 2 * 40 + 8, "CQP", 3));   /* written between games */
+    remove(hs);
+    rmdir(saves);
+    g_opt.savedir = NULL;
+#endif
+    nkeys_sent = 0;
+    FRAMES("pin_F", 10);
+    assert(nkeys_sent == 0);                                          /* waits for Start */
+    assert(autostart_key(0x1C));
+    FRAMES("pin_F", 10);
+    assert(fast_now && sent(0x1C));                                   /* PLAY GAME, unseen */
+    autostart_enter(&c, "pin_X");
+    tail[2] = '1';
+    autostart_exec("C:\\EP3.EXE", tail);
+    autostart_enter(&c, "ep3_step");
+    assert(!fast_now && !autostart_between() && !autostart_hold());    /* the second game */
+    autostart_arcade(0);
     #undef FRAMES
     g_watch_on = watching;
     g_auto_on = 0;
     pit_at = 0;
+}
+
+/* arcade.c: the initials chosen with flippers, Start, typed letters and the
+ * back arrow; the pictures; numbers with commas */
+static void test_arcade(void)
+{
+    char n[16];
+    arcade_commas(4470000, n);
+    assert(!strcmp(n, "4,470,000"));
+    arcade_commas(999, n);
+    assert(!strcmp(n, "999"));
+    arcade_entry(2, 777000, "ABC ");
+    assert(!arcade_entry_input(ARC_NEXT, 0) && !arcade_entry_input(ARC_TAKE, 0));          /* B */
+    assert(!strcmp(arcade_initials(), "B"));
+    for (int i = 0; i < 3; i++) arcade_entry_input(ARC_PREV, 0);      /* A, the back arrow, space */
+    arcade_entry_input(ARC_NEXT, 0);                                  /* the back arrow */
+    assert(!arcade_entry_input(ARC_TAKE, 0) && !strcmp(arcade_initials(), ""));
+    assert(!arcade_entry_input(0, 'z') && !strcmp(arcade_initials(), ""));   /* not offered */
+    assert(!arcade_entry_input(0, 'c') && !strcmp(arcade_initials(), "C"));
+    assert(!arcade_entry_input(ARC_TAKE, 0) && !strcmp(arcade_initials(), "CC"));
+    assert(!arcade_entry_input(ARC_BACK, 0) && !strcmp(arcade_initials(), "C"));
+    assert(arcade_entry_input(ARC_DONE, 0) && !strcmp(arcade_initials(), "C"));
+    arcade_entry_input(ARC_TAKE, 0);
+    assert(arcade_entry_input(ARC_TAKE, 0) && !strcmp(arcade_initials(), "CCC"));         /* three: done */
+    static uint32_t a[DMD_W * DMD_H], b[DMD_W * DMD_H];
+    arcade_draw_entry(a, 0);
+    int lit = 0;
+    for (int i = 0; i < DMD_W * DMD_H; i++) lit += a[i] != 0xFF000000u;
+    assert(lit > 100);
+    const ArcadeScore top[3] = { { "CQP", 777000 }, { "ROB", 500 }, { "JDS", 1 } };
+    arcade_draw_ready(a, 0, top);                                     /* GAME OVER */
+    arcade_draw_ready(b, 3000, top);                                  /* the high scores */
+    assert(memcmp(a, b, sizeof a));
+    assert(arcade_text_w("ABC", 1) == 17 && arcade_text_w("ABC", 2) == 34);
 }
 
 /* An accelerometer's shove (src/nudge.c): the push against the shove, the
@@ -1512,6 +1691,7 @@ int main(void)
     test_dmd();
     test_ssf();
     test_autostart();
+    test_arcade();
     test_nudge();
     test_ini();
     test_keys();
