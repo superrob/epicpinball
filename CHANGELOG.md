@@ -111,6 +111,16 @@ All notable changes to this project are documented here. The format follows
   (PLAY GAME again, or EXIT). `tools/feedback_map.py` finds PINBALL's menus in
   your copy (`work/feedback/pin.map`). Tested on a real cabinet, and headless
   on all 13 tables.
+- **Replays in a cabinet** (`--cabinet --table N`): a game over no longer
+  needs the program started again, nor a keyboard. The playfield stays,
+  dimmed; a high score's initials are chosen on the DMD with the flipper
+  buttons and Start, and typed to PINBALL unseen; then GAME OVER and the
+  table's high scores until Start plays it again, served at once, or Exit
+  leaves. A button held while the game drives PINBALL is not pressed again
+  afterwards. With no DMD, the scoreboard's window shows it. The
+  high scores are written to `hiscore.pin` after each entry, not only when
+  PINBALL quits. `pin.map` is version 2 (run `tools/feedback_map.py`, which
+  `build-linux.sh` does). Not yet tried on a real cabinet.
 - **SSF** (`--ssf`, Linux): 7.1 for a cabinet with
   exciters, wired as vpinball wires one. The front pair keeps the game's mix;
   the board's sounds (bumpers, slingshots, flippers, drop targets, plunger,

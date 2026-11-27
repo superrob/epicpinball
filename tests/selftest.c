@@ -17,6 +17,7 @@
 #include "dmd.h"
 #include "ssf.h"
 #include "autostart.h"
+#include "arcade.h"
 #include "nudge.h"
 #include "ini.h"
 #include "keys.h"
@@ -1108,9 +1109,9 @@ static int sent(int sc) { for (int i = 0; i < nkeys_sent; i++) if (keys_sent[i] 
 static void test_autostart(void)
 {
     static const char map[] =
-        "epicpinball-menus 1\nimage pin 37461 E8DF0C9E\ncursor 6C5E\nend_fn pin_E\nexec_fn pin_X\n"
-        "frame_fn pin_F\ninitials 1D65\nintro_fn pin_I\nkey 3B4B\nmenu_frames 2E\nmenus_fn pin_M\n"
-        "present 6969\nscreen_cursor 6C61\nscreen_fn pin_S\nscroll 1B8A\nselected 6C5C\n"
+        "epicpinball-menus 2\nimage pin 37461 E8DF0C9E\ncursor 6C5E\nend_fn pin_E\nentry 1D67\nexec_fn pin_X\n"
+        "frame_fn pin_F\ninitials 1D65\nintro_fn pin_I\nkey 3B4B\nletters 1D6B\nmenu_frames 2E\nmenus_fn pin_M\n"
+        "present 6969\nscores 6581\nscreen_cursor 6C61\nscreen_fn pin_S\nscroll 1B8A\nselected 6C5C\n"
         "sub_fn pin_O\nsub_fn pin_R\nend\n";
     MenusMap m;
     const char *why = "";
@@ -1122,7 +1123,7 @@ static void test_autostart(void)
     *strstr(bad, "initials") = 'X';                                   /* a field missing */
     assert(!autostart_map_parse(bad, &m, &why));
     strcpy(bad, map);
-    bad[18] = '2';                                                    /* another version */
+    bad[18] = '1';                                                    /* another version */
     assert(!autostart_map_parse(bad, &m, &why));
     assert(autostart_map_parse(map, &m, &why));
 
@@ -1193,10 +1194,134 @@ static void test_autostart(void)
     M[0x1D65] = 0;
     FRAMES("pin_F", 10);
     assert(fast_now && autostart_busy() == 2 && sent(0x01));          /* then out again */
+
+    /* Between games in a cabinet: the game over holds the playfield; PINBALL
+     * fades in unseen and asks initials, chosen with the flipper keys and a
+     * typed letter, typed to it; hiscore.pin written; GAME OVER; Start plays
+     * table 3 again */
+    autostart_arcade(1);
+    const uint16_t seg = 0x6000;
+    uint8_t *A = g_cpu.mem + seg * 16;
+    memset(A, 0, 0x10000);
+    memcpy(A + 0x6969, present, sizeof present);
+    memcpy(A + 0x1D6B, " 1234567890-=  QWERTYUIOP[]  ASDFGHJKL;\"~ \\ZXCVBNM,./    ", 57);   /* a letter per scan code - 1 */
+    for (int i = 0; i < 125; i++) memcpy(A + 0x6581 + 8 * i, "JDS \x10\x27\0\0", 8);       /* 25 tables of 5 */
+    char saves[256] = "", hs[300] = "";
+#ifndef _WIN32
+    const char *tmp = getenv("TMPDIR");
+    snprintf(saves, sizeof saves, "%s/epicpinball-selftest.XXXXXX", tmp && *tmp ? tmp : "/tmp");
+    assert(mkdtemp(saves));
+    snprintf(hs, sizeof hs, "%s/hiscore.pin", saves);
+    FILE *hf = fopen(hs, "wb");
+    assert(hf && fwrite(A + 0x6581, 1, 1000, hf) == 1000 && fclose(hf) == 0);   /* as PINBALL read it */
+    g_opt.savedir = saves;
+#endif
+    autostart_begin_map(&m, seg);
+    FRAMES("pin_I", 8);
+    FRAMES("pin_F", 10);                                              /* BEGIN */
+    autostart_enter(&c, "pin_M");
+    for (int i = 0; i < 40 && A[0x6C5E] < 2; i++) {
+        int n = nkeys_sent;
+        FRAMES("pin_F", 1);
+        if (nkeys_sent > n && keys_sent[nkeys_sent - 1] == 0x50) A[0x6C5E]++;
+    }
+    FRAMES("pin_F", 10);
+    A[0x6C5C] = 2;
+    autostart_enter(&c, "pin_S");
+    FRAMES("pin_F", 10);
+    autostart_enter(&c, "pin_X");
+    tail[2] = '1';
+    autostart_exec("C:\\EP3.EXE", tail);
+    autostart_enter(&c, "ep3_step");
+    assert(!fast_now && autostart_busy() == 0 && !autostart_hold());
+    WatchMap w;
+    assert(watch_map_parse(k_map, &w, &why) && watch_map_use(&w, 0x1000));
+    g_cpu.mem[g_watch_ds + w.over] = 1;                               /* game over */
+    assert(autostart_hold() && !autostart_between());                 /* the playfield held, the DMD the table's */
+    autostart_exec_done();
+    watch_table_end();
+    g_watch_on = 0;
+    uint32_t dmd[DMD_W * DMD_H];
+    assert(autostart_between() && autostart_hold() && fast_now && autostart_busy() == 2 && autostart_dmd(dmd) >= 0);
+    FRAMES("pin_I", 20);                                              /* PINBALL fades in */
+    assert(autostart_key(0x36) == 0);                                 /* nothing asked yet */
+    A[0x1D65] = 1;                                                    /* a high score: second of table 3 */
+    A[0x1D67] = 2 * 40 + 8;
+    memcpy(A + 0x6581 + 2 * 40 + 8, "???\x20\x48\xDC\x0B\0", 8);    /* 777,000 */
+    autostart_enter(&c, "pin_S");
+    FRAMES("pin_F", 1);
+    assert(!fast_now && autostart_busy() == 0);                       /* the player's, on the DMD */
+    assert(autostart_key(0x36) && autostart_key(0x36) && autostart_key(0x1C));   /* right flipper twice: C, Start */
+    assert(autostart_key(0x10));                                      /* Q typed */
+    assert(autostart_key(0x2A) && autostart_key(0x39));               /* left flipper: P, the launch button */
+    assert(fast_now && autostart_busy() == 2);
+    nkeys_sent = 0;
+    FRAMES("pin_F", 40);
+    assert(sent(0x2E) && sent(0x10) && sent(0x19) && sent(0x1C) && !sent(0x36));   /* C Q P Enter */
+    memcpy(A + 0x6581 + 2 * 40 + 8, "CQP", 3);                       /* PINBALL took them */
+    A[0x1D65] = 0;
+    FRAMES("pin_F", 80);
+    assert(!fast_now && autostart_busy() == 0 && autostart_between());   /* GAME OVER, PRESS START */
+#ifndef _WIN32
+    char back[1000];
+    hf = fopen(hs, "rb");
+    assert(hf && fread(back, 1, 1000, hf) == 1000);
+    fclose(hf);
+    assert(!memcmp(back, A + 0x6581, 1000) && !memcmp(back + 2 * 40 + 8, "CQP", 3));   /* written between games */
+    remove(hs);
+    rmdir(saves);
+    g_opt.savedir = NULL;
+#endif
+    nkeys_sent = 0;
+    FRAMES("pin_F", 10);
+    assert(nkeys_sent == 0);                                          /* waits for Start */
+    assert(autostart_key(0x1C));
+    FRAMES("pin_F", 10);
+    assert(fast_now && sent(0x1C));                                   /* PLAY GAME, unseen */
+    autostart_enter(&c, "pin_X");
+    tail[2] = '1';
+    autostart_exec("C:\\EP3.EXE", tail);
+    autostart_enter(&c, "ep3_step");
+    assert(!fast_now && !autostart_between() && !autostart_hold());    /* the second game */
+    autostart_arcade(0);
     #undef FRAMES
     g_watch_on = watching;
     g_auto_on = 0;
     pit_at = 0;
+}
+
+/* arcade.c: the initials chosen with flippers, Start, typed letters and the
+ * back arrow; the pictures; numbers with commas */
+static void test_arcade(void)
+{
+    char n[16];
+    arcade_commas(4470000, n);
+    assert(!strcmp(n, "4,470,000"));
+    arcade_commas(999, n);
+    assert(!strcmp(n, "999"));
+    arcade_entry(2, 777000, "ABC ");
+    assert(!arcade_entry_input(ARC_NEXT, 0) && !arcade_entry_input(ARC_TAKE, 0));          /* B */
+    assert(!strcmp(arcade_initials(), "B"));
+    for (int i = 0; i < 3; i++) arcade_entry_input(ARC_PREV, 0);      /* A, the back arrow, space */
+    arcade_entry_input(ARC_NEXT, 0);                                  /* the back arrow */
+    assert(!arcade_entry_input(ARC_TAKE, 0) && !strcmp(arcade_initials(), ""));
+    assert(!arcade_entry_input(0, 'z') && !strcmp(arcade_initials(), ""));   /* not offered */
+    assert(!arcade_entry_input(0, 'c') && !strcmp(arcade_initials(), "C"));
+    assert(!arcade_entry_input(ARC_TAKE, 0) && !strcmp(arcade_initials(), "CC"));
+    assert(!arcade_entry_input(ARC_BACK, 0) && !strcmp(arcade_initials(), "C"));
+    assert(arcade_entry_input(ARC_DONE, 0) && !strcmp(arcade_initials(), "C"));
+    arcade_entry_input(ARC_TAKE, 0);
+    assert(arcade_entry_input(ARC_TAKE, 0) && !strcmp(arcade_initials(), "CCC"));         /* three: done */
+    static uint32_t a[DMD_W * DMD_H], b[DMD_W * DMD_H];
+    arcade_draw_entry(a, 0);
+    int lit = 0;
+    for (int i = 0; i < DMD_W * DMD_H; i++) lit += a[i] != 0xFF000000u;
+    assert(lit > 100);
+    const ArcadeScore top[3] = { { "CQP", 777000 }, { "ROB", 500 }, { "JDS", 1 } };
+    arcade_draw_ready(a, 0, top);                                     /* GAME OVER */
+    arcade_draw_ready(b, 3000, top);                                  /* the high scores */
+    assert(memcmp(a, b, sizeof a));
+    assert(arcade_text_w("ABC", 1) == 17 && arcade_text_w("ABC", 2) == 34);
 }
 
 /* An accelerometer's shove (src/nudge.c): the push against the shove, the
@@ -1498,6 +1623,7 @@ int main(void)
     test_dmd();
     test_ssf();
     test_autostart();
+    test_arcade();
     test_nudge();
     test_ini();
     test_keys();

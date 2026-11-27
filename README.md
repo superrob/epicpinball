@@ -50,6 +50,7 @@ conformance harness passes 154/154 on Linux.**
 | Cabinet feedback through libdof (`--dof`) and an analog plunger (Linux only) | ✅ on a real cabinet with a Pinscape Pico, on table 1, with table 1's own events (holes, ramps, targets, jackpots); tables 2-13 only in a sandbox (loopback, a simulated board, a virtual joystick) |
 | SSF: the board's sounds on a cabinet's exciters, 7.1 (`--ssf`, Linux) | ✅ headless on all 13 tables (eight channels measured), and on a cabinet's exciters |
 | Straight to a table, `--table N` | ✅ on a real cabinet; headless on all 13 tables (quit, high score, game over, play again); not on Windows |
+| Between games with `--cabinet --table N`: initials on the DMD, Start plays again | implemented: headless on table 1 and in an offscreen window; not yet on a real cabinet |
 | A 128x32 DMD (`--dmd` in a window, `--dmd-device` on a real DMD through libdmdutil; Linux) | ✅ on a real cabinet with a ZeDMD, on table 1; all 13 tables headless |
 | **Conformance** ([docs](docs/conformance.md)) | **154/154** on Linux (Windows skips the 11 cabinet checks, and has not run the 10 feedback ones) |
 
@@ -78,7 +79,9 @@ off with `--classic`. Details in [docs/remaster.md](docs/remaster.md).
   [How to set one up](docs/remaster.md#cabinet-mode).
 - **Straight to a table** (`--table N`): table N with a one-player game, in
   half a second, for a frontend; quitting the table quits the program, with
-  PINBALL saving the high scores as it always does. [How](docs/table.md).
+  PINBALL saving the high scores as it always does. In a cabinet it plays as
+  a pinball machine: initials on the DMD with the flipper buttons, then
+  GAME OVER until Start plays the table again. [How](docs/table.md).
 - **SSF** (`--ssf`, Linux): 7.1 for a cabinet with exciters. The backbox
   speakers keep the music and the callouts; bumpers, slingshots, flippers,
   drop targets and the plunger play on the exciters, top or bottom, left or
@@ -226,7 +229,7 @@ actions ([docs](docs/cabinet-feedback.md#keys-and-buttons)).
 | `--stretch` | with `--cabinet`: the playfield stretched to fill its display, this run |
 | `--playfield-display N` | with `--cabinet`: the display the playfield fills; they are listed at start |
 | `--score-window X,Y,W,H` | with `--cabinet`: where the scoreboard (or with `--dmd`, the DMD) window goes, this run |
-| `--table N` | straight to table N (1-13) and a one-player game; quitting it quits the program ([docs](docs/table.md)) |
+| `--table N` | straight to table N (1-13) and a one-player game; quitting it quits the program; with `--cabinet`, initials on the DMD and Start for the next game ([docs](docs/table.md)) |
 | `--ssf` | 7.1 for a cabinet with exciters: the board's sounds on the side (top) and rear (bottom) pairs; `[ssf]` in `epicpinball.ini` sets their volumes (Linux) ([docs](docs/ssf.md)) |
 | `--ssf-volumes FX,ROLL` | SSF's effects and rolling volumes for this run, over `[ssf]`'s (4 is the default, 0 none) |
 | `--dmd` | a 128x32 DMD in a window of its own; in a cabinet, in place of the scoreboard window (Linux) ([docs](docs/dmd.md)) |

@@ -80,12 +80,20 @@ static int dmd_showing(void);
 static int compose_dmd(void)
 {
     static uint32_t bar[320 * 32];
-    int bw = 0, bh = 0;
-    if (!vga_compose_score(bar, &bw, &bh)) bw = bh = 0;
-    if (!dmd_frame(bw ? bar : NULL, bw, bh, dmd_px)) return 0;
+    static int was_ours;
+    const int ours = g_auto_on ? autostart_dmd(dmd_px) : -1;   /* between games in a cabinet */
+    const int back = was_ours != (ours >= 0);       /* from one to the other: shown whatever it is */
+    was_ours = ours >= 0;
+    if (ours >= 0) {
+        if (!ours && !back) return 0;
+    } else {
+        int bw = 0, bh = 0;
+        if (!vga_compose_score(bar, &bw, &bh)) bw = bh = 0;
+        if (!dmd_frame(bw ? bar : NULL, bw, bh, dmd_px) && !back) return 0;
+    }
     dmd_new = 1;
     dmd_pipe_frame(dmd_px);
-    if (g_opt.dmd) dmd_dots(dmd_px, dmd_big, DMD_S);
+    if (g_opt.dmd || g_opt.cabinet) dmd_dots(dmd_px, dmd_big, DMD_S);
     return 1;
 }
 
@@ -97,20 +105,38 @@ static int board_is_dmd(void) { return g_opt.cabinet && g_opt.dmd; }
  * when no table is up), both from video memory as it is at this moment. With
  * --dmd the messages go to the DMD, not the playfield, and the DMD takes the
  * scoreboard's window in a cabinet. */
+static int holding;                  /* --table in a cabinet, the game over: the playfield keeps its picture */
+static int between(void) { return g_auto_on && autostart_between(); }   /* the DMD is autostart's */
+/* Sound: not while --table drives PINBALL fast, nor between games in a cabinet */
+static int heard(void) { return !machine_is_fast() && !between(); }
+
+static void compose_score(void)
+{
+    if ((board_is_dmd() || between()) && sw == DMD_W * DMD_S) return;   /* the DMD has the scoreboard's window */
+    if (vga_compose_score(score, &sw, &sh)) dmd_bar_hide(score, sw, sh);
+    else {
+        sw = 320; sh = 29;
+        for (int i = 0; i < sw * sh; i++) score[i] = 0xFF000000u;
+    }
+}
+
 static void compose_view(void)
 {
     static int inside;
     if ((dmd_on() || g_opt.cabinet) && !inside) {
         /* every message off the playfield while a DMD shows them; in a
          * cabinet anyway those it does not show (keyboard help) */
-        dmd_hide(dmd_showing() ? DMD_HIDE_ALL : DMD_HIDE_LISTED);
-        inside = 1;
-        compose_view();
-        inside = 0;
-        dmd_hide(0);
-        if (!dmd_on()) return;
+        if (!holding) {
+            dmd_hide(dmd_showing() ? DMD_HIDE_ALL : DMD_HIDE_LISTED);
+            inside = 1;
+            compose_view();
+            inside = 0;
+            dmd_hide(0);
+        } else if (g_opt.cabinet) compose_score();
+        const int ours = between();                    /* between games: on the scoreboard's window too */
+        if (!dmd_on() && !ours) return;
         const int changed = compose_dmd();
-        if (board_is_dmd() && (changed || sw != DMD_W * DMD_S)) {
+        if ((board_is_dmd() || (g_opt.cabinet && ours)) && (changed || sw != DMD_W * DMD_S)) {
             memcpy(score, dmd_big, sizeof dmd_big);
             sw = DMD_W * DMD_S; sh = DMD_H * DMD_S;
         }
@@ -119,14 +145,10 @@ static void compose_view(void)
     if (g_opt.cabinet) {
         table_up = vga_compose_playfield(frame, &fw, &fh);
         frame_aspect = table_up ? (double)fw / fh : 4.0 / 3;   /* square pixels; the menus' 4:3 */
-        if (board_is_dmd() && sw == DMD_W * DMD_S) return;   /* the DMD has the scoreboard's window */
-        if (vga_compose_score(score, &sw, &sh)) dmd_bar_hide(score, sw, sh);
-        else {
-            sw = 320; sh = 29;
-            for (int i = 0; i < sw * sh; i++) score[i] = 0xFF000000u;
-        }
+        compose_score();
         return;
     }
+    if (holding) return;
     if (S.whole && !g_opt.classic && vga_compose_table(frame, &fw, &fh)) frame_aspect = (double)fw / fh;
     else compose();
     if (dmd_on() && vga_bar_row() >= 0)                /* with a DMD: hidden ones off the bar too (9-13) */
@@ -142,7 +164,7 @@ int pad_nudge_range(void);
 static void compose_hud(void)
 {
     int x, y;
-    if (fw != 320 || !vga_table_up() || !nudge_now(&x, &y)) return;   /* a table: not the menus, nor the text screen */
+    if (holding || fw != 320 || !vga_table_up() || !nudge_now(&x, &y)) return;   /* a table: not the menus, nor the text screen */
     if (!nudge_traced() && !pad_nudge_indicator()) return;
     hud_nudge(frame, fw, fh, frame_aspect * fh / fw, x, y, nudge_get_settings()->dead, pad_nudge_range());
 }
@@ -308,10 +330,8 @@ static int driven(void) { return g_auto_on ? autostart_busy() : 0; }
 static void keys_due(void)
 {
     if (driven()) return;                          /* --keys counts from the table's game */
-    while (kev_i < nkev && kev[kev_i].at <= pit_now()) {
-        int sc = kev[kev_i].sc;
-        if (sc & KEY_E0) kbd_scancode(0xE0);
-        kbd_scancode((uint8_t)((sc & 0xFF) | (kev[kev_i].up ? 0x80 : 0)));
+    while (kev_i < nkev && kev[kev_i].at <= pit_now()) {    /* as the keyboard's, through [keys] */
+        pad_key(kev[kev_i].sc, kev[kev_i].up);
         kev_i++;
     }
 }
@@ -608,7 +628,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
             return 0;
         }
         if (!up && (lp & (1 << 30))) return 0;      /* the game does its own repeat */
-        if (driven()) { if (!up && wp == VK_ESCAPE && driven() == 1) quit_req = 1; return 0; }
+        if (!up && wp == VK_ESCAPE && driven() == 1) { quit_req = 1; return 0; }
         pad_key(((lp >> 16) & 0xFF) | (lp & (1 << 24) ? KEY_E0 : 0), up);   /* [keys] */
         return 0;
     }
@@ -694,8 +714,11 @@ static void window_events(void)
 {
     MSG msg;
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) { TranslateMessage(&msg); DispatchMessageA(&msg); }
-    pad_poll(window_front() && !driven());
-    if (quit_req && driven() != 2) dos_exit(0);    /* leaving: PINBALL is saving */
+    pad_poll(window_front());                      /* while driven too: pad.c counts, sends nothing */
+    if (quit_req && driven() != 2) {                /* leaving: PINBALL is saving */
+        if (g_auto_on && autostart_quit()) quit_req = 0;   /* between games: the initials in, then out */
+        else dos_exit(0);
+    }
 }
 
 /* Messages, the pad, and the picture */
@@ -841,8 +864,8 @@ static void key(const SDL_KeyboardEvent *k)
         return;
     }
     if (k->repeat) return;                          /* the game does its own repeat */
-    if (driven()) { if (!up && s == SDL_SCANCODE_ESCAPE && driven() == 1) quit_req = 1; return; }
-    int sc = key_from_sdl(s);
+    if (!up && s == SDL_SCANCODE_ESCAPE && driven() == 1) { quit_req = 1; return; }
+    int sc = key_from_sdl(s);                      /* counted even while driven (pad.c): no key stuck */
     if (sc) pad_key(sc, up);                       /* [keys] */
 }
 
@@ -1124,8 +1147,11 @@ static void window_events(void)
             if (e.window.event == SDL_WINDOWEVENT_MOVED || e.window.event == SDL_WINDOWEVENT_RESIZED) remember_place();
         }
     }
-    pad_poll(window_front() && !driven());
-    if (quit_req && driven() != 2) dos_exit(0);    /* leaving: PINBALL is saving */
+    pad_poll(window_front());                      /* while driven too: pad.c counts, sends nothing */
+    if (quit_req && driven() != 2) {                /* leaving: PINBALL is saving */
+        if (g_auto_on && autostart_quit()) quit_req = 0;   /* between games: the initials in, then out */
+        else dos_exit(0);
+    }
 }
 
 /* --table: the game is on; what was mixed while driving is not heard */
@@ -1172,7 +1198,7 @@ void host_audio(const int16_t *s, int frames)
 {
     if (rec_audio) { fwrite(s, 4, frames, rec_audio); rec_samples += frames; }
     if (wav_out) { fwrite(s, 4, frames, wav_out); wav_samples += frames; }
-    if (wnd && !machine_is_fast()) window_audio(s, frames);
+    if (wnd && heard()) window_audio(s, frames);
 }
 
 /* --ssf: the front pair and the four exciters as 7.1, FL FR FC LFE BL BR SL
@@ -1190,7 +1216,7 @@ void host_audio_ssf(const int16_t *front, const int16_t *exciters, int frames)
         }
         if (rec_audio) { fwrite(front + done * 2, 4, n, rec_audio); rec_samples += n; }
         if (wav_out) { fwrite(out, 16, n, wav_out); wav_samples += n; }
-        if (wnd && !machine_is_fast()) window_audio(out, n);
+        if (wnd && heard()) window_audio(out, n);
         done += n;
     }
 }
@@ -1267,6 +1293,20 @@ static int dmd_showing(void)
 #endif
 }
 
+/* A cabinet's game is over (--table): the playfield keeps its last picture,
+ * dimmed as a table dims its own, until the next game is shown */
+static void hold(int on)
+{
+    if (on) {
+        compose_view();
+        for (int i = 0; i < fw * fh; i++) {
+            const uint32_t p = frame[i];
+            frame[i] = 0xFF000000u | ((p >> 16 & 0xFF) * 2 / 5) << 16 | ((p >> 8 & 0xFF) * 2 / 5) << 8 | (p & 0xFF) * 2 / 5;
+        }
+    }
+    holding = on;
+}
+
 void host_init(void)
 {
     keys_parse();
@@ -1293,6 +1333,7 @@ void host_frame(void)
         }
         was_driven = d;
     }
+    if (g_auto_on && autostart_hold() != holding) hold(!holding);
     keys_due();
     dof_tick();                      /* the helper's starts and ends */
     dmd_pipe_tick();

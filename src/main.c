@@ -276,7 +276,7 @@ int main(int argc, char **argv)
     }
     if (g_opt.dmd || g_opt.dmd_device || g_opt.cabinet) dmd_wanted();   /* a cabinet hides keyboard messages */
     if (g_opt.ssf) { ssf_wanted(); watch_wanted(); }              /* SSF places sounds by what watch.c follows */
-    if (g_opt.table) { autostart_wanted(g_opt.table); watch_wanted(); }   /* the watcher says when its game runs */
+    if (g_opt.table) { autostart_wanted(g_opt.table); autostart_arcade(g_opt.cabinet); watch_wanted(); }   /* the watcher says when its game runs */
     atexit(feedback_close);
     atexit(dmd_pipe_close);            /* fatal() does not come through host_shutdown */
     atexit(dof_close);

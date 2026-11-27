@@ -113,6 +113,23 @@ static int sets(const char *line, const char *key)
     return (size_t)(k - line) == strlen(key) && !ncase(line, key, strlen(key));
 }
 
+int file_replace(const char *path, const void *data, size_t n)
+{
+    char tmp[1024];
+    snprintf(tmp, sizeof tmp, "%s.new", path);
+    FILE *f = fopen(tmp, "wb");
+    if (!f) return 0;
+    int ok = fwrite(data, 1, n, f) == n;
+    ok &= fclose(f) == 0;
+#ifdef _WIN32
+    ok = ok && MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING);
+#else
+    ok = ok && rename(tmp, path) == 0;
+#endif
+    if (!ok) remove(tmp);
+    return ok;
+}
+
 int ini_set(const char *path, const char *sec, const char *key, const char *value)
 {
     if (value && strpbrk(value, ";\r\n")) return 0;
@@ -175,20 +192,13 @@ int ini_set(const char *path, const char *sec, const char *key, const char *valu
     }
 
     /* a whole new file, then in its place: never half a file */
-    char tmp[1024];
-    snprintf(tmp, sizeof tmp, "%s.new", path);
-    int ok = 0;
-    if ((f = fopen(tmp, "wb")) != NULL) {
-        ok = 1;
-        for (int i = 0; i < L.n; i++) ok &= fprintf(f, "%s%s", L.l[i], crlf ? "\r\n" : "\n") >= 0;
-        ok &= fclose(f) == 0;
-#ifdef _WIN32
-        ok = ok && MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING);
-#else
-        ok = ok && rename(tmp, path) == 0;
-#endif
-        if (!ok) remove(tmp);
-    }
+    size_t size = 0;
+    for (int i = 0; i < L.n; i++) size += strlen(L.l[i]) + 2;
+    char *text = malloc(size + 1), *o = text;
+    int ok = text != NULL;
+    for (int i = 0; ok && i < L.n; i++) o += sprintf(o, "%s%s", L.l[i], crlf ? "\r\n" : "\n");
+    ok = ok && file_replace(path, text, (size_t)(o - text));
+    free(text);
     for (int i = 0; i < L.n; i++) free(L.l[i]);
     free(L.l);
     return ok;

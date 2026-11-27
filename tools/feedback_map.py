@@ -623,7 +623,7 @@ def text_of(img, r):
     return '\n'.join(out) + '\n'
 
 
-MENUS_VERSION = 1
+MENUS_VERSION = 2
 
 
 def scan_menus():
@@ -665,6 +665,17 @@ def scan_menus():
     m, _ = find(f, 'initials entry', rf'cmp word cs:\[{N}\], 0x0\n{GO}jmp {A}\ncmp al, 0x1\n{GO}cmp al, 0x1C\n',
                 v['menus_fn'])
     v['initials'] = num(m.group(1))     # not 0 while a high score's initials are typed
+    # a cabinet types them on the DMD (src/autostart.c): the new score's place
+    # in the high scores, the high scores, and the letter each key types
+    m, _ = find(f, 'new high score', rf'mov word cs:\[0x{v["initials"]:X}\], 0x1\nmov word cs:\[{N}\], di\n',
+                v['menus_fn'])
+    v['entry'] = num(m.group(1))
+    m, _ = find(f, 'high scores', rf'mov cx, 0x3\ncmp byte cs:\[di\+{N}\], 0x3F\n{GO}cmp byte cs:\[di\+{A}\], 0x3F\n',
+                v['menus_fn'])
+    v['scores'] = num(m.group(1))
+    m, _ = find(f, 'initials letters', rf'dec bx\nmov al, byte cs:\[bx\+{N}\]\nmov di, word cs:\[0x{v["entry"]:X}\]\n',
+                v['menus_fn'])
+    v['letters'] = num(m.group(1))
     m, _ = find(f, 'main menu frames', rf'inc word cs:\[0x([0-9A-F]+)\]\ncmp word cs:\[0x\1\], {A}\n{GO}'
                 rf'push cs\ncall pin_\w+\n', v['main_fn'])
     v['menu_frames'] = num(m.group(1))  # the main menu's frames toward its demo: only it counts them
