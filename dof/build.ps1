@@ -65,7 +65,7 @@ function Fetch-Pinned($name, $repo, $commit, $sum, $skip) {
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tgz, (Join-Path $S $name)
             Get-ChildItem -Force $S -Filter ".$name-*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
         }
-        Set-Content -NoNewline $pin $commit
+        Set-Content -NoNewline -LiteralPath $pin -Value $commit  # named: positional ones bind the other way round with -NoNewline
     }
     if (-not (Test-Path $tgz)) {
         Write-Host "fetching $repo $commit"
