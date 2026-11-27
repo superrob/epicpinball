@@ -45,11 +45,12 @@ All notable changes to this project are documented here. The format follows
   table. Tested on a real cabinet.
 - **Each table's lamps, for DOF:** every lamp the game draws is a level,
   `$t1Lamp1` to `$t13Lamp63`, on while it is lit: blinks and light shows as
-  the table shows them, numbered in the game's order (9 on table 5, 82 on
-  table 10). `tools/feedback_map.py --lamps epN` says where each is. Read
-  from the blitter the lamps' renderer draws them with, so what the player
-  sees is what goes out. Made rows leave them to rows of your own. Map
-  version 8. `EPIC_LAMP_CHECK=1` for testing.
+  the table shows them, numbered in the game's order (36 on table 7, 82 on
+  table 10), and tables 3 and 5's lights that glow on the palette, from 51
+  on. `tools/feedback_map.py --lamps epN` says where each is. Read from the
+  blitter the lamps' renderer draws them with, so what the player sees is
+  what goes out. Made rows leave them to rows of your own. Map version 8.
+  `EPIC_LAMP_CHECK=1` for testing.
 - **Any key on a cabinet button:** `[buttons]` in `controller.ini` takes a
   key's name besides the game's actions (`F7 = 9`, `P = 10`), up to 16: the
   window's own keys (F5 and F6 in a cabinet, F7, F9-F12) do what they do on
@@ -253,6 +254,9 @@ All notable changes to this project are documented here. The format follows
   and the settings tool's keys stay (it was written anew each time).
 
 ### Fixed
+- **Levels sent again when the DOF helper is ready:** a flipper held, a ball
+  in the lane or a lamp lit while the helper was starting reached its output
+  only when it next changed.
 - **A ball pushed off the left edge no longer wrecks the table** (seen on
   African Safari, in the game's own code on every table): after the game's
   clamp, a collision can still leave a ball at x = -1, and the save of the

@@ -40,9 +40,13 @@ typedef struct {
     /* the lamps: the renderer (SI the list of lamp states it draws), the
      * blitter it hands each lamp's lit or unlit picture, the segment of those
      * pictures, the table of them (a lamp's lit, then its unlit) and how many
-     * lamps there are */
+     * lamps there are. Tables 3 and 5 have lights of another kind past them,
+     * colours of the palette their glow function sets: lamps glow_from to
+     * glow_from + glows - 1 (0: none) */
     uint16_t lamp_seg, lamp_table, lamps;
     char lamp_list_fn[24], lamp_fn[24];
+    char glow_fn[24];
+    int glow_from, glows;
     char guard_fn[24];               /* what the step calls after its balls' loop: guard.c's moment */
     char step_fn[24], kicker_fn[24], switch_fn[24], msg_fn[24], msg_fn2[24];   /* a second way to show a text: table 9 */
     /* SSF (ssf.c): the table's effect function, the sound driver's voice
@@ -92,6 +96,9 @@ void watch_write_byte(uint32_t a, uint8_t v);                /* vga.c's write ho
  * over the far return, the picture again and the lamp's state in the list
  * the renderer was given), 1 on, and whether lit; 0 if none */
 int  watch_lamp_at(const CPU *cpu, int *lit);
+/* A glowing light as its function draws it (state 0xFD dimmed, 0xFE full,
+ * else a pulse; flag 1 a pulse that only falls): lit at half its brightness */
+int  watch_glow_lit(int state, int flag);
 const WatchMap *watch_table(uint32_t *ds, uint32_t *cs);     /* the live table, or NULL */
 /* Where the last kicker hit (kicker 1) or switch (0) was, if that recent; or
  * the more recent of the two (-1) */

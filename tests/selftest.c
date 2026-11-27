@@ -726,6 +726,34 @@ static void test_watch(void)
         assert(seen[FB_LAMP_1 + 2] == 3);
         watch_table_end();
         assert(!level[FB_LAMP_1] && !level[FB_LAMP_1 + 2]);
+        /* tables 3 and 5: lights glowing on the palette past their lamps, by the
+         * glow function's CX (which) and BL (its state); lit at half brightness */
+        assert(!watch_glow_lit(0xFD, 0) && watch_glow_lit(0xFE, 0) && !watch_glow_lit(0x18, 0) && watch_glow_lit(0x19, 0)
+               && watch_glow_lit(0x31, 0) && watch_glow_lit(0x4A, 0) && !watch_glow_lit(0x4B, 0)
+               && !watch_glow_lit(0x31, 1) && watch_glow_lit(0x32, 1));
+        static char glow[sizeof k_map + 64];
+        const char *lf = strstr(k_map, "lamp_seg");
+        WatchMap gm;
+        snprintf(glow, sizeof glow, "%.*sglow_fn ep1_glow\nglow_from 5\nglows 2\n%s", (int)(lf - k_map), k_map, lf);
+        assert(watch_map_parse(glow, &gm, &why) && gm.glow_from == 5 && gm.glows == 2);
+        for (int bad = 0; bad < 3; bad++) {
+            static const char *const wrong[3] = { "glow_fn ep1_glow\nglow_from 3\nglows 2\n", "glow_from 5\nglows 2\n",
+                                                  "glow_fn ep1_glow\nglow_from 5\nglows 5D\n" };
+            snprintf(glow, sizeof glow, "%.*s%s%s", (int)(lf - k_map), k_map, wrong[bad], lf);
+            assert(!watch_map_parse(glow, &m, &why));
+        }
+        pic[-0x10 + 4 + 3] = 1;                           /* lamp 6 only falls */
+        assert(watch_map_use(&gm, 0x1000));
+        #define GLOW(K, BL) (g_cpu.cx = (K), g_cpu.bl = (BL), watch_enter(&g_cpu, "ep1_glow"))
+        GLOW(5, 0xFE); GLOW(6, 0x20); GLOW(7, 0xFE);      /* 7: past them, nothing */
+        watch_tick();
+        assert(level[FB_LAMP_1 + 4] && !level[FB_LAMP_1 + 5] && !seen[FB_LAMP_1 + 6]);
+        GLOW(5, 0xFD); GLOW(6, 0x40);
+        watch_tick();
+        assert(!level[FB_LAMP_1 + 4] && level[FB_LAMP_1 + 5]);
+        watch_table_end();
+        assert(!level[FB_LAMP_1 + 5]);
+        #undef GLOW
         #undef BLIT
     }
     pit_at = 0;

@@ -19,7 +19,8 @@
  *     or unlit picture in SI, its place in the table of them in BX and the
  *     lamp's state in that list on the stack. What it draws is what the
  *     player sees, a light show or a blink included; each host_frame sends
- *     what has changed.
+ *     what has changed. Tables 3 and 5 also glow lights on the palette: their
+ *     glow function, with the light's place in the list in CX, its state in BL.
  *
  * Where each of these lives is in work/feedback/epN.map, generated from the
  * player's own copy by tools/feedback_map.py. docs/cabinet-feedback.md.
@@ -81,10 +82,13 @@ static uint16_t ss0, sp0;            /* the table's stack */
 static uint16_t rd16(uint32_t a) { return (uint16_t)(g_cpu.mem[a] | g_cpu.mem[a + 1] << 8); }
 static double now_ms(void) { return pit_now() * 1000.0 / PIT_HZ; }
 
+/* Lamp events the table has: its lamps, and past them its glowing lights */
+static int nlamps(void) { return M.glows ? M.glow_from - 1 + M.glows : M.lamps; }
+
 /* Every lamp sent lit, out: the table ends or is lost */
 static void lamps_off(double ms)
 {
-    for (int i = 0; i < M.lamps && i < WATCH_LAMPS; i++)
+    for (int i = 0; i < nlamps(); i++)
         if (lamp_sent[i]) feedback_event(ms, (FbEvent)(FB_LAMP_1 + i), 0, (FbDetail){ 0 });
     memset(lamp_sent, 0, sizeof lamp_sent);
 }
@@ -284,6 +288,13 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
         else if (!strcmp(key, "guard_fn")) snprintf(m->guard_fn, sizeof m->guard_fn, "%s", val);
         else if (!strcmp(key, "lamp_fn")) snprintf(m->lamp_fn, sizeof m->lamp_fn, "%s", val);
         else if (!strcmp(key, "lamp_list_fn")) snprintf(m->lamp_list_fn, sizeof m->lamp_list_fn, "%s", val);
+        else if (!strcmp(key, "glow_fn")) snprintf(m->glow_fn, sizeof m->glow_fn, "%s", val);
+        else if (!strcmp(key, "glow_from") || !strcmp(key, "glows")) {
+            char *e;
+            unsigned long v = strtoul(val, &e, 16);
+            if (*e || !v || v > WATCH_LAMPS) { *why = "a bad glowing light"; return 0; }
+            *(key[4] == '_' ? &m->glow_from : &m->glows) = (int)v;
+        }
         else if (!strcmp(key, "sfx_on")) {
             char *e;
             unsigned long v = strtoul(val, &e, 16);
@@ -363,6 +374,9 @@ int watch_map_parse(const char *text, WatchMap *m, const char **why)
              || got != (1ull << NFIELDS) - 1)
         *why = "incomplete";
     else if (!m->lamps || m->lamps > WATCH_LAMPS || m->lamp_table + 4u * m->lamps > 0x10000u) *why = "bad lamps";
+    else if (!*m->glow_fn != !m->glows || !m->glows != !m->glow_from
+             || (m->glows && (m->glow_from <= m->lamps || m->glow_from - 1 + m->glows > WATCH_LAMPS)))
+        *why = "bad glowing lights";
     else if (m->nmsgs && !*m->msg_fn) *why = "messages, but no message function";
     else if (m->nzones && (!m->layer || !m->ntilt_pass)) *why = "zones, but no gate";   /* none may pass on the layer */
     else if (m->slots < 1 || m->slots > 8) *why = "a bad ball count";
@@ -486,13 +500,14 @@ void watch_table_end(void)
     if (lamp_check) {                /* which lamps were drawn at all, and what else was */
         char never[WATCH_LAMPS * 4 + 1] = "";
         int drawn = 0;
-        for (int i = 0; i < M.lamps; i++) {
+        for (int i = 0; i < nlamps(); i++) {
+            if (i >= M.lamps && i < M.glow_from - 1) continue;   /* between lamps and glows: none */
             if (lamp_blits[i]) drawn++;
             else snprintf(never + strlen(never), sizeof never - strlen(never), " %d", i + 1);
         }
         fprintf(stderr, "[lamps] check %s: %d of %d lamps drawn, never:%s; %u pictures there no lamp's;"
                 " %u lamps drawn other than their list says\n",
-                M.name, drawn, M.lamps, *never ? never : " none", lamp_strays, lamp_wrong);
+                M.name, drawn, M.lamps + M.glows, *never ? never : " none", lamp_strays, lamp_wrong);
     }
     feedback_table(now_ms(), NULL, NULL, NULL);
 }
@@ -628,6 +643,14 @@ int watch_lamp_at(const CPU *cpu, int *lit)
     return k;
 }
 
+int watch_glow_lit(int state, int flag)
+{
+    if (state == 0xFD) return 0;
+    if (state == 0xFE) return 1;
+    if (flag == 1 && state < 0x32) return 0;
+    return (state < 0x32 ? state : 0x63 - state) >= 0x19;     /* up to 0x31, and down */
+}
+
 /* Each frame, the lamps that changed. Kept through a pause between balls, as
  * a table's own lamps are. The demo mutes them; out of it, the lit ones are
  * sent again, since nothing was while it played. */
@@ -639,7 +662,7 @@ static void lamps(void)
         memset(lamp_sent, 0, sizeof lamp_sent);
     }
     lamp_muted = muted;
-    for (int i = 0; i < M.lamps && i < WATCH_LAMPS; i++)
+    for (int i = 0; i < nlamps(); i++)
         if (lamp_drawn[i] != lamp_sent[i]) {
             emit((FbEvent)(FB_LAMP_1 + i), lamp_drawn[i], 0, 0, i + 1, 0);
             lamp_sent[i] = lamp_drawn[i];
@@ -694,6 +717,14 @@ void watch_enter(CPU *cpu, const char *fn)
 {
     if (!strcmp(fn, M.lamp_list_fn)) {                       /* the lamps' list, in SI */
         lamp_list = cpu->si;
+        return;
+    }
+    if (*M.glow_fn && !strcmp(fn, M.glow_fn)) {              /* a glowing light: CX which, BL its state */
+        const int k = cpu->cx;
+        if (k < M.glow_from || k >= M.glow_from + M.glows || !sound()) return;
+        const int flag = g_cpu.mem[(uint32_t)lamp_ds * 16 + (uint16_t)((k - M.glow_from) * 4 + 3)];
+        lamp_drawn[k - 1] = (uint8_t)watch_glow_lit(cpu->bl, flag);
+        if (lamp_check) lamp_blits[k - 1]++;
         return;
     }
     if (!strcmp(fn, M.lamp_fn) && cpu->ds == lamp_ds) {       /* a lamp's picture, in SI */

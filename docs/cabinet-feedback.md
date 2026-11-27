@@ -465,9 +465,9 @@ ep1: 62 lamps, drawn by ep1_3695F
 |---|---|
 | 1 | 62 |
 | 2 | 56 |
-| 3 | 40 |
+| 3 | 40, and 51-66 glowing |
 | 4 | 53 |
-| 5 | 9 |
+| 5 | 9, and 51-82 glowing |
 | 6 | 53 |
 | 7 | 36 |
 | 8 | 58 (56 and 57 light the lamps 14 and 43 show) |
@@ -476,6 +476,10 @@ ep1: 62 lamps, drawn by ep1_3695F
 | 11 | 57 |
 | 12 | 63 |
 | 13 | 63 |
+
+Tables 3 and 5 have lights of a second kind past their lamps: colours of the
+palette that dim, light up full or pulse, numbered on from 51 where the game
+keeps them. A pulsing one is lit while it is brighter than half.
 
 A made row puts no lamp anywhere: a row of your own does, for a toy that
 should follow one, an undercab strip in a lamp's colour or a button that
@@ -491,7 +495,8 @@ lit and out as drawn) and hands a blitter each lamp's lit or unlit picture;
 the game follows that blitter, and sends what changed once a frame. The
 demo's lamps are not felt. The scroll-in at a table's start blinks them as
 the table does; between balls and at a prompt they stay as they are, and
-they go out when the table ends. `EPIC_LAMP_CHECK=1` says, when a table
+they go out when the table ends. A lamp lit before the helper is ready goes
+on when it is. `EPIC_LAMP_CHECK=1` says, when a table
 ends, which lamps were drawn and whether any was drawn otherwise than its
 state in the game's list.
 
@@ -1058,10 +1063,13 @@ Without hardware, in a sandbox with no devices:
   `EPIC_LAMP_CHECK=1`: every lamp drawn agreed with its state in the game's
   list, lit after 5 or 4 and unlit after 6 or 3. All lamps lit at some time
   but table 1's 49 and 50, table 2's 48 and 49, table 3's 27, table 4's 1,
-  47 and 48, table 8's 16, 37, 47 and 48 and table 9's 69. Through the helper
-  on ArtNet over loopback, `--test t1Lamp7` on its output, and from the game
-  on table 1 a blinking lamp on its output at the game's rate (0.29 s on,
-  0.29 s off), as the log has it. Not yet on a real cabinet;
+  47 and 48, table 8's 16, 37, 47 and 48 and table 9's 69; every glowing
+  light on tables 3 and 5. Through the helper on ArtNet over loopback,
+  `--test t1Lamp7` on its output and as `$t1Lamp7 Orange` on an RGB column,
+  and from the game on table 1 lamps 1-15 on 15 outputs: a blinking lamp at
+  the game's rate (0.29 s on, 0.29 s off), the lamps already lit the moment
+  the helper was ready, and every state of the outputs one the log had. Not
+  yet on a real cabinet;
 - events by name, through libdof's master and the helper on ArtNet over
   loopback: `--test` with an event of every table, a table 1 feature
   (`t1PowerUpHole`, any case), the bank's `t1DropTargetsDown` and
