@@ -1058,7 +1058,7 @@ static void window_events(void)
     pad_poll(window_front());                      /* while driven too: pad.c counts, sends nothing */
     if (quit_req && driven() != 2) {                /* leaving: PINBALL is saving */
         if (g_auto_on && autostart_quit()) quit_req = 0;   /* between games: the initials in, then out */
-        else dos_exit(0);
+        else dos_quit(0);
     }
 }
 
@@ -1518,7 +1518,7 @@ static void window_events(void)
     pad_poll(window_front());                      /* while driven too: pad.c counts, sends nothing */
     if (quit_req && driven() != 2) {                /* leaving: PINBALL is saving */
         if (g_auto_on && autostart_quit()) quit_req = 0;   /* between games: the initials in, then out */
-        else dos_exit(0);
+        else dos_quit(0);
     }
 }
 
@@ -1711,7 +1711,7 @@ void host_frame(void)
     nudge_poll();
     uint64_t now = pit_now();
     shots_due(now);
-    if (g_opt.seconds > 0 && now >= (uint64_t)(g_opt.seconds * PIT_HZ)) dos_exit(0);
+    if (g_opt.seconds > 0 && now >= (uint64_t)(g_opt.seconds * PIT_HZ)) dos_quit(0);
     if (rec_video) {
         uint64_t per = (uint64_t)(PIT_HZ / REC_FPS);
         if ((rec_frames + 1) * per <= now) {

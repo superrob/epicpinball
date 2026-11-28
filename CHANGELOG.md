@@ -275,6 +275,11 @@ All notable changes to this project are documented here. The format follows
   and the settings tool's keys stay (it was written anew each time).
 
 ### Fixed
+- Closing the window during a table (with `--table`, every time) froze the
+  game: only the table was ended, so PINBALL took over again with the table's
+  keyboard and timer handlers still installed, pointing into memory the table no
+  longer had (`[miss] int 74F2:314B` on table 1). Closing, or `--seconds`
+  running out, now ends every program that is running.
 - `--dof` on Windows with DirectOutput's folder did not read its
   `GlobalConfig_B2SServer.xml`, so not its `Cabinet.xml` either, and LED strip
   controllers (a WemosD1 here) stayed dark. The helper hands libdof a copy

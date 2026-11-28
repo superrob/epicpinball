@@ -441,6 +441,7 @@ static void fail(CPU *c, uint16_t err) { c->ax = err; CF_SET(c); }
 uint16_t g_psp_seg = 0x0100;     /* tools/lift.py PSP_SEG: where PINBALL.EXE goes */
 static uint8_t last_exit_code;
 static jmp_buf *exec_jmp;        /* the EXEC a running child returns to */
+static int quitting, quit_code;  /* dos_quit: every EXEC passes the exit on up */
 
 static uint8_t *slurp(const char *dosname, uint32_t *len)
 {
@@ -675,6 +676,18 @@ static void dos_exec(CPU *c)
     *c = saved;
     c->ax = 0;
     CF_CLR(c);
+    if (quitting) dos_exit(quit_code);   /* the parent goes too: its child's handlers may still be in */
+}
+
+/* The window closed (or --seconds ran out): the whole program ends. A
+ * table's exit alone would hand PINBALL back its menu with the table's
+ * timer and keyboard handlers still in the vectors, pointing into memory the
+ * table no longer has; so each EXEC, once its child is cleaned up, passes the
+ * exit on up instead of resuming its parent. */
+void dos_quit(int code)
+{
+    quitting = 1; quit_code = code;
+    dos_exit(code);
 }
 
 void dos_exit(int code)

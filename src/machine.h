@@ -79,6 +79,7 @@ void     fatal(const char *fmt, ...);
 /* dos.c */
 void dos_boot(CPU *cpu);
 void dos_exit(int code);              /* longjmps back to main */
+void dos_quit(int code);              /* the host leaving: every program running ends, not only the innermost */
 uint16_t bios_stub_seg(void);
 int  bios_builtin(CPU *cpu, unsigned num);   /* the BIOS/DOS behind an unhooked vector */
 void bios_key_push(uint8_t scan, uint8_t ascii);
